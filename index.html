@@ -867,6 +867,8 @@ function eliminarBorrador(id){
   // liberarReserva ya no aplica — el stock solo se descuenta al confirmar ZFE3
   if(salidaActiva&&salidaActiva.id===id){salidaActiva=null;document.getElementById('sal-activa-wrap').style.display='none';}
   salidaBorradores=salidaBorradores.filter(b=>b.id!==id);
+  // Eliminar de Supabase también
+  deleteBorradorFromSupabase(id).catch(e=>console.error(e));
   save(); renderBorradores(); renderStock();
 }
 
@@ -2390,10 +2392,52 @@ async function initSupabase() {
 }
 
 // Al cargar la página, intentar cargar desde Supabase
+
+// ── SUPABASE BORRADORES ────────────────────────────────────────────────────────
+async function saveBorradorToSupabase(borrador) {
+  try {
+    await sbFetch('borradores', {
+      method: 'POST',
+      headers: {'Prefer': 'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({
+        id: String(borrador.id),
+        data: borrador,
+        updated_at: new Date().toISOString()
+      })
+    });
+  } catch(e) { console.error('Error guardando borrador en Supabase:', e); }
+}
+
+async function deleteBorradorFromSupabase(id) {
+  try {
+    await sbFetch('borradores?id=eq.' + encodeURIComponent(String(id)), {
+      method: 'DELETE'
+    });
+  } catch(e) { console.error('Error eliminando borrador de Supabase:', e); }
+}
+
+async function loadBorradoresFromSupabase() {
+  try {
+    const rows = await sbFetch('borradores?select=*&order=updated_at.desc', {method:'GET', headers:{'Prefer':''}});
+    if (!rows || !rows.length) return false;
+    // Merge: no pisar borradores locales, agregar los de Supabase que no estén
+    const localIds = new Set(salidaBorradores.map(b => String(b.id)));
+    rows.forEach(r => {
+      if (!localIds.has(String(r.data.id))) {
+        salidaBorradores.push(r.data);
+      }
+    });
+    console.log('Borradores cargados desde Supabase:', rows.length);
+    renderBorradores();
+    return true;
+  } catch(e) { console.error('Error cargando borradores:', e); return false; }
+}
+
 async function initFromSupabase() {
   const [stockOk, salidasOk] = await Promise.all([
     loadStockFromSupabase(),
-    loadSalidasFromSupabase()
+    loadSalidasFromSupabase(),
+    loadBorradoresFromSupabase()
   ]);
   if(stockOk) {
     renderStock();
