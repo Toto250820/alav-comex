@@ -1843,13 +1843,21 @@ function calcularLiqSalida(){
       </div>`;
 
     Object.entries(matCalc).forEach(([k,{m,needed,cu,detalles,totalLiq}])=>{
+      const d0liq = detalles[0];
+      const fobDespLiq = d0liq ? (d0liq.row.fob_desp||d0liq.row.fob||0) : 0;
+      const fleteDespLiq = d0liq ? (d0liq.row.flete_desp||0) : 0;
+      const seguroDespLiq = d0liq ? (d0liq.row.seguro_desp||0) : 0;
+      const infoDesp2 = (fobDespLiq||fleteDespLiq||seguroDespLiq)
+        ? `<div style="font-size:10px;color:#000;margin:2px 0 4px 0">FOB: USD ${fmt(fobDespLiq,2)} — Flete: USD ${fmt(fleteDespLiq,2)} — Seguro: USD ${fmt(seguroDespLiq,2)}</div>`
+        : '';
       html+=`<div style="padding:7px 10px;border-bottom:1px solid var(--bd)">
-        <div style="font-size:11px;font-weight:600;margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
+        <div style="font-size:11px;font-weight:600;margin-bottom:3px;display:flex;gap:8px;flex-wrap:wrap">
           <span>${m.n}</span><span class="mono t2">${m.ncm}</span>
           <span class="t2">Consumo: ${fmt(needed,3)} ${cu}</span>
           <span class="t2">Tasa: ${(TASAS[m.ncm]*100).toFixed(0)}%</span>
           <span style="color:var(--pu)">USD ${fmt(totalLiq,2)}</span>
         </div>
+        ${infoDesp2}
         <div class="tw"><table><thead><tr>
           <th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cant.</th>
           <th>FOB prop.</th><th>Flete</th><th>Seguro</th><th>CIF</th>
@@ -1961,6 +1969,13 @@ function calcularLiq(){
     <div class="ct" style="color:var(--pu)">Liquidación — ${art.n} | ${med} × ${qty.toLocaleString('es-AR')} u | RIP ${rip} | CERT 194/2025</div>`;
 
   Object.entries(matCalc).forEach(([k,{m,needed,cu,detalles,totalLiq}])=>{
+    const d0m = detalles[0];
+    const fobDm = d0m ? (d0m.row.fob_desp||d0m.row.fob||0) : 0;
+    const fleteDm = d0m ? (d0m.row.flete_desp||0) : 0;
+    const seguroDm = d0m ? (d0m.row.seguro_desp||0) : 0;
+    const infoDespm = (fobDm||fleteDm||seguroDm)
+      ? `<div style="font-size:10px;color:#000;padding:2px 10px 4px">FOB: USD ${fmt(fobDm,2)} — Flete: USD ${fmt(fleteDm,2)} — Seguro: USD ${fmt(seguroDm,2)}</div>`
+      : '';
     html+=`<div style="margin-bottom:14px;border:1px solid var(--bd2);border-radius:var(--rs);overflow:hidden">
       <div style="background:var(--bg);padding:6px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--bd)">
         <strong>${m.n}</strong><span class="mono t2">${m.ncm}</span>
@@ -1968,6 +1983,7 @@ function calcularLiq(){
         <span class="t2">Tasa: ${(TASAS[m.ncm]*100).toFixed(0)}%</span>
         <span style="color:var(--pu);margin-left:auto">USD ${fmt(totalLiq,2)}</span>
       </div>
+      ${infoDespm}
       <div class="tw"><table><thead><tr>
         <th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cant.</th>
         <th>FOB prop.</th><th>Flete</th><th>Seguro</th><th>CIF</th>
