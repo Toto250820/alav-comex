@@ -650,7 +650,6 @@ function load(){
     });
     save();
   }catch(e){}
-  initFromSupabase();
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -2427,6 +2426,12 @@ function renderAdmStock(){
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 load();
+// Cargar desde Supabase después de que el DOM esté listo
+if(document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(initFromSupabase, 500));
+} else {
+  setTimeout(initFromSupabase, 500);
+}
 renderBorradores();
 renderSalidaHist();
 if(salidaActiva){
