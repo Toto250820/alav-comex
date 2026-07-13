@@ -81,3 +81,20 @@ Se probó y validó campo por campo contra despachos reales ya cargados en tu st
 ### Nota sobre seguridad
 
 Esta página **no pide PIN** a propósito, para que cualquiera de las 3 personas pueda cargar despachos sin depender de Javi. Si en algún momento querés protegerla igual, avisame y le agrego el mismo PIN que usa el panel de Admin.
+
+## ET19: vencimiento de reimportación (22 meses)
+
+La misma herramienta (`cargar-despacho.html`) detecta sola si el PDF que subiste es un **ET19** (en vez de un ZFI6/ZFI8). En ese caso no toca el stock — en cambio:
+
+1. Lee la fecha de oficialización del ET19.
+2. Calcula el vencimiento: **oficialización + 22 meses** (es el plazo para reimportarlo como ZFI6).
+3. Te muestra un botón **"Agregar a Google Calendar"** que abre el evento ya armado — con los **3 mails precargados como invitados** (Javier, Marina, Carina), así a los tres les queda el aviso en su calendario apenas alguien lo confirma.
+
+No hace falta que configures nada: el link de Google Calendar no requiere que autoricen ninguna app, simplemente abre la pantalla de "crear evento" de Google ya completa — un clic en "Guardar" (o "Enviar" si pide confirmar invitados) y queda listo en los 3 calendarios.
+
+Los 3 mails están fijos en el código de la herramienta:
+- javis.spinelli@gmail.com
+- alav.pico@gmail.com
+- admi.alavpico02@gmail.com
+
+Si en algún momento cambia alguno de estos mails, avisame y te actualizo el archivo.

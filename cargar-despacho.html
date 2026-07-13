@@ -87,12 +87,12 @@ input.narrow{width:80px}
 <div class="card">
   <div class="stit">Cargar despacho ZFI6 / ZFI8</div>
   <h1>📄 Subí el PDF del despacho</h1>
-  <div class="sub">La app lee el PDF, arma la lista de artículos automáticamente y te la muestra para que confirmes antes de cargarla al stock. No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
+  <div class="sub">La app detecta sola si es un <b>ET19</b> (te calcula el vencimiento a 22 meses y te arma el recordatorio para Google Calendar) o un <b>ZFI6/ZFI8</b> (te arma la lista de artículos para cargar al stock). No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
   <div class="drop" id="drop" onclick="document.getElementById('file-inp').click()">
     <input type="file" id="file-inp" accept="application/pdf" onchange="handleFile(this.files[0])"/>
     <div class="ic">📄</div>
     <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
-    <div class="tt2">Formato ARCA — despacho ZFI6 o ZFI8</div>
+    <div class="tt2">Formato ARCA — ET19, ZFI6 o ZFI8</div>
   </div>
 </div>
 
@@ -101,6 +101,22 @@ input.narrow{width:80px}
 </div>
 
 <div id="error-box"></div>
+
+<div id="et19-box" style="display:none">
+  <div class="card">
+    <div class="stit">ET19 — Vencimiento de reimportación</div>
+    <div class="hdrinfo">
+      <div class="hi"><label>Despacho</label><b id="et-despacho">—</b></div>
+      <div class="hi"><label>Oficialización</label><b id="et-fecha">—</b></div>
+      <div class="hi"><label>Vencimiento (+22 meses)</label><b id="et-venc" style="color:var(--rd)">—</b></div>
+    </div>
+    <div class="sub">Este ET19 tiene que reimportarse como ZFI6 antes de la fecha de vencimiento. Agregalo al calendario para que los 3 tengan el recordatorio.</div>
+    <div class="actions" style="justify-content:flex-start">
+      <a id="et-cal-link" class="btn btnp" style="text-decoration:none" href="#" target="_blank">📅 Agregar a Google Calendar (los 3 invitados)</a>
+      <button class="btn" onclick="resetTool()">Cargar otro PDF</button>
+    </div>
+  </div>
+</div>
 
 <div id="review-box" style="display:none">
   <div class="card">
@@ -199,15 +215,19 @@ function classify(ncmShort, aiText, zaGsm){
 
 function parseDespacho(fullPagesText) {
   const page1 = fullPagesText[0].replace(/\|/g,' ').replace(/\s+/g,' ');
-  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
-  if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de despacho ZFI6/ZFI8 de ARCA?');
+  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d|ET19)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
+  if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de ARCA (ZFI6/ZFI8/ET19)?');
   const despacho = hdrM[1]+hdrM[2]+hdrM[3]+hdrM[4]+hdrM[5];
+  const tipo = hdrM[3];
   const [dd,mm,yyyy] = hdrM[6].split('/');
   const fecha = `${yyyy}-${mm}-${dd}`;
 
-  const totM = page1.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+Pagos/);
-  if(!totM) throw new Error('No se pudieron leer los totales de FOB/Flete/Seguro del despacho.');
-  const fob_desp = num(totM[1]), flete_desp = num(totM[2]), seguro_desp = num(totM[3]);
+  const totM = page1.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL/);
+  const fob_desp = totM ? num(totM[1]) : 0, flete_desp = totM ? num(totM[2]) : 0, seguro_desp = totM ? num(totM[3]) : 0;
+
+  if(tipo === 'ET19'){
+    return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, items: []};
+  }
 
   const items = [];
   fullPagesText.forEach((raw) => {
@@ -236,7 +256,7 @@ function parseDespacho(fullPagesText) {
         ai: aiM ? aiM[1] : null, material: cls.material, confidence: cls.confidence, candidatos: cls.candidatos||null});
     }
   });
-  return {despacho, fecha, fob_desp, flete_desp, seguro_desp, items};
+  return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, items};
 }
 
 // ── UI: drag & drop ──────────────────────────────────────────────────────────
@@ -247,10 +267,45 @@ dropEl.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) hand
 
 let currentParsed = null;
 
+const CALENDAR_GUESTS = ['javis.spinelli@gmail.com','alav.pico@gmail.com','admi.alavpico02@gmail.com'];
+
+function addMonthsISO(fechaISO, months){
+  const [y,m,d] = fechaISO.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1+months, d));
+  return dt;
+}
+function toYYYYMMDD(dt){
+  return dt.getUTCFullYear() + String(dt.getUTCMonth()+1).padStart(2,'0') + String(dt.getUTCDate()).padStart(2,'0');
+}
+function toDDMMYYYY(fechaISO){
+  const [y,m,d] = fechaISO.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderET19(p){
+  const venc = addMonthsISO(p.fecha, 22);
+  const vencISO = venc.toISOString().slice(0,10);
+  document.getElementById('et-despacho').textContent = p.despacho;
+  document.getElementById('et-fecha').textContent = toDDMMYYYY(p.fecha);
+  document.getElementById('et-venc').textContent = toDDMMYYYY(vencISO);
+
+  const start = toYYYYMMDD(venc);
+  const endDt = new Date(venc); endDt.setUTCDate(endDt.getUTCDate()+1);
+  const end = toYYYYMMDD(endDt);
+  const text = encodeURIComponent(`Vencimiento ET19 ${p.despacho} — reimportar como ZFI6`);
+  const details = encodeURIComponent(`El ET19 ${p.despacho} (oficializado el ${toDDMMYYYY(p.fecha)}) vence el ${toDDMMYYYY(vencISO)}. Debe reimportarse como ZFI6 antes de esta fecha.`);
+  const add = encodeURIComponent(CALENDAR_GUESTS.join(','));
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&add=${add}`;
+  document.getElementById('et-cal-link').href = url;
+
+  document.getElementById('et19-box').style.display = 'block';
+}
+
 async function handleFile(file){
   if(!file) return;
   document.getElementById('error-box').innerHTML='';
   document.getElementById('review-box').style.display='none';
+  document.getElementById('et19-box').style.display='none';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('loading-box').style.display='block';
   try{
@@ -263,9 +318,13 @@ async function handleFile(file){
       pages.push(content.items.map(it=>it.str).join('|'));
     }
     const parsed = parseDespacho(pages);
-    if(!parsed.items.length) throw new Error('No se encontró ningún ítem en el PDF. Revisá que sea un despacho completo (todas las páginas).');
     currentParsed = parsed;
-    await renderReview(parsed);
+    if(parsed.tipo === 'ET19'){
+      renderET19(parsed);
+    } else {
+      if(!parsed.items.length) throw new Error('No se encontró ningún ítem en el PDF. Revisá que sea un despacho completo (todas las páginas).');
+      await renderReview(parsed);
+    }
   }catch(e){
     document.getElementById('error-box').innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
   }finally{
@@ -382,6 +441,7 @@ async function confirmarCarga(){
 function resetTool(){
   currentParsed = null;
   document.getElementById('review-box').style.display='none';
+  document.getElementById('et19-box').style.display='none';
   document.getElementById('error-box').innerHTML='';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('file-inp').value='';
