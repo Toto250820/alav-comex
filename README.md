@@ -33,3 +33,51 @@ Cada vez que hagas push de cambios al HTML, el service worker los va a detectar 
 ## Nota sobre Supabase
 
 Como el backend ya es Supabase, no hace falta servidor propio: GitHub Pages solo sirve los archivos estáticos, y la app se conecta a Supabase directamente desde el navegador, igual que antes.
+
+## Colaboración: "quién está trabajando ahora"
+
+Se agregó un sistema liviano para uso simultáneo entre varias personas:
+
+- **Badge de presencia** (arriba a la derecha del header): muestra quién más tiene la app abierta y en qué sección está.
+- **Alerta de conflicto**: si dos personas están en la misma salida al mismo tiempo, aparece un aviso.
+- **Banner de novedades**: si alguien más creó/modificó una salida o un borrador mientras vos tenías la página abierta, aparece "Hay novedades — Actualizar ahora" (vos elegís cuándo recargar, para no perder lo que estás completando).
+
+Esto **no es sincronización instantánea carácter por carácter** (no es Google Docs real), es un chequeo periódico cada 15-20 segundos. Para la mayoría de los casos de uso (una persona armando una salida, otra consultando stock) alcanza y sobra.
+
+### Paso obligatorio: crear la tabla en Supabase
+
+Antes de que esto funcione, tenés que correr un SQL una sola vez:
+
+1. Entrá a [supabase.com](https://supabase.com) → tu proyecto (`itdgwactnogeilxnqdsy`)
+2. Menú lateral → **SQL Editor** → **New query**
+3. Pegá el contenido de `presence_setup.sql` (incluido en esta carpeta)
+4. **Run**
+
+Si no corrés este paso, la app funciona igual que antes — el sistema de presencia simplemente queda desactivado en silencio (no rompe nada, no tira errores visibles).
+
+La primera vez que cada persona abre la app, le va a pedir el nombre (una sola vez, queda guardado en ese dispositivo).
+
+## Cargar despachos por PDF (sin PIN, para cuando Javi no está)
+
+Se agregó una página separada, **`cargar-despacho.html`**, para cargar stock nuevo (ZFI6/ZFI8) sin pasar por el panel de Admin ni el PIN. Se accede desde el link **"📄 Cargar despacho (PDF)"** en el header de la app, o directamente en:
+
+`https://toto250820.github.io/alav-comex/cargar-despacho.html`
+
+### Cómo funciona
+
+1. Cualquiera de las 3 personas (Javier/Marina/Carina) elige su nombre.
+2. Sube el PDF del despacho (ARCA, ZFI6 o ZFI8) — arrastrando o tocando para elegir el archivo.
+3. La app lo lee sola: identifica el despacho, la fecha, los ítems, cantidades, kilos, FOB y calcula el CIF automáticamente.
+4. Cada ítem se clasifica por material según el código NCM:
+   - 🟢 **Verde ("auto")**: el NCM identifica el material sin ambigüedad (ej. Bolsa PVC, Guata, Hilo, TNT, Bies, Poliamida, Insert, Manta) — no hace falta tocar nada.
+   - 🟡 **Amarillo ("elegir")**: el NCM es compartido por varios materiales (ej. Corderito/Terciopelo/Funda comparten un mismo código, igual que Microfibra 90g/100g) — hay que elegir de un desplegable antes de poder confirmar. La app intenta adivinar, pero siempre revisable.
+5. Todo queda editable en una tabla antes de guardar — cantidad, kilos, FOB, CIF, detalle, marca de "sospechoso". Nada se carga al stock hasta tocar **"Confirmar y cargar a stock"**.
+6. Si el despacho ya estaba cargado, avisa antes de sobreescribir.
+
+### Precisión de los datos extraídos
+
+Se probó y validó campo por campo contra despachos reales ya cargados en tu stock — despacho, fecha, cantidades, kilos, FOB y CIF calculado coinciden exactamente. Aun así, como cualquier lector automático, **conviene pegarle una revisada rápida a los números antes de confirmar**, sobre todo en despachos con formato poco común.
+
+### Nota sobre seguridad
+
+Esta página **no pide PIN** a propósito, para que cualquiera de las 3 personas pueda cargar despachos sin depender de Javi. Si en algún momento querés protegerla igual, avisame y le agrego el mismo PIN que usa el panel de Admin.

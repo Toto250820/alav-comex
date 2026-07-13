@@ -97,7 +97,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 .admtab.active{border-color:var(--yw);color:var(--yw);background:var(--ybg)}
 .admpanel{display:none}.admpanel.active{display:block}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:rgba(0,0,0,.2)}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--ac)}
-@media(max-width:600px){.wrap{padding:10px}.hdr{padding:0 10px}}
+@media(max-width:600px){.wrap{padding:10px}.hdr{padding:0 10px}.presence-roster{gap:4px}.p-user{padding:3px 8px;font-size:10px}}
 /* Colaboración: presencia, banner de novedades, toast, modal de nombre */
 .presence-roster{display:flex;gap:8px;font-family:var(--mn);font-size:11px}
 .p-user{padding:4px 12px;border-radius:20px;border:1px solid var(--bd2);color:var(--tx3);background:var(--bg3);transition:all .2s;white-space:nowrap}
@@ -120,10 +120,12 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="nb" onclick="showSec('stock',this)">Stock</button>
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
     <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
+    <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr)">📄 Cargar despacho (PDF)</a>
   </div>
   <div id="presence-badge" class="presence-roster">
     <span class="p-user" id="p-javier">Javier</span>
     <span class="p-user" id="p-marina">Marina</span>
+    <span class="p-user" id="p-carina">Carina</span>
   </div>
 </div>
 <div id="update-banner" class="update-banner">
@@ -138,6 +140,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Javier')">Javier</button>
       <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Marina')">Marina</button>
+      <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Carina')">Carina</button>
     </div>
   </div>
 </div>
@@ -2538,7 +2541,7 @@ function renderPresence(rows){
   const byName = {};
   (rows||[]).forEach(r=>{ byName[r.user_label] = r; });
 
-  ['Javier','Marina'].forEach(name=>{
+  ['Javier','Marina','Carina'].forEach(name=>{
     const el = document.getElementById('p-'+name.toLowerCase());
     if(!el) return;
     const row = byName[name];

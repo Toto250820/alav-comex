@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALAV COMEX — Cargar despacho por PDF</title>
+<meta name="theme-color" content="#0f1117">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--bg:#f5f5f0;--bg2:#ffffff;--bg3:#f0f0eb;--bd:#e0ddd5;--bd2:#c8c4bc;--tx:#1a1a1a;--tx2:#5a5a5a;--tx3:#9a9a9a;--ac:#5b6ee1;--ac2:#3a50cc;--gr:#1a9e5c;--gbg:rgba(26,158,92,.08);--gbr:rgba(26,158,92,.3);--yw:#d4900a;--ybg:rgba(212,144,10,.08);--rd:#d93b3b;--rbg:rgba(217,59,59,.08);--or:#e06b1a;--orbg:rgba(224,107,26,.08);--mn:"IBM Plex Mono",monospace;--sn:"IBM Plex Sans",sans-serif;--r:10px;--rs:6px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sn);background:#b0aaa0;color:var(--tx);min-height:100vh;font-size:14px}
+.hdr{background:var(--bg2);border-bottom:1px solid var(--bd);padding:0 18px;display:flex;align-items:center;gap:16px;height:54px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.logo{font-family:var(--mn);font-size:13px;font-weight:700;color:var(--ac);white-space:nowrap;letter-spacing:.05em}
+.logo span{color:var(--tx3)}
+.back{margin-left:auto;font-size:12px;color:var(--ac);text-decoration:none;font-weight:500}
+.wrap{max-width:1000px;margin:0 auto;padding:18px}
+.card{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);padding:18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.stit{font-family:var(--mn);font-size:10px;font-weight:700;color:var(--tx3);letter-spacing:.15em;text-transform:uppercase;margin-bottom:14px;padding-left:10px;border-left:3px solid var(--ac)}
+h1{font-size:18px;margin-bottom:4px}
+.sub{font-size:13px;color:var(--tx2);margin-bottom:16px}
+.drop{border:2px dashed var(--bd2);border-radius:var(--r);padding:36px 20px;text-align:center;cursor:pointer;transition:all .15s}
+.drop:hover,.drop.drag{border-color:var(--ac);background:var(--gbg)}
+.drop input{display:none}
+.drop .ic{font-size:32px;margin-bottom:8px}
+.drop .tt{font-size:14px;font-weight:600;margin-bottom:4px}
+.drop .tt2{font-size:12px;color:var(--tx3)}
+.btn{font-family:var(--sn);font-size:13px;font-weight:600;padding:9px 18px;border-radius:var(--rs);border:1px solid var(--bd2);background:var(--bg3);color:var(--tx);cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--ac);color:var(--ac)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btnp{background:var(--ac);border-color:var(--ac);color:#fff}.btnp:hover{background:var(--ac2);border-color:var(--ac2);color:#fff}
+.btng{background:var(--gbg);border-color:var(--gr);color:var(--gr)}.btng:hover{background:var(--gr);color:#fff}
+.hdrinfo{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;margin-bottom:16px}
+.hi{display:flex;flex-direction:column;gap:2px}
+.hi label{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)}
+.hi b{font-size:14px;font-family:var(--mn)}
+.dupwarn{background:var(--ybg);border:1px solid rgba(212,144,10,.3);color:var(--yw);border-radius:var(--rs);padding:10px 14px;font-size:12px;font-weight:600;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{font-family:var(--mn);font-size:9px;font-weight:600;color:var(--tx2);padding:6px 6px;text-align:left;border-bottom:1px solid var(--bd);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;background:rgba(0,0,0,.2)}
+tbody td{padding:6px;border-bottom:1px solid var(--bd);vertical-align:middle}
+tbody tr.warn{background:rgba(212,144,10,.06)}
+select,input[type=text],input[type=number]{background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:12px;padding:5px 7px;outline:none;width:100%}
+select.needsel{border-color:var(--yw);background:var(--ybg)}
+input.narrow{width:80px}
+.mono{font-family:var(--mn);font-size:11px}
+.tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:3px;font-family:var(--mn)}
+.tag.alta{background:var(--gbg);color:var(--gr)}
+.tag.media{background:var(--ybg);color:var(--yw)}
+.tag.sin_match{background:var(--rbg);color:var(--rd)}
+.empty{text-align:center;padding:30px;color:var(--tx3);font-size:13px}
+.err{background:var(--rbg);border:1px solid rgba(217,59,59,.3);color:var(--rd);border-radius:var(--rs);padding:12px 14px;font-size:13px;margin-bottom:14px}
+.ok{background:var(--gbg);border:1px solid var(--gbr);color:var(--gr);border-radius:var(--rs);padding:14px;font-size:13px;margin-bottom:14px}
+.pincard{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);padding:28px;width:300px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.4);margin:60px auto}
+.pintit{font-family:var(--mn);font-size:13px;color:var(--ac);margin-bottom:5px;letter-spacing:.1em}
+.pinsub{font-size:12px;color:var(--tx2);margin-bottom:16px}
+.loading{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--tx2);padding:20px;justify-content:center}
+.spin{width:16px;height:16px;border:2px solid var(--bd2);border-top-color:var(--ac);border-radius:50%;animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+@media(max-width:700px){.wrap{padding:10px}.hdr{padding:0 10px}table{font-size:11px}thead th,tbody td{padding:4px}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">ALAV<span>//</span>COMEX</div>
+  <a class="back" href="./index.html">← Volver a la app</a>
+</div>
+<div class="wrap">
+
+<div id="name-gate">
+  <div class="pincard">
+    <div class="pintit">👋 ¿QUIÉN SOS?</div>
+    <div class="pinsub">Para registrar quién cargó este despacho</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btnp" style="flex:1" onclick="setUser('Javier')">Javier</button>
+      <button class="btn btnp" style="flex:1" onclick="setUser('Marina')">Marina</button>
+      <button class="btn btnp" style="flex:1" onclick="setUser('Carina')">Carina</button>
+    </div>
+  </div>
+</div>
+
+<div id="main-content" style="display:none">
+
+<div class="card">
+  <div class="stit">Cargar despacho ZFI6 / ZFI8</div>
+  <h1>📄 Subí el PDF del despacho</h1>
+  <div class="sub">La app lee el PDF, arma la lista de artículos automáticamente y te la muestra para que confirmes antes de cargarla al stock. No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
+  <div class="drop" id="drop" onclick="document.getElementById('file-inp').click()">
+    <input type="file" id="file-inp" accept="application/pdf" onchange="handleFile(this.files[0])"/>
+    <div class="ic">📄</div>
+    <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
+    <div class="tt2">Formato ARCA — despacho ZFI6 o ZFI8</div>
+  </div>
+</div>
+
+<div id="loading-box" class="card" style="display:none">
+  <div class="loading"><div class="spin"></div> Leyendo el PDF...</div>
+</div>
+
+<div id="error-box"></div>
+
+<div id="review-box" style="display:none">
+  <div class="card">
+    <div class="stit">Datos del despacho</div>
+    <div class="hdrinfo">
+      <div class="hi"><label>Despacho</label><b id="rv-despacho">—</b></div>
+      <div class="hi"><label>Fecha (oficialización)</label><b id="rv-fecha">—</b></div>
+      <div class="hi"><label>FOB Total</label><b id="rv-fob">—</b></div>
+      <div class="hi"><label>Flete Total</label><b id="rv-flete">—</b></div>
+      <div class="hi"><label>Seguro Total</label><b id="rv-seguro">—</b></div>
+    </div>
+    <div id="dup-warning"></div>
+  </div>
+
+  <div class="card">
+    <div class="stit">Revisá los ítems antes de confirmar</div>
+    <div class="sub">Los ítems en verde se clasificaron automáticamente. Los amarillos necesitan que elijas el material a mano (el resto de los datos ya está completo). Podés editar cualquier campo antes de confirmar.</div>
+    <div class="tw" style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Incl.</th><th>Ítem</th><th>NCM</th><th>Confianza</th><th>Material</th>
+          <th>Cantidad</th><th>Unidad</th><th>Kg Neto</th><th>FOB USD</th><th>CIF USD</th>
+          <th>Detalle</th><th>¿Sospech.?</th>
+        </tr></thead>
+        <tbody id="items-tbody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
+      <button class="btn btng" id="btn-confirm" onclick="confirmarCarga()" disabled>✓ Confirmar y cargar a stock</button>
+    </div>
+  </div>
+</div>
+
+<div id="success-box"></div>
+
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const SUPABASE_URL = 'https://itdgwactnogeilxnqdsy.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0ZGd3YWN0bm9nZWlseG5xZHN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMTU0NDAsImV4cCI6MjA5ODg5MTQ0MH0.2p2M81HqNSeLwxAWiTDDyalwLhwLCd_7LGe_kcPbcrY';
+async function sbFetch(endpoint, options={}) {
+  const res = await fetch(SUPABASE_URL + '/rest/v1/' + endpoint, {
+    ...options,
+    headers: {
+      'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json', 'Prefer': 'return=minimal',
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(t); }
+  try { return await res.json(); } catch(e) { return null; }
+}
+
+// ── Usuario ──────────────────────────────────────────────────────────────────
+function setUser(name){
+  localStorage.setItem('ga_user_label', name);
+  document.getElementById('name-gate').style.display='none';
+  document.getElementById('main-content').style.display='block';
+}
+(function(){
+  const u = localStorage.getItem('ga_user_label');
+  if(u){ document.getElementById('name-gate').style.display='none'; document.getElementById('main-content').style.display='block'; }
+})();
+
+// ── Diccionarios (mismos que la app principal) ──────────────────────────────
+const UNIQUE_NCM = {'5503.20.90':'guata','5807.10.00':'poliamida','5508.10.00':'hilo','5603.11.30':'tnt','5806.32.00':'bies','3923.29.90':'pvc','4911.91.00':'insert','6301.40.00':'manta'};
+const AMBIGUOUS_NCM = {'6001.92.00':['cord','cord160','terc300','terc360','terc400','funda'],'5407.52.10':['micro90','micro100'],'4823.90.99':['alma']};
+const MAT_LABELS = {guata:'Guata',poliamida:'Poliamida',hilo:'Hilo de coser',tnt:'Tejido TNT',bies:'Bies / Vivo',pvc:'Bolsa PVC',insert:'Insert',cord:'Corderito 180g',cord160:'Corderito 160g',terc300:'Terciopelo 300g',terc360:'Terciopelo 360g',terc400:'Terciopelo 400g',funda:'Funda Kits',micro90:'Microfibra 90g',micro100:'Microfibra 100g',alma:'Alma',manta:'Manta Cacharel'};
+const CANCEL_UNIT = {guata:'kg',tnt:'kg',cord:'kg',cord160:'kg',terc300:'kg',terc360:'kg',terc400:'kg',funda:'kg',hilo:'m',bies:'m',pvc:'u',insert:'u',poliamida:'m',manta:'u',micro90:'m',micro100:'m',alma:'u'};
+const ALL_MATS = Object.keys(MAT_LABELS);
+
+function num(s){ if(!s) return 0; return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0; }
+
+function classify(ncmShort, aiText, zaGsm){
+  if(UNIQUE_NCM[ncmShort]) return {material:UNIQUE_NCM[ncmShort], confidence:'alta'};
+  const cands = AMBIGUOUS_NCM[ncmShort];
+  if(!cands) return {material:null, confidence:'sin_match', candidatos: ALL_MATS};
+  const ai = (aiText||'').toUpperCase();
+  if(ai.includes('ALMA')) return {material:'alma', confidence:'media'};
+  if(cands.length===1 && cands[0]==='alma') return {material:null, confidence:'sin_match', candidatos:cands};
+  if(zaGsm){
+    const g = parseInt(zaGsm);
+    const byGsm = {160:'cord160',180:'cord',300:'terc300',360:'terc360',400:'terc400',90:'micro90',100:'micro100'};
+    if(byGsm[g] && cands.includes(byGsm[g])) return {material:byGsm[g], confidence:'media'};
+  }
+  if(ai.includes('SHERPA')) return {material:'cord160', confidence:'media'};
+  if(ai.includes('SHURA'))  return {material:'terc360', confidence:'media'};
+  if(ai.includes('FUNDA') || ai.includes('KIT')) return {material:'funda', confidence:'media'};
+  return {material:null, confidence:'sin_match', candidatos:cands};
+}
+
+function parseDespacho(fullPagesText) {
+  const page1 = fullPagesText[0].replace(/\|/g,' ').replace(/\s+/g,' ');
+  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
+  if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de despacho ZFI6/ZFI8 de ARCA?');
+  const despacho = hdrM[1]+hdrM[2]+hdrM[3]+hdrM[4]+hdrM[5];
+  const [dd,mm,yyyy] = hdrM[6].split('/');
+  const fecha = `${yyyy}-${mm}-${dd}`;
+
+  const totM = page1.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+Pagos/);
+  if(!totM) throw new Error('No se pudieron leer los totales de FOB/Flete/Seguro del despacho.');
+  const fob_desp = num(totM[1]), flete_desp = num(totM[2]), seguro_desp = num(totM[3]);
+
+  const items = [];
+  fullPagesText.forEach((raw) => {
+    const text = raw.replace(/\|/g,' ').replace(/\s+/g,' ');
+    const itemRe = /(\d{4})\s+N\s+Tipo\s+Posici[oó]n SIM \/ C[oó]digo AFIP\s+([\d.]+)[A-Z]?\s+\*+\s+NALADISA/g;
+    let im;
+    while((im = itemRe.exec(text))){
+      const itemNum = parseInt(im[1]);
+      const ncmFull = im[2];
+      const ncmShort = ncmFull.split('.').slice(0,3).join('.');
+      const kgM = text.slice(im.index).match(/^[\s\S]{0,400}?([\d.]+,\d+)\s+Total Kg\. Neto/);
+      const kgs_neto = kgM ? num(kgM[1]) : null;
+      const valBlockM = text.slice(im.index).match(/a\)\s*Opciones\s*\/\s*b\)\s*Ventajas\s+(\S+)\s+([\d.]+,\d+)\s+([\d.]+,\d+)\s+([\d.]+,\d+)/);
+      const unidad = valBlockM ? valBlockM[1] : null;
+      const cantidad = valBlockM ? num(valBlockM[2]) : null;
+      const fobDolar = valBlockM ? num(valBlockM[4]) : null;
+      const preText = text.slice(0, im.index + text.slice(im.index).indexOf('a) Opciones'));
+      const unitM = preText.match(/([\d.]+,\d+)\s*$/);
+      const unitario = unitM ? num(unitM[1]) : null;
+      const nearby = text.slice(im.index, im.index+2000);
+      const aiM = nearby.match(/AI\(([^)]*)\)/);
+      const zaM = nearby.match(/ZA\((\d+)GSM\)/i);
+      const cls = classify(ncmShort, aiM ? aiM[1] : '', zaM ? zaM[1] : null);
+      const cif = fobDolar!==null ? Math.round((fobDolar * (1 + (flete_desp+seguro_desp)/fob_desp))*100)/100 : null;
+      items.push({item:itemNum, subitem:0, ncm:ncmShort, kgs_neto, unidad, cantidad, fob:fobDolar, unitario, cif,
+        ai: aiM ? aiM[1] : null, material: cls.material, confidence: cls.confidence, candidatos: cls.candidatos||null});
+    }
+  });
+  return {despacho, fecha, fob_desp, flete_desp, seguro_desp, items};
+}
+
+// ── UI: drag & drop ──────────────────────────────────────────────────────────
+const dropEl = document.getElementById('drop');
+['dragenter','dragover'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.remove('drag');}));
+dropEl.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+
+let currentParsed = null;
+
+async function handleFile(file){
+  if(!file) return;
+  document.getElementById('error-box').innerHTML='';
+  document.getElementById('review-box').style.display='none';
+  document.getElementById('success-box').innerHTML='';
+  document.getElementById('loading-box').style.display='block';
+  try{
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+    const pages = [];
+    for(let i=1;i<=doc.numPages;i++){
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map(it=>it.str).join('|'));
+    }
+    const parsed = parseDespacho(pages);
+    if(!parsed.items.length) throw new Error('No se encontró ningún ítem en el PDF. Revisá que sea un despacho completo (todas las páginas).');
+    currentParsed = parsed;
+    await renderReview(parsed);
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+  }finally{
+    document.getElementById('loading-box').style.display='none';
+  }
+}
+
+async function renderReview(p){
+  document.getElementById('rv-despacho').textContent = p.despacho;
+  document.getElementById('rv-fecha').textContent = p.fecha;
+  document.getElementById('rv-fob').textContent = 'USD ' + p.fob_desp.toFixed(2);
+  document.getElementById('rv-flete').textContent = 'USD ' + p.flete_desp.toFixed(2);
+  document.getElementById('rv-seguro').textContent = 'USD ' + p.seguro_desp.toFixed(2);
+
+  // chequeo de duplicado
+  const dupBox = document.getElementById('dup-warning');
+  dupBox.innerHTML = '';
+  try{
+    const existing = await sbFetch('stock_base?select=id&despacho=eq.'+encodeURIComponent(p.despacho)+'&limit=1', {method:'GET', headers:{'Prefer':''}});
+    if(existing && existing.length){
+      dupBox.innerHTML = `<div class="dupwarn">⚠️ Este despacho (${p.despacho}) ya tiene registros cargados en el stock. Si confirmás, se van a actualizar/sobreescribir los ítems que coincidan.</div>`;
+    }
+  }catch(e){ /* si falla el chequeo, seguimos igual */ }
+
+  const tbody = document.getElementById('items-tbody');
+  tbody.innerHTML = p.items.map((it, i) => {
+    const opts = (it.confidence==='sin_match' ? it.candidatos : ALL_MATS).map(m=>
+      `<option value="${m}" ${it.material===m?'selected':''}>${MAT_LABELS[m]}</option>`
+    ).join('') + `<option value="" ${!it.material?'selected':''}>— elegir —</option>`;
+    const detalleDefault = it.material ? `${MAT_LABELS[it.material]} ${it.ncm} - ${it.unitario!=null?it.unitario:''} USD/${CANCEL_UNIT[it.material]||'u'}` : (it.ai||'');
+    return `<tr id="row-${i}" class="${it.confidence==='sin_match'?'warn':''}">
+      <td style="text-align:center"><input type="checkbox" id="inc-${i}" checked onchange="updateSubmitState()"></td>
+      <td class="mono">${it.item}</td>
+      <td class="mono">${it.ncm}${it.ai?`<div style="font-size:10px;color:var(--tx3)">${it.ai}</div>`:''}</td>
+      <td><span class="tag ${it.confidence}">${it.confidence==='alta'?'✓ auto':it.confidence==='media'?'~ probable':'⚠ elegir'}</span></td>
+      <td><select id="mat-${i}" class="${it.confidence==='sin_match'?'needsel':''}" onchange="onMatChange(${i})">${opts}</select></td>
+      <td><input type="number" step="0.01" class="narrow mono" id="cant-${i}" value="${it.cantidad!=null?it.cantidad:''}"></td>
+      <td><input type="text" class="narrow mono" id="uni-${i}" value="${it.unidad||''}"></td>
+      <td><input type="number" step="0.01" class="narrow mono" id="kg-${i}" value="${it.kgs_neto!=null?it.kgs_neto:''}"></td>
+      <td><input type="number" step="0.01" class="narrow mono" id="fob-${i}" value="${it.fob!=null?it.fob:''}"></td>
+      <td><input type="number" step="0.01" class="narrow mono" id="cif-${i}" value="${it.cif!=null?it.cif:''}"></td>
+      <td><input type="text" id="det-${i}" value="${detalleDefault}" style="min-width:160px"></td>
+      <td style="text-align:center"><input type="checkbox" id="sosp-${i}"></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('review-box').style.display='block';
+  updateSubmitState();
+}
+
+function onMatChange(i){
+  const mat = document.getElementById('mat-'+i).value;
+  const sel = document.getElementById('mat-'+i);
+  sel.classList.toggle('needsel', !mat);
+  const det = document.getElementById('det-'+i);
+  const it = currentParsed.items[i];
+  if(mat) det.value = `${MAT_LABELS[mat]} ${it.ncm} - ${it.unitario!=null?it.unitario:''} USD/${CANCEL_UNIT[mat]||'u'}`;
+  document.getElementById('row-'+i).classList.toggle('warn', !mat);
+  updateSubmitState();
+}
+
+function updateSubmitState(){
+  let ok = true, anyIncluded = false;
+  currentParsed.items.forEach((it,i)=>{
+    const inc = document.getElementById('inc-'+i).checked;
+    if(inc){ anyIncluded = true; if(!document.getElementById('mat-'+i).value) ok = false; }
+  });
+  document.getElementById('btn-confirm').disabled = !(ok && anyIncluded);
+}
+
+async function confirmarCarga(){
+  const btn = document.getElementById('btn-confirm');
+  btn.disabled = true; btn.textContent = 'Cargando...';
+  const p = currentParsed;
+  const rows = [];
+  p.items.forEach((it,i)=>{
+    if(!document.getElementById('inc-'+i).checked) return;
+    const mat = document.getElementById('mat-'+i).value;
+    if(!mat) return;
+    const despacho = p.despacho;
+    const item = it.item, subitem = it.subitem;
+    rows.push({
+      id: despacho+'_'+item+'_'+subitem,
+      material: mat, despacho, item, subitem,
+      cantidad: parseFloat(document.getElementById('cant-'+i).value)||0,
+      cancel_qty: 0,
+      cancel_unit: CANCEL_UNIT[mat]||'kg',
+      unidad: document.getElementById('uni-'+i).value||'KILOGRAMO',
+      fob: parseFloat(document.getElementById('fob-'+i).value)||0,
+      cif: parseFloat(document.getElementById('cif-'+i).value)||0,
+      kgs_neto: parseFloat(document.getElementById('kg-'+i).value)||0,
+      producto: MAT_LABELS[mat]||'',
+      detalle: document.getElementById('det-'+i).value||'',
+      fecha: p.fecha,
+      sospechoso: document.getElementById('sosp-'+i).checked,
+      fob_desp: p.fob_desp, flete_desp: p.flete_desp, seguro_desp: p.seguro_desp
+    });
+  });
+  try{
+    await sbFetch('stock_base', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify(rows)
+    });
+    const who = localStorage.getItem('ga_user_label')||'alguien';
+    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Despacho <b>${p.despacho}</b> cargado al stock (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}. <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
+    document.getElementById('review-box').style.display='none';
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error al guardar en Supabase: ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = '✓ Confirmar y cargar a stock';
+  }
+}
+
+function resetTool(){
+  currentParsed = null;
+  document.getElementById('review-box').style.display='none';
+  document.getElementById('error-box').innerHTML='';
+  document.getElementById('success-box').innerHTML='';
+  document.getElementById('file-inp').value='';
+}
+</script>
+</body>
+</html>
