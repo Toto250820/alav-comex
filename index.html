@@ -98,6 +98,16 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 .admpanel{display:none}.admpanel.active{display:block}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:rgba(0,0,0,.2)}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--ac)}
 @media(max-width:600px){.wrap{padding:10px}.hdr{padding:0 10px}}
+/* Colaboración: presencia, banner de novedades, toast, modal de nombre */
+.presence-roster{display:flex;gap:8px;font-family:var(--mn);font-size:11px}
+.p-user{padding:4px 12px;border-radius:20px;border:1px solid var(--bd2);color:var(--tx3);background:var(--bg3);transition:all .2s;white-space:nowrap}
+.p-user::before{content:'●';margin-right:5px;font-size:9px}
+.p-user.online{color:var(--gr);border-color:var(--gbr);background:var(--gbg)}
+.update-banner{display:none;background:var(--ybg);border-bottom:1px solid rgba(212,144,10,.3);color:var(--yw);font-size:12px;font-weight:600;padding:8px 18px;align-items:center;justify-content:center;gap:10px;position:sticky;top:54px;z-index:99}
+.update-banner button{font-family:var(--sn);font-size:11px;font-weight:600;padding:4px 12px;border-radius:var(--rs);border:1px solid var(--yw);background:var(--yw);color:#000;cursor:pointer}
+.toast-wrap{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:999;display:flex;flex-direction:column;gap:6px;align-items:center;width:100%;pointer-events:none}
+.toast{background:#1a1a1a;color:#fff;border:1px solid var(--yw);font-size:12px;padding:9px 16px;border-radius:var(--rs);box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90vw;text-align:center}
+#name-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:998;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
@@ -111,7 +121,27 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
     <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
   </div>
+  <div id="presence-badge" class="presence-roster">
+    <span class="p-user" id="p-javier">Javier</span>
+    <span class="p-user" id="p-marina">Marina</span>
+  </div>
 </div>
+<div id="update-banner" class="update-banner">
+  <span>🔄 Hay novedades cargadas por otra persona</span>
+  <button onclick="location.reload()">Actualizar ahora</button>
+  <button onclick="dismissUpdateBanner()" style="background:none;border-color:var(--tx3);color:var(--tx3)">Después</button>
+</div>
+<div id="name-modal">
+  <div class="pincard">
+    <div class="pintit">👋 ¿QUIÉN SOS?</div>
+    <div class="pinsub">Elegí tu nombre para identificarte</div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Javier')">Javier</button>
+      <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Marina')">Marina</button>
+    </div>
+  </div>
+</div>
+<div class="toast-wrap" id="toast-wrap"></div>
 <div class="wrap">
 
 <!-- CALCULADORA -->
@@ -745,6 +775,8 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  renderHist();
   if(id==='sal')   renderSalidaHist();
+  currentSectionId = id;
+  if(typeof heartbeatPresence==='function') heartbeatPresence();
 }
 function showAdmTab(id,btn){
   document.querySelectorAll('.admpanel').forEach(p=>p.classList.remove('active'));
@@ -2428,6 +2460,137 @@ function renderAdmStock(){
   }));
   el.innerHTML=html;
 }
+
+// ═══════════════════════════════════════════
+// COLABORACIÓN — "quién está viendo esto" + aviso de novedades
+// (usa la tabla `presence` en Supabase — ver README para el SQL de creación)
+// ═══════════════════════════════════════════
+const SESSION_ID = (function(){
+  let id = sessionStorage.getItem('ga_session_id');
+  if(!id){ id = 'sx-'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); sessionStorage.setItem('ga_session_id', id); }
+  return id;
+})();
+let currentSectionId = 'calc';
+let presenceEnabled = true; // se apaga solo si la tabla no existe, para no spamear la consola
+
+function getUserLabel(){ return localStorage.getItem('ga_user_label') || ''; }
+function saveUserLabel(name){
+  localStorage.setItem('ga_user_label', name);
+  document.getElementById('name-modal').style.display = 'none';
+  heartbeatPresence();
+  fetchPresence();
+}
+function ensureUserLabel(){
+  if(!getUserLabel()){
+    document.getElementById('name-modal').style.display = 'flex';
+  }
+}
+
+function showToast(msg, ms=6000){
+  const wrap = document.getElementById('toast-wrap');
+  if(!wrap) return;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(()=>{ t.remove(); }, ms);
+}
+
+const SECTION_NAMES = {calc:'Calculadora', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin'};
+function getPresenceContext(){
+  if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
+  return null;
+}
+
+async function heartbeatPresence(){
+  if(!presenceEnabled) return;
+  const label = getUserLabel();
+  if(!label) return;
+  try{
+    await sbFetch('presence', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({
+        session_id: SESSION_ID,
+        user_label: label,
+        section: SECTION_NAMES[currentSectionId] || currentSectionId,
+        context: getPresenceContext(),
+        last_seen: new Date().toISOString()
+      })
+    });
+  }catch(e){
+    presenceEnabled = false; // probablemente la tabla no existe todavía
+    console.error('Presencia deshabilitada (¿falta crear la tabla `presence` en Supabase?):', e.message);
+  }
+}
+
+let lastConflictWarned = {};
+async function fetchPresence(){
+  if(!presenceEnabled) return;
+  try{
+    const since = new Date(Date.now() - 40000).toISOString();
+    const rows = await sbFetch('presence?select=*&last_seen=gt.'+encodeURIComponent(since), {method:'GET', headers:{'Prefer':''}});
+    renderPresence(rows||[]);
+  }catch(e){ /* silencioso: no molestar si Supabase está caído */ }
+}
+
+function renderPresence(rows){
+  const byName = {};
+  (rows||[]).forEach(r=>{ byName[r.user_label] = r; });
+
+  ['Javier','Marina'].forEach(name=>{
+    const el = document.getElementById('p-'+name.toLowerCase());
+    if(!el) return;
+    const row = byName[name];
+    el.classList.toggle('online', !!row);
+    el.title = row ? (row.section + (row.context ? (' · '+row.context) : '')) : 'Desconectado';
+  });
+
+  // Alerta de conflicto: la OTRA persona está en la MISMA salida que yo
+  const ctx = getPresenceContext();
+  const myLabel = getUserLabel();
+  if(ctx){
+    const other = (rows||[]).find(r=>r.user_label && r.user_label!==myLabel && r.context===ctx);
+    const key = ctx;
+    if(other && lastConflictWarned[key] !== true){
+      showToast('⚠️ '+other.user_label+' también está trabajando en '+ctx+' ahora mismo.');
+      lastConflictWarned[key] = true;
+    } else if(!other){
+      lastConflictWarned[key] = false;
+    }
+  }
+}
+
+// ── Aviso de novedades (salidas / borradores nuevos de otra persona) ───────────
+let lastKnownSalidaTs = null, lastKnownBorradorTs = null, updateBannerDismissed = false;
+async function checkForUpdates(){
+  try{
+    const [sal, bor] = await Promise.all([
+      sbFetch('salidas?select=ts&order=ts.desc&limit=1', {method:'GET', headers:{'Prefer':''}}),
+      sbFetch('borradores?select=updated_at&order=updated_at.desc&limit=1', {method:'GET', headers:{'Prefer':''}})
+    ]);
+    const salTs = sal && sal[0] ? sal[0].ts : null;
+    const borTs = bor && bor[0] ? bor[0].updated_at : null;
+    if(lastKnownSalidaTs===null && lastKnownBorradorTs===null){
+      // primera lectura: solo establece la base, no dispara aviso
+      lastKnownSalidaTs = salTs; lastKnownBorradorTs = borTs;
+      return;
+    }
+    const hayNovedades = (salTs && salTs !== lastKnownSalidaTs) || (borTs && borTs !== lastKnownBorradorTs);
+    if(hayNovedades && !updateBannerDismissed){
+      document.getElementById('update-banner').style.display = 'flex';
+    }
+  }catch(e){ /* silencioso */ }
+}
+function dismissUpdateBanner(){
+  updateBannerDismissed = true;
+  document.getElementById('update-banner').style.display = 'none';
+}
+
+setInterval(heartbeatPresence, 15000);
+setInterval(fetchPresence, 15000);
+setInterval(checkForUpdates, 20000);
+setTimeout(()=>{ ensureUserLabel(); heartbeatPresence(); fetchPresence(); checkForUpdates(); }, 1200);
 
 // ── PWA: registro del service worker ────────────────────────────────────────
 if ('serviceWorker' in navigator) {
