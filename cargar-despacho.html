@@ -87,12 +87,12 @@ input.narrow{width:80px}
 <div class="card">
   <div class="stit">Cargar despacho ZFI6 / ZFI8</div>
   <h1>📄 Subí el PDF del despacho</h1>
-  <div class="sub">La app detecta sola si es un <b>ET19</b> (te calcula el vencimiento a 22 meses y te arma el recordatorio para Google Calendar) o un <b>ZFI6/ZFI8</b> (te arma la lista de artículos para cargar al stock). No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
+  <div class="sub">La app detecta sola qué tipo de PDF subiste: <b>ET19</b> (vencimiento a 22 meses), <b>ZFI6/ZFI8</b> (carga de stock nuevo) o <b>ZFE3</b> (descuenta el stock consumido, leyendo directo la tabla de cancelaciones del PDF — sin necesitar certificado ni carga manual de artículos). No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
   <div class="drop" id="drop" onclick="document.getElementById('file-inp').click()">
     <input type="file" id="file-inp" accept="application/pdf" onchange="handleFile(this.files[0])"/>
     <div class="ic">📄</div>
     <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
-    <div class="tt2">Formato ARCA — ET19, ZFI6 o ZFI8</div>
+    <div class="tt2">Formato ARCA — ET19, ZFI6, ZFI8 o ZFE3</div>
   </div>
 </div>
 
@@ -114,6 +114,35 @@ input.narrow{width:80px}
     <div class="actions" style="justify-content:flex-start">
       <a id="et-cal-link" class="btn btnp" style="text-decoration:none" href="#" target="_blank">📅 Agregar a Google Calendar (los 3 invitados)</a>
       <button class="btn" onclick="resetTool()">Cargar otro PDF</button>
+    </div>
+  </div>
+</div>
+
+<div id="zfe3-box" style="display:none">
+  <div class="card">
+    <div class="stit">ZFE3 — Descuento de stock</div>
+    <div class="hdrinfo">
+      <div class="hi"><label>Despacho ZFE3</label><b id="zf-despacho">—</b></div>
+      <div class="hi"><label>Fecha (oficialización)</label><b id="zf-fecha">—</b></div>
+      <div class="hi"><label>Ítems a descontar</label><b id="zf-count">—</b></div>
+    </div>
+    <div id="zf-dup-warning"></div>
+  </div>
+  <div class="card">
+    <div class="stit">Revisá el descuento antes de confirmar</div>
+    <div class="sub">Esto se calculó leyendo la tabla "Destinaciones que se Cancelan" del PDF — no hace falta certificado ni carga manual de artículos. Los renglones en rojo no alcanzan stock disponible; revisalos antes de confirmar.</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Incl.</th><th>Despacho consumido</th><th>Material</th><th>Disponible</th>
+          <th>A descontar</th><th>Queda</th><th>Estado</th>
+        </tr></thead>
+        <tbody id="zfe3-tbody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
+      <button class="btn btng" id="btn-confirm-zfe3" onclick="confirmarZFE3()" disabled>✓ Confirmar y descontar stock</button>
     </div>
   </div>
 </div>
@@ -215,8 +244,8 @@ function classify(ncmShort, aiText, zaGsm){
 
 function parseDespacho(fullPagesText) {
   const page1 = fullPagesText[0].replace(/\|/g,' ').replace(/\s+/g,' ');
-  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d|ET19)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
-  if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de ARCA (ZFI6/ZFI8/ET19)?');
+  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d|ET19|ZFE3)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
+  if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de ARCA (ZFI6/ZFI8/ET19/ZFE3)?');
   const despacho = hdrM[1]+hdrM[2]+hdrM[3]+hdrM[4]+hdrM[5];
   const tipo = hdrM[3];
   const [dd,mm,yyyy] = hdrM[6].split('/');
@@ -227,6 +256,22 @@ function parseDespacho(fullPagesText) {
 
   if(tipo === 'ET19'){
     return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, items: []};
+  }
+
+  if(tipo === 'ZFE3'){
+    const rowRe = /(\d{2}\d{3}[A-Z0-9]{4}\d{6}[A-Z])\s+([\d.]+[A-Z])\s+(\d{4})\s+(\d{4})\s+([\d.]+,\d+)\s+(\d+)/g;
+    const consumosMap = {};
+    fullPagesText.forEach(raw=>{
+      const text = raw.replace(/\|/g,' ').replace(/\s+/g,' ');
+      let m;
+      while((m = rowRe.exec(text))){
+        const desp = m[1], ncm = m[2], it = parseInt(m[3]), sub = parseInt(m[4]), cant = num(m[5]);
+        const key = desp+'_'+it+'_'+sub;
+        if(!consumosMap[key]) consumosMap[key] = {despacho:desp, item:it, subitem:sub, ncm, cantidad:0};
+        consumosMap[key].cantidad += cant;
+      }
+    });
+    return {despacho, tipo, fecha, consumos: Object.values(consumosMap)};
   }
 
   const items = [];
@@ -301,11 +346,100 @@ function renderET19(p){
   document.getElementById('et19-box').style.display = 'block';
 }
 
+async function renderZFE3(p){
+  document.getElementById('zf-despacho').textContent = p.despacho;
+  document.getElementById('zf-fecha').textContent = toDDMMYYYY(p.fecha);
+  document.getElementById('zf-count').textContent = p.consumos.length;
+
+  const dupBox = document.getElementById('zf-dup-warning');
+  dupBox.innerHTML = '';
+  try{
+    const prev = await sbFetch('zfe3_procesados?select=*&despacho=eq.'+encodeURIComponent(p.despacho), {method:'GET', headers:{'Prefer':''}});
+    if(prev && prev.length){
+      const r = prev[0];
+      dupBox.innerHTML = `<div class="dupwarn">⚠️ Este ZFE3 (${p.despacho}) ya fue procesado el ${new Date(r.procesado_en).toLocaleString('es-AR')} por ${r.procesado_por}. Si confirmás igual, el stock se va a descontar OTRA VEZ — asegurate de que no sea un duplicado antes de continuar.</div>`;
+    }
+  }catch(e){ /* si la tabla no existe todavía, seguimos sin bloquear */ }
+
+  // traer stock actual para cada id involucrado
+  const ids = p.consumos.map(c=>c.despacho+'_'+c.item+'_'+c.subitem);
+  let stockRows = [];
+  try{
+    const idsParam = ids.map(id=>`"${id}"`).join(',');
+    stockRows = await sbFetch('stock_base?select=*&id=in.('+idsParam+')', {method:'GET', headers:{'Prefer':''}}) || [];
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error consultando el stock: ${e.message}</div>`;
+  }
+  const stockById = {};
+  stockRows.forEach(r=>stockById[r.id]=r);
+
+  const tbody = document.getElementById('zfe3-tbody');
+  tbody.innerHTML = p.consumos.map((c,i)=>{
+    const id = c.despacho+'_'+c.item+'_'+c.subitem;
+    const row = stockById[id];
+    if(!row){
+      return `<tr class="warn">
+        <td style="text-align:center"><input type="checkbox" id="zi-${i}" disabled></td>
+        <td class="mono">${id}</td>
+        <td colspan="4" style="color:var(--rd)">No encontrado en tu stock — no se puede descontar</td>
+        <td><span class="tag sin_match">⚠ falta</span></td>
+      </tr>`;
+    }
+    const disponible = (row.cantidad||0) - (row.cancel_qty||0);
+    const nuevoSaldo = disponible - c.cantidad;
+    const noAlcanza = nuevoSaldo < -0.01;
+    return `<tr class="${noAlcanza?'warn':''}" id="zrow-${i}">
+      <td style="text-align:center"><input type="checkbox" id="zi-${i}" checked data-id="${id}" data-cantidad="${c.cantidad}" data-cancelqty="${row.cancel_qty||0}"></td>
+      <td class="mono">${id}</td>
+      <td>${row.producto||'—'}</td>
+      <td class="mono">${disponible.toFixed(2)} ${row.cancel_unit||''}</td>
+      <td class="mono">${c.cantidad.toFixed(2)} ${row.cancel_unit||''}</td>
+      <td class="mono" style="color:${noAlcanza?'var(--rd)':'var(--tx)'}">${nuevoSaldo.toFixed(2)} ${row.cancel_unit||''}</td>
+      <td><span class="tag ${noAlcanza?'sin_match':'alta'}">${noAlcanza?'⚠ no alcanza':'✓ ok'}</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('zfe3-box').style.display = 'block';
+  document.getElementById('btn-confirm-zfe3').disabled = false;
+}
+
+async function confirmarZFE3(){
+  const btn = document.getElementById('btn-confirm-zfe3');
+  btn.disabled = true; btn.textContent = 'Descontando...';
+  const p = currentParsed;
+  let ok = 0, fail = 0;
+  for(let i=0;i<p.consumos.length;i++){
+    const chk = document.getElementById('zi-'+i);
+    if(!chk || !chk.checked || chk.disabled) continue;
+    const id = chk.dataset.id;
+    const nuevoCancelQty = parseFloat(chk.dataset.cancelqty) + parseFloat(chk.dataset.cantidad);
+    try{
+      await sbFetch('stock_base?id=eq.'+encodeURIComponent(id), {
+        method:'PATCH',
+        headers:{'Prefer':'return=minimal'},
+        body: JSON.stringify({cancel_qty: nuevoCancelQty})
+      });
+      ok++;
+    }catch(e){ fail++; }
+  }
+  try{
+    await sbFetch('zfe3_procesados', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({despacho:p.despacho, fecha:p.fecha, procesado_por: localStorage.getItem('ga_user_label')||'alguien', items_afectados: ok})
+    });
+  }catch(e){ /* si la tabla no existe, no bloqueamos el resto */ }
+
+  document.getElementById('success-box').innerHTML = `<div class="ok">✓ ZFE3 <b>${p.despacho}</b> procesado: ${ok} ítem${ok!==1?'s':''} descontado${ok!==1?'s':''} del stock${fail?` (${fail} con error)`:''}. <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
+  document.getElementById('zfe3-box').style.display='none';
+}
+
 async function handleFile(file){
   if(!file) return;
   document.getElementById('error-box').innerHTML='';
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
+  document.getElementById('zfe3-box').style.display='none';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('loading-box').style.display='block';
   try{
@@ -321,6 +455,9 @@ async function handleFile(file){
     currentParsed = parsed;
     if(parsed.tipo === 'ET19'){
       renderET19(parsed);
+    } else if(parsed.tipo === 'ZFE3'){
+      if(!parsed.consumos.length) throw new Error('No se encontró la tabla de "Destinaciones que se Cancelan" en el PDF. ¿Están todas las páginas del despacho?');
+      await renderZFE3(parsed);
     } else {
       if(!parsed.items.length) throw new Error('No se encontró ningún ítem en el PDF. Revisá que sea un despacho completo (todas las páginas).');
       await renderReview(parsed);
@@ -442,6 +579,7 @@ function resetTool(){
   currentParsed = null;
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
+  document.getElementById('zfe3-box').style.display='none';
   document.getElementById('error-box').innerHTML='';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('file-inp').value='';

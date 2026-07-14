@@ -98,3 +98,30 @@ Los 3 mails están fijos en el código de la herramienta:
 - admi.alavpico02@gmail.com
 
 Si en algún momento cambia alguno de estos mails, avisame y te actualizo el archivo.
+
+## ZFE3: descuento de stock automático (sin certificado, sin carga manual)
+
+La misma herramienta también detecta cuando subís un **ZFE3**. En vez de tocar el stock (como ZFI6/ZFI8) o el calendario (como ET19), lee directamente la tabla **"Destinaciones que se Cancelan"** que trae el PDF — ahí ya figura, para cada despacho consumido, cuánto se usó. Con eso alcanza para descontar el stock sin necesitar el certificado ni cargar artículos a mano.
+
+### Cómo funciona
+
+1. Subís el PDF del ZFE3.
+2. La app suma, para cada despacho/ítem consumido (puede repetirse varias veces dentro del mismo ZFE3 — la herramienta lo suma todo junto), cuánto se usó en total.
+3. Te muestra una tabla: qué despacho se consume, qué material es, cuánto había disponible, cuánto se va a descontar, y cuánto queda. Si algún renglón no tiene stock suficiente, se marca en rojo para que lo revises antes de confirmar.
+4. Podés destildar cualquier renglón si no querés descontarlo (por ejemplo si corresponde a un despacho que no cargás en este sistema).
+5. Al confirmar, actualiza el `cancel_qty` de cada ítem de stock correspondiente — el mismo campo que se actualiza cuando confirmás una salida manual en la app.
+6. Si el mismo ZFE3 ya fue procesado antes, te avisa (para evitar descontar el stock dos veces por error).
+
+### Paso obligatorio: crear la tabla de control en Supabase
+
+Igual que con la presencia, hace falta correr un SQL una sola vez:
+
+1. Supabase → tu proyecto → **SQL Editor** → **New query**
+2. Pegá el contenido de `zfe3_setup.sql` (incluido en esta carpeta)
+3. **Run**
+
+Sin este paso, la herramienta funciona igual (descuenta el stock), pero no te va a poder avisar si subís el mismo ZFE3 dos veces.
+
+### Sobre la integración con "Generar Salida" en la app principal
+
+Por ahora esto vive como una opción aparte en `cargar-despacho.html`, pensada para cargar el ZFE3 "por fuera del sistema" (sin pasar por el asistente de Generar Salida). Si querés que además se pueda subir el PDF directamente desde el flujo de Generar Salida dentro de la app —para que arme la salida completa en un solo paso—, avisame y lo armamos como siguiente paso; preferí hacerlo aparte primero para no arriesgar romper el flujo de Salidas que ya usás todos los días.
