@@ -343,7 +343,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="card">
         <div class="ct">Agregar despacho</div>
         <div class="fr">
-          <div class="ff" style="max-width:180px"><label>Insumo / Producto</label>
+          <div class="ff" style="max-width:170px"><label>Categoría (para agrupar stock)</label>
             <select id="adm-mat">
               <option value="">Seleccionar...</option>
               <option value="guata">Guata</option><option value="hilo">Hilo de coser</option>
@@ -354,6 +354,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
               <option value="insert">Insert</option><option value="funda">Funda Kits</option><option value="bubble">Manta BUBBLE (prod. terminado)</option><option value="manta">Manta Cacharel</option><option value="micro90">Microfibra 90g</option><option value="micro100">Microfibra 100g</option><option value="alma">Alma</option>
               <option value="poliamida">Poliamida</option>
             </select>
+          </div>
+          <div class="ff" style="max-width:220px"><label>Insumo / Producto (nombre tal cual el certificado)</label>
+            <input id="adm-nombre" placeholder="ej: ELASTIC BAND 6MM"/>
           </div>
           <div class="ff" style="max-width:220px"><label>Nº Despacho</label>
             <input id="adm-desp" placeholder="ej: 26258ZFI8000020X" style="font-family:var(--mn);font-size:12px"/>
@@ -2498,6 +2501,7 @@ function cambiarPin(){
 }
 function addStock(){
   const mat=document.getElementById('adm-mat').value;
+  const nombreInsumo=document.getElementById('adm-nombre').value.trim();
   const desp=document.getElementById('adm-desp').value.trim();
   const item=parseInt(document.getElementById('adm-item').value)||1;
   const sub=parseInt(document.getElementById('adm-sub').value)||0;
@@ -2511,21 +2515,21 @@ function addStock(){
   const det=document.getElementById('adm-det').value.trim();
   const msg=document.getElementById('adm-msg');
   msg.style.display='block';
-  if(!mat||!desp||!fecha||isNaN(cant)||isNaN(cancel)){msg.style.color='var(--rd)';msg.textContent='Completá todos los campos.';return;}
+  if(!mat||!nombreInsumo||!desp||!fecha||isNaN(cant)||isNaN(cancel)){msg.style.color='var(--rd)';msg.textContent='Completá todos los campos, incluyendo el nombre del insumo.';return;}
 
   // Chequeo de duplicado: ¿ya existe este despacho/ítem/subítem en el stock (cargado antes, en cualquier material)?
   const existente = buscarEnStock(desp, item, sub);
   if(existente){
-    const ok = confirm(`⚠️ ATENCIÓN — POSIBLE DUPLICADO\n\nEl despacho ${desp}, ítem ${item}, subítem ${sub} ya está cargado en el stock:\n\n• Material: ${MAT_LABELS[existente.mat]||existente.mat}\n• Cantidad: ${existente.row.cantidad} ${existente.row.unidad}\n• Fecha: ${existente.row.fecha}\n• Origen: ${existente.origen}\n\n¿Confirmás que igual querés cargarlo de nuevo? Esto va a DUPLICAR el registro.`);
+    const ok = confirm(`⚠️ ATENCIÓN — POSIBLE DUPLICADO\n\nEl despacho ${desp}, ítem ${item}, subítem ${sub} ya está cargado en el stock:\n\n• Insumo: ${existente.row.producto||MAT_LABELS[existente.mat]||existente.mat}\n• Cantidad: ${existente.row.cantidad} ${existente.row.unidad}\n• Fecha: ${existente.row.fecha}\n• Origen: ${existente.origen}\n\n¿Confirmás que igual querés cargarlo de nuevo? Esto va a DUPLICAR el registro.`);
     if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; return; }
   }
 
   const cu=CANCEL_UNIT[mat]||'kg';
   if(!stockExtra[mat]) stockExtra[mat]=[];
-  stockExtra[mat].push({despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cancel:0,unidad,fob,cif:0,producto:'',detalle:det,fecha,sospechoso:false,cancel_qty:cancel,cancel_unit:cu,fob_desp:fob,flete_desp:flete,seguro_desp:seguro});
+  stockExtra[mat].push({despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cancel:0,unidad,fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,cancel_qty:cancel,cancel_unit:cu,fob_desp:fob,flete_desp:flete,seguro_desp:seguro});
   save(); renderAdmStock();
-  msg.style.color='var(--gr)'; msg.textContent=`✓ ${desp} agregado.`;
-  ['adm-desp','adm-cant','adm-cancel','adm-fob','adm-det'].forEach(id=>document.getElementById(id).value='');
+  msg.style.color='var(--gr)'; msg.textContent=`✓ ${desp} (${nombreInsumo}) agregado.`;
+  ['adm-desp','adm-cant','adm-cancel','adm-fob','adm-det','adm-nombre'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
 }
@@ -2552,7 +2556,7 @@ function renderAdmStock(){
   keys.forEach(k=>stockExtra[k].forEach((r,i)=>{
     const cu=r.cancel_unit||CANCEL_UNIT[k];
     html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
-      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — <strong>${fmt(r.cancel_qty||0)} ${cu}</strong> ${fmtU(r.fob)}</div>
+      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cancel_qty||0)} ${cu}</strong> ${fmtU(r.fob)}</div>
       <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
     </div>`;
   }));
