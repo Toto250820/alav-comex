@@ -370,7 +370,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           <div class="ff" style="max-width:120px"><label>Unidad</label>
             <select id="adm-unidad"><option value="KILOGRAMO">KILOGRAMO</option><option value="METRO">METRO</option><option value="UNIDAD">UNIDAD</option></select>
           </div>
-          <div class="ff" style="max-width:130px"><label>NCM</label><input id="adm-ncm" placeholder="ej: 6002.40.90"/></div>
+          <div class="ff" style="max-width:130px"><label>NCM</label><input id="adm-ncm" placeholder="ej: 6002.40.90" onblur="formatNCM(this)"/></div>
           <div class="ff" style="max-width:110px"><label>% Derecho Imp.</label><input id="adm-derecho" type="number" step="0.01" placeholder="ej: 18"/></div>
         </div>
         <div class="fr">
@@ -381,7 +381,8 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         </div>
         <div class="fr"><div class="ff"><label>Detalle</label><input id="adm-det" placeholder="ej: TELA 300GSM 260cm"/></div></div>
         <div style="font-size:10px;color:var(--tx3);margin:2px 0 8px;font-style:italic">La cantidad que cargues acá arranca 100% disponible — se va descontando sola a medida que confirmás salidas o cargás un ZFE3, no hace falta indicar cuánto ya se usó.</div>
-        <button class="btn btnp" onclick="addStock()">+ Agregar</button>
+        <button class="btn btnp" id="adm-submit-btn" onclick="addStock()">+ Agregar</button>
+        <button class="btn" id="adm-cancel-edit-btn" onclick="cancelarEdicionStock()" style="display:none">✕ Cancelar edición</button>
         <div id="adm-msg" style="margin-top:8px;font-size:12px;display:none"></div>
       </div>
       <div class="card"><div class="ct">Despachos cargados manualmente</div><div id="adm-stock-lista"><div class="empty">Ninguno.</div></div></div>
@@ -2511,6 +2512,61 @@ function cambiarPin(){
   msg.style.color='var(--gr)'; msg.textContent='PIN actualizado.';
   ['pa','pn','pc'].forEach(id=>document.getElementById(id).value='');
 }
+let editandoStock = null; // {mat, index} cuando se está editando un registro existente, null si no
+
+function editAdmStock(mat, i){
+  const r = stockExtra[mat][i];
+  if(!r) return;
+  editandoStock = {mat, index:i};
+
+  // Si la categoría es una fija conocida (no una creada por nombre), la preseleccionamos; sino, dejamos "🆕 Nueva"
+  const matSelect = document.getElementById('adm-mat');
+  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','alma','poliamida'].includes(mat);
+  matSelect.value = esFija ? mat : '';
+
+  document.getElementById('adm-nombre').value = r.producto||'';
+  document.getElementById('adm-desp').value = r.despacho;
+  document.getElementById('adm-item').value = r.item;
+  document.getElementById('adm-sub').value = r.subitem;
+  document.getElementById('adm-fecha').value = r.fecha||'';
+  document.getElementById('adm-cant').value = r.cantidad;
+  document.getElementById('adm-unidad').value = r.unidad||'KILOGRAMO';
+  document.getElementById('adm-ncm').value = r.ncm||'';
+  if(r.ncm) formatNCM(document.getElementById('adm-ncm'));
+  document.getElementById('adm-derecho').value = r.derecho_pct!=null ? r.derecho_pct : '';
+  document.getElementById('adm-fob').value = r.fob||'';
+  document.getElementById('adm-fobdesp').value = r.fob_desp||'';
+  document.getElementById('adm-flete').value = r.flete_desp||0;
+  document.getElementById('adm-seguro').value = r.seguro_desp||0;
+  document.getElementById('adm-det').value = r.detalle||'';
+
+  document.getElementById('adm-submit-btn').textContent = '✓ Guardar cambios';
+  document.getElementById('adm-cancel-edit-btn').style.display = 'inline-block';
+  const msg=document.getElementById('adm-msg');
+  msg.style.display='block'; msg.style.color='var(--ac)';
+  msg.textContent=`✎ Editando: ${r.despacho} ít.${r.item}.${r.subitem} — ${r.producto||''}. El "Disponible" (${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${r.cancel_unit||''}) no se toca al editar.`;
+  document.getElementById('adm-desp').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelarEdicionStock(){
+  editandoStock = null;
+  ['adm-desp','adm-cant','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
+  document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
+  document.getElementById('adm-mat').value='';
+  document.getElementById('adm-submit-btn').textContent = '+ Agregar';
+  document.getElementById('adm-cancel-edit-btn').style.display = 'none';
+  document.getElementById('adm-msg').style.display='none';
+}
+
+function formatNCM(el){
+  const digits = el.value.replace(/[^0-9]/g,'').slice(0,8);
+  let out = digits;
+  if(digits.length>4) out = digits.slice(0,4)+'.'+digits.slice(4,6);
+  if(digits.length>6) out = digits.slice(0,4)+'.'+digits.slice(4,6)+'.'+digits.slice(6,8);
+  el.value = out;
+}
+
 function slugify(txt){
   return txt.toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'') // saca acentos
     .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'insumo';
@@ -2552,10 +2608,31 @@ function addStock(){
   }
 
   // Chequeo de duplicado: ¿ya existe este despacho/ítem/subítem en el stock (cargado antes, en cualquier material)?
+  // Si estamos editando ESE MISMO registro, no cuenta como duplicado.
   const existente = buscarEnStock(desp, item, sub);
-  if(existente){
+  const esElMismoQueEditamos = editandoStock && existente && existente.mat===mat && existente.row===stockExtra[editandoStock.mat]?.[editandoStock.index];
+  if(existente && !esElMismoQueEditamos){
     const ok = confirm(`⚠️ ATENCIÓN — POSIBLE DUPLICADO\n\nEl despacho ${desp}, ítem ${item}, subítem ${sub} ya está cargado en el stock:\n\n• Insumo: ${existente.row.producto||MAT_LABELS[existente.mat]||existente.mat}\n• Cantidad: ${existente.row.cantidad} ${existente.row.unidad}\n• Fecha: ${existente.row.fecha}\n• Origen: ${existente.origen}\n\n¿Confirmás que igual querés cargarlo de nuevo? Esto va a DUPLICAR el registro.`);
     if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; return; }
+  }
+
+  if(editandoStock){
+    // Actualizar el registro existente, conservando lo ya consumido (cancel_qty)
+    const cancelQtyPrevio = stockExtra[editandoStock.mat][editandoStock.index].cancel_qty || 0;
+    stockExtra[editandoStock.mat].splice(editandoStock.index, 1);
+    if(!stockExtra[editandoStock.mat].length) delete stockExtra[editandoStock.mat];
+    if(!stockExtra[mat]) stockExtra[mat]=[];
+    stockExtra[mat].push({
+      despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cant:0,unidad,
+      fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,
+      cancel_qty:cancelQtyPrevio,cancel_unit:cu,
+      fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
+      ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho
+    });
+    save(); renderAdmStock();
+    msg.style.color='var(--gr)'; msg.textContent=`✓ ${desp} (${nombreInsumo}) actualizado.`;
+    cancelarEdicionStock();
+    return;
   }
 
   if(!stockExtra[mat]) stockExtra[mat]=[];
@@ -2597,7 +2674,10 @@ function renderAdmStock(){
     const cu=r.cancel_unit||CANCEL_UNIT[k];
     html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
       <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cancel_qty||0)} ${cu}</strong> ${fmtU(r.fob)}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
-      <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn" style="padding:4px 10px;font-size:11px" onclick="editAdmStock('${k}',${i})">✎ Editar</button>
+        <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
+      </div>
     </div>`;
   }));
   el.innerHTML=html;
