@@ -343,7 +343,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="card">
         <div class="ct">Agregar despacho</div>
         <div class="fr">
-          <div class="ff" style="max-width:180px"><label>Materia prima</label>
+          <div class="ff" style="max-width:180px"><label>Insumo / Producto</label>
             <select id="adm-mat">
               <option value="">Seleccionar...</option>
               <option value="guata">Guata</option><option value="hilo">Hilo de coser</option>
@@ -2512,6 +2512,14 @@ function addStock(){
   const msg=document.getElementById('adm-msg');
   msg.style.display='block';
   if(!mat||!desp||!fecha||isNaN(cant)||isNaN(cancel)){msg.style.color='var(--rd)';msg.textContent='Completá todos los campos.';return;}
+
+  // Chequeo de duplicado: ¿ya existe este despacho/ítem/subítem en el stock (cargado antes, en cualquier material)?
+  const existente = buscarEnStock(desp, item, sub);
+  if(existente){
+    const ok = confirm(`⚠️ ATENCIÓN — POSIBLE DUPLICADO\n\nEl despacho ${desp}, ítem ${item}, subítem ${sub} ya está cargado en el stock:\n\n• Material: ${MAT_LABELS[existente.mat]||existente.mat}\n• Cantidad: ${existente.row.cantidad} ${existente.row.unidad}\n• Fecha: ${existente.row.fecha}\n• Origen: ${existente.origen}\n\n¿Confirmás que igual querés cargarlo de nuevo? Esto va a DUPLICAR el registro.`);
+    if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; return; }
+  }
+
   const cu=CANCEL_UNIT[mat]||'kg';
   if(!stockExtra[mat]) stockExtra[mat]=[];
   stockExtra[mat].push({despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cancel:0,unidad,fob,cif:0,producto:'',detalle:det,fecha,sospechoso:false,cancel_qty:cancel,cancel_unit:cu,fob_desp:fob,flete_desp:flete,seguro_desp:seguro});
@@ -2520,6 +2528,20 @@ function addStock(){
   ['adm-desp','adm-cant','adm-cancel','adm-fob','adm-det'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
+}
+
+// Busca un despacho/ítem/subítem en TODO el stock (STOCK_BASE + stockExtra), sea cual sea el material.
+// Devuelve {mat, row, origen} si lo encuentra, o null.
+function buscarEnStock(desp, item, sub){
+  for(const mat of Object.keys(STOCK_BASE)){
+    const row = STOCK_BASE[mat]?.find(r=>r.despacho===desp && r.item===item && r.subitem===sub);
+    if(row) return {mat, row, origen:'Stock base (Supabase)'};
+  }
+  for(const mat of Object.keys(stockExtra)){
+    const row = stockExtra[mat]?.find(r=>r.despacho===desp && r.item===item && r.subitem===sub);
+    if(row) return {mat, row, origen:'Cargado manualmente'};
+  }
+  return null;
 }
 function delAdmStock(mat,i){if(!confirm('¿Eliminar?')) return; stockExtra[mat].splice(i,1); if(!stockExtra[mat].length) delete stockExtra[mat]; save(); renderAdmStock();}
 function renderAdmStock(){
