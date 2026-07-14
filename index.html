@@ -109,6 +109,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 .toast{background:#1a1a1a;color:#fff;border:1px solid var(--yw);font-size:12px;padding:9px 16px;border-radius:var(--rs);box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90vw;text-align:center}
 #name-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:998;align-items:center;justify-content:center}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 <div class="hdr">
@@ -250,11 +251,18 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           </div>
         </div>
         <div style="margin-bottom:10px">
-          <label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Cancelaciones del ZFE3 — pegá las líneas del PDF</label>
-          <div style="font-size:10px;color:var(--tx3);margin:4px 0 6px;font-style:italic">Formato: DESPACHO ITEM SUBITEM CANTIDAD — una por línea. Ej: 26258ZFI6000073U 1 0 900</div>
-          <textarea id="sal-zfe3-texto" rows="8" style="width:100%;font-family:var(--mn);font-size:11px;background:var(--bg2);color:var(--tx);border:1px solid var(--bd2);border-radius:var(--rs);padding:8px;resize:vertical;box-sizing:border-box" placeholder="26258ZFI6000073U 1 0 900&#10;26258ZFI8000025T 1 0 648&#10;26258ZFI8000025T 2 0 1044&#10;..."></textarea>
+          <label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Cancelaciones del ZFE3</label>
+          <div style="margin:6px 0 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label class="btn" style="background:var(--gbg);border-color:var(--gr);color:var(--gr);cursor:pointer;margin:0">
+              📄 Subir PDF del ZFE3 (auto)
+              <input type="file" id="sal-zfe-pdf-inp" accept="application/pdf" style="display:none" onchange="handleZFE3PDFUpload(this.files[0])"/>
+            </label>
+            <span id="sal-pdf-status2" style="font-size:11px;color:var(--tx2)"></span>
+          </div>
+          <div style="font-size:10px;color:var(--tx3);margin:4px 0 6px;font-style:italic">...o pegá las líneas a mano si no tenés el PDF a mano. Formato: DESPACHO ITEM SUBITEM CANTIDAD — una por línea. Ej: 26258ZFI6000073U 1 0 900</div>
+          <textarea id="sal-zfe3-texto" rows="6" style="width:100%;font-family:var(--mn);font-size:11px;background:var(--bg2);color:var(--tx);border:1px solid var(--bd2);border-radius:var(--rs);padding:8px;resize:vertical;box-sizing:border-box" placeholder="26258ZFI6000073U 1 0 900&#10;26258ZFI8000025T 1 0 648&#10;26258ZFI8000025T 2 0 1044&#10;..."></textarea>
           <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
-            <button class="btn" onclick="parsearZFE3()">⚡ Procesar cancelaciones</button>
+            <button class="btn" onclick="parsearZFE3()">⚡ Procesar texto pegado</button>
             <span id="sal-pdf-status" style="font-size:11px;color:var(--tx2)"></span>
           </div>
         </div>
@@ -669,7 +677,7 @@ function load(){
       Object.entries(resv).forEach(([dk,cant])=>{
         Object.keys(STOCK_BASE).forEach(k=>{
           const row=STOCK_BASE[k]?.find(r=>(r.despacho+'_'+r.item+'_'+r.subitem)===dk);
-          if(row) row.cancel_qty=Math.max(0,row.cancel_qty-cant);
+          if(row) row.cancel_qty=row.cancel_qty+cant;
         });
       });
     });
@@ -1016,7 +1024,7 @@ function liberarReserva(salidaId){
     Object.keys(STOCK_BASE).forEach(k=>{
       const row=STOCK_BASE[k]?.find(r=>(r.despacho+'_'+r.item+'_'+r.subitem)===dk);
       if(row){
-        row.cancel_qty=row.cancel_qty+cant;
+        row.cancel_qty=Math.max(0,row.cancel_qty-cant);
         cancelQtyPatch[dk]=row.cancel_qty;
       }
     });
@@ -1032,7 +1040,7 @@ function aplicarReserva(salida){
     Object.keys(STOCK_BASE).forEach(k=>{
       const row=STOCK_BASE[k]?.find(r=>(r.despacho+'_'+r.item+'_'+r.subitem)===dk);
       if(row){
-        row.cancel_qty=Math.max(0,row.cancel_qty-cant);
+        row.cancel_qty=row.cancel_qty+cant;
         cancelQtyPatch[dk]=row.cancel_qty;
       }
     });
@@ -1220,6 +1228,71 @@ function quitarLinea(i){
   salidaActiva.lineas.splice(i,1);
   salidaActiva.lineas.forEach((l,idx)=>l.itemNum=idx+1);
   save(); renderSalidaLineas();
+}
+
+// ── ZFE3: subir PDF directamente (lee el mismo formato que cargar-despacho.html) ──
+async function handleZFE3PDFUpload(file){
+  if(!file) return;
+  const statusEl = document.getElementById('sal-pdf-status2');
+  statusEl.style.color = 'var(--tx2)';
+  statusEl.textContent = 'Leyendo PDF...';
+  try{
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+    const pages = [];
+    for(let i=1;i<=doc.numPages;i++){
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map(it=>it.str).join('|'));
+    }
+    const fullText = pages.map(p=>p.replace(/\|/g,' ').replace(/\s+/g,' ')).join(' ');
+
+    // Encabezado: despacho + fecha
+    const hdrM = fullText.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFE3)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
+    if(!hdrM) throw new Error('No parece un PDF de ZFE3 (no se encontró el encabezado esperado).');
+    const zfeNro = hdrM[1]+hdrM[2]+hdrM[3]+hdrM[4]+hdrM[5];
+    const [dd,mm,yyyy] = hdrM[6].split('/');
+
+    // Secciones "Destinaciones que se Cancelan, ítem: NNNN" — se preserva a qué ítem de salida pertenece cada línea
+    const sectionRe = /Destinaciones que se Cancelan,\s*[ií]tem:\s*(\d+)([\s\S]*?)(?=Destinaciones que se Cancelan,\s*[ií]tem:\s*\d+|Informaci[oó]n Adicional|DECLARACION PARA LA PERCEPCION|$)/g;
+    const rowRe = /(\d{2}\d{3}[A-Z0-9]{4}\d{6}[A-Z])\s+([\d.]+[A-Z])\s+(\d{4})\s+(\d{4})\s+([\d.]+,\d+)\s+(\d+)/g;
+    const nuevasCancelaciones = [];
+    let sm;
+    while((sm = sectionRe.exec(fullText))){
+      const item_zfe = parseInt(sm[1]);
+      const seccionTexto = sm[2];
+      let rm;
+      const rre = new RegExp(rowRe.source, 'g');
+      while((rm = rre.exec(seccionTexto))){
+        nuevasCancelaciones.push({
+          item_zfe,
+          despacho: rm[1],
+          item_zfi: parseInt(rm[3]),
+          subitem: parseInt(rm[4]),
+          cantidad: parseFloat(rm[5].replace(/\./g,'').replace(',','.'))
+        });
+      }
+    }
+    if(!nuevasCancelaciones.length) throw new Error('No se encontró la tabla de "Destinaciones que se Cancelan" en el PDF. ¿Subiste todas las páginas del despacho?');
+
+    // Auto-completar número y fecha del ZFE3
+    document.getElementById('sal-zfe-nro').value = zfeNro;
+    document.getElementById('sal-zfe-fecha').value = `${yyyy}-${mm}-${dd}`;
+
+    // Volcar también al textarea como referencia/respaldo editable
+    document.getElementById('sal-zfe3-texto').value = nuevasCancelaciones
+      .map(c=>`${c.despacho} ${c.item_zfi} ${c.subitem} ${c.cantidad}`).join('\n');
+
+    salidaCancelaciones = nuevasCancelaciones;
+    renderCancelaciones();
+    document.getElementById('sal-cancelaciones-wrap').style.display='block';
+    statusEl.style.color = 'var(--gr)';
+    statusEl.textContent = `✓ ${nuevasCancelaciones.length} cancelaciones leídas del PDF (despacho ${zfeNro})`;
+    document.getElementById('sal-pdf-status').textContent = '';
+  }catch(e){
+    statusEl.style.color = 'var(--rd)';
+    statusEl.textContent = '⚠ '+e.message;
+  }
 }
 
 function parsearZFE3(){
@@ -1677,7 +1750,7 @@ function confirmarSalida(){
     Object.keys(STOCK_BASE).forEach(k=>{
       const row=STOCK_BASE[k]?.find(r=>r.despacho===c.despacho&&r.item===c.item_zfi&&r.subitem===c.subitem);
       if(row){
-        row.cancel_qty=Math.max(0,(row.cancel_qty||0)-c.cantidad);
+        row.cancel_qty=(row.cancel_qty||0)+c.cantidad;
         // Persistir el nuevo saldo para que sobreviva a un refresh de página
         const dk=row.despacho+'_'+row.item+'_'+row.subitem;
         cancelQtyPatch[dk]=row.cancel_qty;
@@ -1685,7 +1758,7 @@ function confirmarSalida(){
     });
     Object.keys(stockExtra).forEach(k=>{
       const row=stockExtra[k]?.find(r=>r.despacho===c.despacho&&r.item===c.item_zfi&&r.subitem===c.subitem);
-      if(row) row.cancel_qty=Math.max(0,(row.cancel_qty||0)-c.cantidad);
+      if(row) row.cancel_qty=(row.cancel_qty||0)+c.cantidad;
     });
   });
 
