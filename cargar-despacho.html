@@ -365,8 +365,8 @@ async function renderZFE3(p){
   const ids = p.consumos.map(c=>c.despacho+'_'+c.item+'_'+c.subitem);
   let stockRows = [];
   try{
-    const idsParam = ids.map(id=>`"${id}"`).join(',');
-    stockRows = await sbFetch('stock_base?select=*&id=in.('+idsParam+')', {method:'GET', headers:{'Prefer':''}}) || [];
+    const idsParam = ids.join(',');
+    stockRows = await sbFetch('stock_base?select=*&id=in.('+encodeURIComponent(idsParam).replace(/%2C/g,',')+')', {method:'GET', headers:{'Prefer':''}}) || [];
   }catch(e){
     document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error consultando el stock: ${e.message}</div>`;
   }
