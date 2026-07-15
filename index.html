@@ -123,7 +123,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
     <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr)">📄 Cargar despacho (PDF)</a>
   </div>
-  <div id="presence-badge" class="presence-roster">
+  <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
     <span class="p-user" id="p-marina">Marina</span>
     <span class="p-user" id="p-carina">Carina</span>
@@ -143,6 +143,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Marina')">Marina</button>
       <button class="btn btnp" style="flex:1" onclick="saveUserLabel('Carina')">Carina</button>
     </div>
+    <div style="margin-top:10px"><a href="#" style="font-size:11px;color:var(--tx3)" onclick="document.getElementById('name-modal').style.display='none';return false;">Cancelar</a></div>
   </div>
 </div>
 <div class="toast-wrap" id="toast-wrap"></div>
@@ -392,6 +393,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           <button class="btn" style="font-size:11px;padding:5px 12px" onclick="sincronizarTodoStockExtra()">🔄 Sincronizar todo con Supabase</button>
         </div>
         <div style="font-size:10px;color:var(--tx3);margin:2px 0 8px;font-style:italic">Si cargaste algo antes de hoy, puede que todavía no esté en Supabase (por eso el lector de ZFE3 no lo encontraba). Tocá el botón de arriba una vez para subir todo lo que falte.</div>
+        <div id="adm-sync-resultado" style="display:none"></div>
         <div id="adm-stock-lista"><div class="empty">Ninguno.</div></div>
       </div>
     </div>
@@ -2793,8 +2795,8 @@ async function pushStockRowToSupabase(mat, r){
         fob_desp:r.fob_desp||0, flete_desp:r.flete_desp||0, seguro_desp:r.seguro_desp||0
       }])
     });
-    return true;
-  }catch(e){ console.error('Error subiendo carga manual a Supabase:', e.message); return false; }
+    return {ok:true};
+  }catch(e){ console.error('Error subiendo carga manual a Supabase:', e.message); return {ok:false, error:e.message}; }
 }
 
 async function pushCustomCategoriaToSupabase(slug, label, unit){
@@ -2813,17 +2815,25 @@ async function sincronizarTodoStockExtra(){
   const total = mats.reduce((s,k)=>s+stockExtra[k].length,0);
   if(!total){ alert('No hay nada cargado manualmente para sincronizar.'); return; }
   if(!confirm(`Se van a subir ${total} registro(s) a Supabase (incluyendo las categorías nuevas que hayas creado por nombre). ¿Continuar?`)) return;
-  let ok=0, fail=0;
+  let ok=0, fail=0; const errores=[];
   for(const mat of mats){
     // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
     const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','alma','poliamida'].includes(mat);
     if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
     for(const row of stockExtra[mat]){
-      const subioOk = await pushStockRowToSupabase(mat, row);
-      if(subioOk) ok++; else fail++;
+      const res = await pushStockRowToSupabase(mat, row);
+      if(res.ok) ok++; else { fail++; errores.push(`${row.despacho} ít.${row.item}.${row.subitem}: ${res.error}`); }
     }
   }
-  alert(`Listo: ${ok} sincronizados${fail?`, ${fail} con error (revisá conexión y reintentá)`:''}.`);
+  const resumen = document.getElementById('adm-sync-resultado');
+  if(resumen){
+    resumen.style.display='block';
+    resumen.innerHTML = `<div style="font-size:12px;margin-top:8px;padding:10px;border-radius:6px;background:${fail?'var(--rbg)':'var(--gbg)'};color:${fail?'var(--rd)':'var(--gr)'}">
+      ✓ ${ok} sincronizados${fail?`, ⚠ ${fail} con error:` : '.'}
+      ${fail?`<ul style="margin:6px 0 0 18px;font-family:var(--mn);font-size:11px">${errores.map(e=>`<li>${e}</li>`).join('')}</ul>`:''}
+    </div>`;
+  }
+  alert(`Listo: ${ok} sincronizados${fail?`, ${fail} con error (mirá el detalle debajo del botón)`:''}.`);
 }
 
 function slugify(txt){
@@ -2900,11 +2910,11 @@ async function addStock(){
     if(!stockExtra[mat]) stockExtra[mat]=[];
     stockExtra[mat].push(nuevaFila);
     save(); renderAdmStock();
-    const subioOk = await pushStockRowToSupabase(mat, nuevaFila);
-    msg.style.color = subioOk ? 'var(--gr)' : 'var(--yw)';
-    msg.textContent = subioOk
+    const subio = await pushStockRowToSupabase(mat, nuevaFila);
+    msg.style.color = subio.ok ? 'var(--gr)' : 'var(--rd)';
+    msg.textContent = subio.ok
       ? `✓ ${desp} (${nombreInsumo}) actualizado y sincronizado — ya lo va a ver Marina/Carina también.`
-      : `⚠ ${desp} actualizado localmente, pero no se pudo sincronizar con Supabase (revisá conexión). Reintentá guardando de nuevo.`;
+      : `⚠ ${desp} actualizado localmente, pero falló la sincronización con Supabase: ${subio.error}`;
     cancelarEdicionStock();
     btn.disabled=false; btn.textContent=btnTextoOriginal;
     return;
@@ -2920,11 +2930,11 @@ async function addStock(){
   if(!stockExtra[mat]) stockExtra[mat]=[];
   stockExtra[mat].push(nuevaFila);
   save(); renderAdmStock();
-  const subioOk = await pushStockRowToSupabase(mat, nuevaFila);
-  msg.style.color = subioOk ? 'var(--gr)' : 'var(--yw)';
-  msg.textContent = subioOk
+  const subio = await pushStockRowToSupabase(mat, nuevaFila);
+  msg.style.color = subio.ok ? 'var(--gr)' : 'var(--rd)';
+  msg.textContent = subio.ok
     ? `✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible. Ya está sincronizado, lo va a ver Marina/Carina y el lector de ZFE3 también.`
-    : `⚠ ${desp} agregado localmente, pero no se pudo sincronizar con Supabase (revisá conexión). Por ahora solo lo ves vos en este navegador — reintentá guardando de nuevo cuando tengas señal.`;
+    : `⚠ ${desp} agregado localmente, pero falló la sincronización con Supabase: ${subio.error}`;
   ['adm-desp','adm-cant','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
@@ -2987,6 +2997,9 @@ function ensureUserLabel(){
   if(!getUserLabel()){
     document.getElementById('name-modal').style.display = 'flex';
   }
+}
+function cambiarUsuario(){
+  document.getElementById('name-modal').style.display = 'flex';
 }
 
 function showToast(msg, ms=6000){
