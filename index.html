@@ -2964,7 +2964,7 @@ function renderAdmStock(){
   keys.forEach(k=>stockExtra[k].forEach((r,i)=>{
     const cu=r.cancel_unit||CANCEL_UNIT[k];
     html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
-      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cancel_qty||0)} ${cu}</strong> ${fmtU(r.fob)}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
+      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cantidad||0)} ${cu}</strong> cargados <span style="color:var(--tx3)">(disponible: ${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${cu})</span> ${fmtU(r.fob)}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
       <div style="display:flex;gap:6px">
         <button class="btn" style="padding:4px 10px;font-size:11px" onclick="editAdmStock('${k}',${i})">✎ Editar</button>
         <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
