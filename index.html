@@ -386,7 +386,14 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <button class="btn" id="adm-cancel-edit-btn" onclick="cancelarEdicionStock()" style="display:none">✕ Cancelar edición</button>
         <div id="adm-msg" style="margin-top:8px;font-size:12px;display:none"></div>
       </div>
-      <div class="card"><div class="ct">Despachos cargados manualmente</div><div id="adm-stock-lista"><div class="empty">Ninguno.</div></div></div>
+      <div class="card">
+        <div class="ct" style="display:flex;justify-content:space-between;align-items:center">
+          Despachos cargados manualmente
+          <button class="btn" style="font-size:11px;padding:5px 12px" onclick="sincronizarTodoStockExtra()">🔄 Sincronizar todo con Supabase</button>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin:2px 0 8px;font-style:italic">Si cargaste algo antes de hoy, puede que todavía no esté en Supabase (por eso el lector de ZFE3 no lo encontraba). Tocá el botón de arriba una vez para subir todo lo que falte.</div>
+        <div id="adm-stock-lista"><div class="empty">Ninguno.</div></div>
+      </div>
     </div>
     <div id="adm-avisos" class="admpanel">
       <div class="card" style="max-width:520px">
@@ -464,12 +471,32 @@ async function sbFetch(endpoint, options={}) {
 }
 
 // Cargar stock desde Supabase (fuente de verdad)
+// Trae las categorías personalizadas creadas por cualquiera de los 3 (para que un insumo
+// nuevo cargado por Javier también lo "conozca" la compu de Marina o Carina, y viceversa)
+async function loadCustomCategoriasFromSupabase(){
+  try{
+    const rows = await sbFetch('custom_categorias?select=*', {method:'GET', headers:{'Prefer':''}});
+    (rows||[]).forEach(r=>{
+      MAT_LABELS[r.slug] = r.label;
+      CANCEL_UNIT[r.slug] = r.unit;
+      if(!STOCK_BASE[r.slug]) STOCK_BASE[r.slug] = [];
+      customMatsPatch[r.slug] = {label:r.label, unit:r.unit};
+    });
+  }catch(e){ /* si la tabla no existe todavía, seguimos con lo que haya local */ }
+}
+
 async function loadStockFromSupabase() {
   try {
     const rows = await sbFetch('stock_base?select=*&limit=2000', {method:'GET', headers:{'Prefer':''}});
     if (!rows || !rows.length) return false;
+    // Si ya tenemos este id como carga manual local (stockExtra), no lo importamos de nuevo
+    // (evita que se muestre duplicado en ESTE navegador; en otros navegadores sí se ve normal)
+    const idsLocalesManual = new Set();
+    Object.values(stockExtra).forEach(arr=>arr.forEach(r=>idsLocalesManual.add(r.despacho+'_'+r.item+'_'+r.subitem)));
     Object.keys(STOCK_BASE).forEach(k => STOCK_BASE[k] = []);
     rows.forEach(r => {
+      const id = r.despacho+'_'+r.item+'_'+r.subitem;
+      if (idsLocalesManual.has(id)) return;
       if (STOCK_BASE[r.material] !== undefined) {
         STOCK_BASE[r.material].push({
           despacho: r.despacho, item: r.item, subitem: r.subitem,
@@ -606,6 +633,7 @@ async function syncStockToSupabase() {
 
 // Al cargar la página: intentar cargar desde Supabase primero
 async function initFromSupabase() {
+  await loadCustomCategoriasFromSupabase();
   const stockOk = await loadStockFromSupabase();
   await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
   if(stockOk) { renderStock(); renderSalidaHist(); }
@@ -2750,12 +2778,60 @@ function formatNCM(el){
   el.value = out;
 }
 
+async function pushStockRowToSupabase(mat, r){
+  try{
+    await sbFetch('stock_base', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify([{
+        id: r.despacho+'_'+r.item+'_'+r.subitem,
+        material: mat, despacho:r.despacho, item:r.item, subitem:r.subitem,
+        cantidad:r.cantidad, cancel_qty:r.cancel_qty||0, cancel_unit:r.cancel_unit||'kg',
+        unidad:r.unidad||'KILOGRAMO', fob:r.fob||0, cif:r.cif||0, kgs_neto:r.kgs_neto||0,
+        producto:r.producto||'', detalle:r.detalle||'', fecha:r.fecha||'',
+        sospechoso:r.sospechoso||false,
+        fob_desp:r.fob_desp||0, flete_desp:r.flete_desp||0, seguro_desp:r.seguro_desp||0
+      }])
+    });
+    return true;
+  }catch(e){ console.error('Error subiendo carga manual a Supabase:', e.message); return false; }
+}
+
+async function pushCustomCategoriaToSupabase(slug, label, unit){
+  try{
+    await sbFetch('custom_categorias', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify([{slug, label, unit}])
+    });
+    return true;
+  }catch(e){ console.error('Error subiendo categoría nueva a Supabase:', e.message); return false; }
+}
+
+async function sincronizarTodoStockExtra(){
+  const mats = Object.keys(stockExtra).filter(k=>stockExtra[k]?.length>0);
+  const total = mats.reduce((s,k)=>s+stockExtra[k].length,0);
+  if(!total){ alert('No hay nada cargado manualmente para sincronizar.'); return; }
+  if(!confirm(`Se van a subir ${total} registro(s) a Supabase (incluyendo las categorías nuevas que hayas creado por nombre). ¿Continuar?`)) return;
+  let ok=0, fail=0;
+  for(const mat of mats){
+    // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
+    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','alma','poliamida'].includes(mat);
+    if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
+    for(const row of stockExtra[mat]){
+      const subioOk = await pushStockRowToSupabase(mat, row);
+      if(subioOk) ok++; else fail++;
+    }
+  }
+  alert(`Listo: ${ok} sincronizados${fail?`, ${fail} con error (revisá conexión y reintentá)`:''}.`);
+}
+
 function slugify(txt){
   return txt.toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'') // saca acentos
     .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'insumo';
 }
 
-function addStock(){
+async function addStock(){
   const matSel=document.getElementById('adm-mat').value;
   const nombreInsumo=document.getElementById('adm-nombre').value.trim();
   const desp=document.getElementById('adm-desp').value.trim();
@@ -2775,20 +2851,27 @@ function addStock(){
   msg.style.display='block';
   if(!nombreInsumo||!desp||!fecha||isNaN(cant)){msg.style.color='var(--rd)';msg.textContent='Completá al menos: insumo, despacho, fecha y cantidad.';return;}
 
+  const btn = document.getElementById('adm-submit-btn');
+  const btnTextoOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
   // La unidad elegida define en qué unidad se trackea lo consumido
   const cu = {KILOGRAMO:'kg',METRO:'m',UNIDAD:'u'}[unidad] || 'kg';
 
   // Si no se eligió una categoría fija, se crea/usa una nueva a partir del NOMBRE del insumo
   // (mismo nombre siempre cae en la misma categoría, así se van agrupando despachos del mismo insumo)
   let mat = matSel;
+  let esCategoriaNueva = false;
   if(!mat){
     mat = slugify(nombreInsumo);
     if(!MAT_LABELS[mat]){
       MAT_LABELS[mat] = nombreInsumo;
       CANCEL_UNIT[mat] = cu;
       customMatsPatch[mat] = {label: nombreInsumo, unit: cu};
+      esCategoriaNueva = true;
     }
   }
+  if(!STOCK_BASE[mat]) STOCK_BASE[mat] = [];
 
   // Chequeo de duplicado: ¿ya existe este despacho/ítem/subítem en el stock (cargado antes, en cualquier material)?
   // Si estamos editando ESE MISMO registro, no cuenta como duplicado.
@@ -2796,42 +2879,57 @@ function addStock(){
   const esElMismoQueEditamos = editandoStock && existente && existente.mat===mat && existente.row===stockExtra[editandoStock.mat]?.[editandoStock.index];
   if(existente && !esElMismoQueEditamos){
     const ok = confirm(`⚠️ ATENCIÓN — POSIBLE DUPLICADO\n\nEl despacho ${desp}, ítem ${item}, subítem ${sub} ya está cargado en el stock:\n\n• Insumo: ${existente.row.producto||MAT_LABELS[existente.mat]||existente.mat}\n• Cantidad: ${existente.row.cantidad} ${existente.row.unidad}\n• Fecha: ${existente.row.fecha}\n• Origen: ${existente.origen}\n\n¿Confirmás que igual querés cargarlo de nuevo? Esto va a DUPLICAR el registro.`);
-    if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; return; }
+    if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; btn.disabled=false; btn.textContent=btnTextoOriginal; return; }
   }
 
+  if(esCategoriaNueva) await pushCustomCategoriaToSupabase(mat, nombreInsumo, cu);
+
+  let nuevaFila;
   if(editandoStock){
     // Actualizar el registro existente, conservando lo ya consumido (cancel_qty)
     const cancelQtyPrevio = stockExtra[editandoStock.mat][editandoStock.index].cancel_qty || 0;
     stockExtra[editandoStock.mat].splice(editandoStock.index, 1);
     if(!stockExtra[editandoStock.mat].length) delete stockExtra[editandoStock.mat];
-    if(!stockExtra[mat]) stockExtra[mat]=[];
-    stockExtra[mat].push({
+    nuevaFila = {
       despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cant:0,unidad,
       fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,
       cancel_qty:cancelQtyPrevio,cancel_unit:cu,
       fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
       ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho
-    });
+    };
+    if(!stockExtra[mat]) stockExtra[mat]=[];
+    stockExtra[mat].push(nuevaFila);
     save(); renderAdmStock();
-    msg.style.color='var(--gr)'; msg.textContent=`✓ ${desp} (${nombreInsumo}) actualizado.`;
+    const subioOk = await pushStockRowToSupabase(mat, nuevaFila);
+    msg.style.color = subioOk ? 'var(--gr)' : 'var(--yw)';
+    msg.textContent = subioOk
+      ? `✓ ${desp} (${nombreInsumo}) actualizado y sincronizado — ya lo va a ver Marina/Carina también.`
+      : `⚠ ${desp} actualizado localmente, pero no se pudo sincronizar con Supabase (revisá conexión). Reintentá guardando de nuevo.`;
     cancelarEdicionStock();
+    btn.disabled=false; btn.textContent=btnTextoOriginal;
     return;
   }
 
-  if(!stockExtra[mat]) stockExtra[mat]=[];
-  stockExtra[mat].push({
+  nuevaFila = {
     despacho:desp,item,subitem:sub,cantidad:cant,kgs_neto:cu==='kg'?cant:0,unidad,
     fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,
     cancel_qty:0,cancel_unit:cu,
     fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
     ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho
-  });
+  };
+  if(!stockExtra[mat]) stockExtra[mat]=[];
+  stockExtra[mat].push(nuevaFila);
   save(); renderAdmStock();
-  msg.style.color='var(--gr)'; msg.textContent=`✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible.`;
+  const subioOk = await pushStockRowToSupabase(mat, nuevaFila);
+  msg.style.color = subioOk ? 'var(--gr)' : 'var(--yw)';
+  msg.textContent = subioOk
+    ? `✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible. Ya está sincronizado, lo va a ver Marina/Carina y el lector de ZFE3 también.`
+    : `⚠ ${desp} agregado localmente, pero no se pudo sincronizar con Supabase (revisá conexión). Por ahora solo lo ves vos en este navegador — reintentá guardando de nuevo cuando tengas señal.`;
   ['adm-desp','adm-cant','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
   document.getElementById('adm-mat').value='';
+  btn.disabled=false; btn.textContent=btnTextoOriginal;
 }
 
 // Busca un despacho/ítem/subítem en TODO el stock (STOCK_BASE + stockExtra), sea cual sea el material.
