@@ -2,7 +2,7 @@
 // Cachea el "shell" de la app (HTML/manifest/íconos) para que abra rápido y offline.
 // Los datos (Supabase) NUNCA se cachean: siempre van directo a la red.
 
-const CACHE_NAME = 'alav-comex-v1';
+const CACHE_NAME = 'alav-comex-v2';
 const APP_SHELL = [
   './',
   './index.html',
