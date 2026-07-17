@@ -1130,7 +1130,7 @@ function getArt(tipo){
   if(tipo==='microsherpa') return {
     num:'MICRO/SHERPA', n:'MICRO/SHERPA', cert:'194',
     rip:{'/1':'#9','/3':'#10','/4':'#11','/5':'#12'},
-    b:{'/1':5,'/3':5,'/4':5,'/5':4}
+    b:{'/1':5,'/3':5,'/4':4,'/5':3}
   };
   if(tipo==='micromicro') return {
     num:'MICRO/MICRO', n:'MICRO/MICRO', cert:'194',
@@ -1542,7 +1542,7 @@ function renderSalidaLineas(){
   emEl.style.display='none';
 
   // Materiales que aportan kg al CTZF
-  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100'];
+  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
 
   lEl.innerHTML=salidaActiva.lineas.map((l,i)=>{
     // 1. kg del CTZF: suma de taken de todos los materiales en kg
@@ -1769,7 +1769,7 @@ function imprimirPackingList(salOverride){
     const bultos = Math.ceil(qty/bultosXcaja);
 
     // Peso neto (kg CTZF de la línea)
-    const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100'];
+    const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
     let kgCTZF=0;
     if(l.zfis){
       Object.entries(l.zfis).forEach(([k,sels])=>{
@@ -2896,7 +2896,7 @@ function editAdmStock(mat, i){
 
   // Si la categoría es una fija conocida (no una creada por nombre), la preseleccionamos; sino, dejamos "🆕 Nueva"
   const matSelect = document.getElementById('adm-mat');
-  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','alma','poliamida'].includes(mat);
+  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','alma','poliamida'].includes(mat);
   matSelect.value = esFija ? mat : '';
 
   document.getElementById('adm-nombre').value = r.producto||'';
@@ -2980,7 +2980,7 @@ async function sincronizarTodoStockExtra(){
   let ok=0, fail=0; const errores=[];
   for(const mat of mats){
     // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
-    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','alma','poliamida'].includes(mat);
+    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','alma','poliamida'].includes(mat);
     if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
     for(const row of stockExtra[mat]){
       const res = await pushStockRowToSupabase(mat, row);
