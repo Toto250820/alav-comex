@@ -2194,7 +2194,10 @@ function renderSalidaHist(){
   }
   if(!salidaHistorial.length){el.innerHTML='<div class="empty">Sin salidas confirmadas.</div>';return;}
   try{
-  el.innerHTML=salidaHistorial.map((s,si)=>`
+  // Se muestra con la más reciente arriba (por fecha de confirmación), sin reordenar el array real
+  const conIndice = salidaHistorial.map((s,si)=>({s,si}));
+  conIndice.sort((a,b)=> new Date(b.s.ts) - new Date(a.s.ts));
+  el.innerHTML=conIndice.map(({s,si})=>`
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
