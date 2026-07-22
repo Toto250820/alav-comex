@@ -2413,7 +2413,7 @@ function imprimirLiqSalida(){
         +'</tbody></table>';
     });
 
-    p+='<div class="line-tot"><span><strong>Item '+line.itemNum+':</strong></span>'
+    p+='<div class="line-tot"><span><strong>Item '+itemNums+':</strong></span>'
       +'<span>Base IVA: <strong>USD '+fmt(lineBaseIva||0,2)+'</strong></span>'
       +'<span>Der.Import.: <strong>USD '+fmt(lineDer,2)+'</strong></span>'
       +'<span>IVA 21%: <strong>USD '+fmt(lineIva,2)+'</strong></span>'
@@ -2592,7 +2592,7 @@ function calcularLiqSalida(){
       <div class="ii"><div class="il">Base IVA</div><div class="iv">USD ${fmt(lineBaseIva||0,2)}</div></div>
       <div class="ii"><div class="il">Der. Import.</div><div class="iv">USD ${fmt(lineDer,2)}</div></div>
       <div class="ii"><div class="il">IVA 21%</div><div class="iv">USD ${fmt(lineIva,2)}</div></div>
-      <div class="ii"><div class="il" style="color:var(--pu)">Total ítem ${line.itemNum}</div><div class="iv" style="color:var(--pu)">USD ${fmt(lineTot,2)}</div></div>
+      <div class="ii"><div class="il" style="color:var(--pu)">Total ítem ${itemNums}</div><div class="iv" style="color:var(--pu)">USD ${fmt(lineTot,2)}</div></div>
     </div></div>`;
   });
 
