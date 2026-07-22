@@ -2391,7 +2391,9 @@ function imprimirLiqSalida(){
 
   liqGrupos.forEach(({items,qty,cert,rip,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
     const itemNums = items.map(it=>it.line.itemNum).join(',');
-    const desc = items.map(it=>`${it.n} ${it.med}`).join(' + ');
+    // Un solo nombre representativo (el artículo base, ej. TRIPLES, no la variante E)
+    const principal = items.find(it=>it.line.tipo!=='art4009') || items[0];
+    const desc = principal.n;
     p+='<div class="line-hdr"><strong>Item '+itemNums+' — '+desc+'</strong>'
       +'<span>'+qty.toLocaleString('es-AR')+' u</span><span>RIP '+rip+' — CERT '+cert+'</span>'
       +'<span style="margin-left:auto">Total: USD '+fmt(lineTot,2)+'</span></div>';
@@ -2553,7 +2555,9 @@ function calcularLiqSalida(){
 
   liqGrupos.forEach(({items,qty,cert,rip,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
     const itemNums = items.map(it=>it.line.itemNum).join(',');
-    const desc = items.map(it=>`${it.n} ${it.med}`).join(' + ');
+    // Un solo nombre representativo (el artículo base, ej. TRIPLES, no la variante E)
+    const principal = items.find(it=>it.line.tipo!=='art4009') || items[0];
+    const desc = principal.n;
     html+=`<div style="margin-bottom:16px;border:1px solid var(--bd2);border-radius:var(--rs);overflow:hidden">
       <div style="background:#1a1a2e;padding:6px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <strong style="color:#fff">Ítem ${itemNums} — ${desc}</strong>
