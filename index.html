@@ -2518,13 +2518,23 @@ function calcularLiqSalida(){
   const grandIva=liqByLine.reduce((s,v)=>s+v.lineIva,0);
   const grandBaseIva=liqByLine.reduce((s,v)=>s+(v.lineBaseIva||0),0);
 
-  // Unificar en un solo bloque las líneas que comparten el mismo certificado + RIP
-  // (ej: TRIPLES /1 y TRIPLES E /3 son medidas distintas pero consumen la misma RIP)
+  // Unificar en un solo bloque SOLO las combinaciones tipo+medida confirmadas como mismo consumo real
+  // (TRIPLES /1 y TRIPLES E /3 sí — verificado. NO alcanza con compartir el número de RIP:
+  // MICRO/SHERPA y SUEDE comparten RIP pero tienen consumo de tela distinto, así que quedan separados)
+  const LIQ_EQUIVALENCIAS = {
+    'triples_/1': 'TRIPLES_BASE',
+    'art4009_/3': 'TRIPLES_BASE'
+  };
+  function liqGroupKey(entry){
+    const tipoMed = (entry.line.tipo||'triples')+'_'+entry.med;
+    const equiv = LIQ_EQUIVALENCIAS[tipoMed];
+    return entry.art.cert + '_' + (equiv || tipoMed);
+  }
   const gruposPorRip = {};
   const ordenGrupos = [];
   liqByLine.forEach(entry=>{
     const rip = entry.art.rip[entry.med] || '—';
-    const key = entry.art.cert + '_' + rip;
+    const key = liqGroupKey(entry);
     if(!gruposPorRip[key]){
       gruposPorRip[key] = {
         cert: entry.art.cert, rip,
@@ -2549,6 +2559,35 @@ function calcularLiqSalida(){
     });
   });
   const liqGrupos = ordenGrupos.map(key=>gruposPorRip[key]);
+
+  // Si el mismo despacho aparece en más de una línea del grupo (ej. usado tanto
+  // en TRIPLES /1 como en TRIPLES E /3), fusionamos esas filas en una sola por despacho
+  // — así queda ya sumado y no hace falta sumarlo de nuevo a mano para la aduana.
+  liqGrupos.forEach(g=>{
+    Object.values(g.matCalc).forEach(mc=>{
+      const porDespacho = {};
+      const orden = [];
+      mc.detalles.forEach(d=>{
+        const dk = d.row.despacho+'_'+d.row.item+'_'+d.row.subitem;
+        if(!porDespacho[dk]){
+          porDespacho[dk] = {...d};
+          orden.push(dk);
+        } else {
+          const acc = porDespacho[dk];
+          acc.taken += d.taken;
+          acc.fobProp += d.fobProp;
+          acc.fleteProp += d.fleteProp;
+          acc.seguroProp += d.seguroProp;
+          acc.cif += d.cif;
+          acc.derImp += d.derImp;
+          acc.baseIva += d.baseIva;
+          acc.iva += d.iva;
+          acc.total += d.total;
+        }
+      });
+      mc.detalles = orden.map(dk=>porDespacho[dk]);
+    });
+  });
 
   let html=`<div class="card" style="border-color:var(--pu)">
     <div class="ct" style="color:var(--pu)">Liquidación — Salida ${salida.nro}${salida.desc?' — '+salida.desc:''}</div>`;
