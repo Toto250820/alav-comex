@@ -1742,13 +1742,26 @@ const PRECIOS_USD = {
   bunny:       {'/1':18.10,'/3':18.50,'/4':18.70,'/5':19.10},
   shura:       {'/1':18.10,'/3':18.50,'/4':18.70,'/5':19.10},
   microsherpa: {'/1':18.10,'/3':18.50,'/4':18.70,'/5':19.10},
-  art4009:     {'/1':18.10,'/3':18.50},
+  art4009:     {'/1':18.10,'/3':18.10},
   micromicro:  {'/1':17.10,'/3':17.50,'/4':17.70,'/5':18.10},
   suede:       {'/1':18.10,'/3':18.50,'/4':18.70,'/5':19.10},
   patagonia3072: {'/1':3.96,'/3':5.80},
   patagonia3074: {'/1':3.96,'/3':5.80},
   patagonia3076: {'/1':3.96,'/3':5.80},
 };
+
+// Combinaciones tipo+medida EXPLÍCITAMENTE confirmadas como mismo consumo real —
+// se usa tanto en la liquidación como al imprimir la salida para María.
+// No alcanza con compartir el número de RIP (ej. MICRO/SHERPA y SUEDE lo comparten
+// pero consumen tela distinta) — solo se unifica lo que está en esta lista.
+const LIQ_EQUIVALENCIAS = {
+  'triples_/1': 'TRIPLES_BASE',
+  'art4009_/3': 'TRIPLES_BASE'
+};
+function getEquivKey(tipo, med){
+  const k = (tipo||'triples')+'_'+med;
+  return LIQ_EQUIVALENCIAS[k] || k;
+}
 
 function imprimirPackingList(salOverride){
   const sal = salOverride || salidaActiva;
@@ -1943,16 +1956,26 @@ function imprimirSalida(salOverride){
     +'<div style="text-align:right;font-size:9px">'+new Date().toLocaleDateString('es-AR')+'<br>Z.F. GENERAL PICO</div>'
     +'</div>';
 
+  // Agrupar líneas equivalentes (misma regla que la liquidación — ver LIQ_EQUIVALENCIAS)
+  const grupos = {};
+  const ordenGrupos = [];
   sal.lineas.forEach(function(line){
-    const art = getArt(line.tipo||'triples');
-    const med = line.med;
-    const qty = line.qty;
-    const matKeys = getMatKeys(line.tipo||'triples');
+    const key = getEquivKey(line.tipo, line.med);
+    if(!grupos[key]){ grupos[key] = []; ordenGrupos.push(key); }
+    grupos[key].push(line);
+  });
+
+  ordenGrupos.forEach(function(key){
+    const lineasGrupo = grupos[key];
+    const principal = lineasGrupo.find(l=>l.tipo!=='art4009') || lineasGrupo[0];
+    const itemNums = lineasGrupo.map(l=>l.itemNum).join(',');
+    const qtyTotal = lineasGrupo.reduce((s,l)=>s+l.qty,0);
+    const matKeys = getMatKeys(principal.tipo||'triples');
 
     p+='<div class="item-hdr">'
-      +'<span>ITEM '+line.itemNum+' &nbsp;|&nbsp; '+line.n+' '+med+'</span>'
-      +'<span>'+qty.toLocaleString('es-AR')+' unidades</span>'
-      +'<span class="item-rip">RIP '+line.rip+' &nbsp;|&nbsp; CERT 194/2025</span>'
+      +'<span>ITEM '+itemNums+' &nbsp;|&nbsp; '+principal.n+' '+principal.med+'</span>'
+      +'<span>'+qtyTotal.toLocaleString('es-AR')+' unidades</span>'
+      +'<span class="item-rip">RIP '+principal.rip+' &nbsp;|&nbsp; CERT 194/2025</span>'
       +'</div>';
 
     p+='<table><thead><tr>'
@@ -1964,15 +1987,32 @@ function imprimirSalida(salOverride){
     let rowNum=1;
     matKeys.forEach(function(k){
       const m=MAT[k]; if(!m) return;
-      const needed=getNeeded(k,med,qty,line.tipo);
+      // Consumo total: se suma entre todas las líneas del grupo
+      let needed=0;
+      lineasGrupo.forEach(function(l){ needed += getNeeded(k,l.med,l.qty,l.tipo); });
       if(needed<=0) return;
       const cu=CANCEL_UNIT[k];
       const cuDisplay=(k==='micro90'||k==='micro100'||k==='micro140')?'kg':cu;
-      const sels=(line.zfis||{})[k]||[];
+
+      // Selecciones de despacho combinadas de todas las líneas del grupo,
+      // fusionando en una sola fila si el mismo despacho aparece en más de una línea
+      const porDespacho={}, ordenDesp=[];
+      lineasGrupo.forEach(function(l){
+        const s2=(l.zfis||{})[k]||[];
+        s2.forEach(function(s){
+          const dk=s.row.despacho+'_'+s.row.item+'_'+s.row.subitem;
+          if(!porDespacho[dk]){ porDespacho[dk]={row:s.row,taken:0}; ordenDesp.push(dk); }
+          porDespacho[dk].taken+=s.taken;
+        });
+      });
+      const sels = ordenDesp.map(dk=>porDespacho[dk]);
+
+      const xUnit = (k==='micro90' && principal.tipo==='micromicro' && principal.med==='/1') ? 0.72
+        : (k==='micro100' && principal.tipo==='micromicro' && principal.med==='/4') ? 1.248
+        : (m.pm[principal.med]||0);
 
       if(!sels.length){
-        // Show row without despacho
-        const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (line.tipo==='art4009' && med==='/3') ? (m.pm['/1']||0) : (m.pm[med]||0);
+        // Fila sin selección
         p+='<tr>'
           +'<td style="text-align:center">'+rowNum+'</td>'
           +'<td><strong>'+m.n+'</strong></td>'
@@ -1986,7 +2026,6 @@ function imprimirSalida(salOverride){
       } else {
         sels.forEach(function(s, si){
           const nac = s.row.despacho.includes('ZFI6');
-          const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (line.tipo==='art4009' && med==='/3') ? (m.pm['/1']||0) : (m.pm[med]||0);
           if(si===0){
             p+='<tr>'
               +'<td style="text-align:center" rowspan="'+sels.length+'">'+rowNum+'</td>'
@@ -2519,22 +2558,12 @@ function calcularLiqSalida(){
   const grandBaseIva=liqByLine.reduce((s,v)=>s+(v.lineBaseIva||0),0);
 
   // Unificar en un solo bloque SOLO las combinaciones tipo+medida confirmadas como mismo consumo real
-  // (TRIPLES /1 y TRIPLES E /3 sí — verificado. NO alcanza con compartir el número de RIP:
-  // MICRO/SHERPA y SUEDE comparten RIP pero tienen consumo de tela distinto, así que quedan separados)
-  const LIQ_EQUIVALENCIAS = {
-    'triples_/1': 'TRIPLES_BASE',
-    'art4009_/3': 'TRIPLES_BASE'
-  };
-  function liqGroupKey(entry){
-    const tipoMed = (entry.line.tipo||'triples')+'_'+entry.med;
-    const equiv = LIQ_EQUIVALENCIAS[tipoMed];
-    return entry.art.cert + '_' + (equiv || tipoMed);
-  }
+  // (ver LIQ_EQUIVALENCIAS — MICRO/SHERPA y SUEDE comparten RIP pero NO se unifican, tienen tela distinta)
   const gruposPorRip = {};
   const ordenGrupos = [];
   liqByLine.forEach(entry=>{
     const rip = entry.art.rip[entry.med] || '—';
-    const key = liqGroupKey(entry);
+    const key = entry.art.cert + '_' + getEquivKey(entry.line.tipo, entry.med);
     if(!gruposPorRip[key]){
       gruposPorRip[key] = {
         cert: entry.art.cert, rip,
