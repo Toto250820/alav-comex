@@ -227,7 +227,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           <option value="shura">SHURA</option>
           <option value="microsherpa">MICRO/SHERPA</option>
           <option value="micromicro">MICRO/MICRO</option>
-          <option value="art4009">4009</option>
+          <option value="art4009">TRIPLES E</option>
           <option value="suede">SUEDE</option>
           <option value="patagonia3072">3072 MANTA PATAGONIA</option>
           <option value="patagonia3074">3074 MANTA PATAGONIA</option>
@@ -1115,6 +1115,9 @@ function getNeeded(k,med,qty,tipo){
   if(k==='micro90' && tipo==='micromicro' && med==='/1') return parseFloat((qty*0.72).toFixed(4));
   // Excepción: MICRO/MICRO en /4 (RIP #19) consume 1.248 kg/u de Microfibra 100g, no el 0.624 general
   if(k==='micro100' && tipo==='micromicro' && med==='/4') return parseFloat((qty*1.248).toFixed(4));
+  // Excepción: TRIPLES E (art4009) en /3 es en realidad la RIP #1 del cert 194 (misma que TRIPLES /1) —
+  // usa el consumo original de /1, no el de /3 (que es otra RIP distinta, la #2)
+  if(tipo==='art4009' && med==='/3') return parseFloat((qty*(m.pm['/1']||0)).toFixed(4));
   return parseFloat((qty*(m.pm[med]||0)).toFixed(4));
 }
 function getMatKeys(tipo){
@@ -1138,7 +1141,7 @@ function getArt(tipo){
     b:{'/1':5,'/3':5,'/4':5,'/5':4}
   };
   if(tipo==='art4009') return {
-    num:'4009', n:'4009',
+    num:'TRIPLES E', n:'TRIPLES E',
     cert:'194',
     rip:{'/1':'#1','/3':'#1'},
     b:{'/1':5,'/3':4}
@@ -1969,7 +1972,7 @@ function imprimirSalida(salOverride){
 
       if(!sels.length){
         // Show row without despacho
-        const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (m.pm[med]||0);
+        const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (line.tipo==='art4009' && med==='/3') ? (m.pm['/1']||0) : (m.pm[med]||0);
         p+='<tr>'
           +'<td style="text-align:center">'+rowNum+'</td>'
           +'<td><strong>'+m.n+'</strong></td>'
@@ -1983,7 +1986,7 @@ function imprimirSalida(salOverride){
       } else {
         sels.forEach(function(s, si){
           const nac = s.row.despacho.includes('ZFI6');
-          const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (m.pm[med]||0);
+          const xUnit = (k==='micro90' && line.tipo==='micromicro' && med==='/1') ? 0.72 : (k==='micro100' && line.tipo==='micromicro' && med==='/4') ? 1.248 : (line.tipo==='art4009' && med==='/3') ? (m.pm['/1']||0) : (m.pm[med]||0);
           if(si===0){
             p+='<tr>'
               +'<td style="text-align:center" rowspan="'+sels.length+'">'+rowNum+'</td>'
@@ -2368,7 +2371,7 @@ function generarLiq(){
 
 function imprimirLiqSalida(){
   if(!liqState?.liqByLine) return;
-  const {salida, liqByLine, grandTotal, grandDer, grandIva, grandBaseIva} = liqState;
+  const {salida, liqGrupos, grandTotal, grandDer, grandIva, grandBaseIva} = liqState;
 
   let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Liquidacion Salida '+salida.nro+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:10px;color:#000;padding:12px}'
@@ -2386,10 +2389,11 @@ function imprimirLiqSalida(){
   p+='<div class="hdr"><div><strong style="font-size:13px">LIQUIDACION — SALIDA '+salida.nro+(salida.desc?' — '+salida.desc:'')+'</strong></div>'
     +'<div style="text-align:right">'+new Date().toLocaleDateString('es-AR')+'<br>ALAV SRL</div></div>';
 
-  liqByLine.forEach(({line,art,med,qty,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
-    const rip=art.rip[med]||'—';
-    p+='<div class="line-hdr"><strong>Item '+line.itemNum+' — '+line.n+' '+med+'</strong>'
-      +'<span>'+qty.toLocaleString('es-AR')+' u</span><span>RIP '+rip+'</span>'
+  liqGrupos.forEach(({items,qty,cert,rip,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
+    const itemNums = items.map(it=>it.line.itemNum).join(',');
+    const desc = items.map(it=>`${it.n} ${it.med}`).join(' + ');
+    p+='<div class="line-hdr"><strong>Item '+itemNums+' — '+desc+'</strong>'
+      +'<span>'+qty.toLocaleString('es-AR')+' u</span><span>RIP '+rip+' — CERT '+cert+'</span>'
       +'<span style="margin-left:auto">Total: USD '+fmt(lineTot,2)+'</span></div>';
 
     Object.entries(matCalc).forEach(([k,{m,needed,cu,detalles,totalLiq}])=>{
@@ -2512,16 +2516,49 @@ function calcularLiqSalida(){
   const grandIva=liqByLine.reduce((s,v)=>s+v.lineIva,0);
   const grandBaseIva=liqByLine.reduce((s,v)=>s+(v.lineBaseIva||0),0);
 
+  // Unificar en un solo bloque las líneas que comparten el mismo certificado + RIP
+  // (ej: TRIPLES /1 y TRIPLES E /3 son medidas distintas pero consumen la misma RIP)
+  const gruposPorRip = {};
+  const ordenGrupos = [];
+  liqByLine.forEach(entry=>{
+    const rip = entry.art.rip[entry.med] || '—';
+    const key = entry.art.cert + '_' + rip;
+    if(!gruposPorRip[key]){
+      gruposPorRip[key] = {
+        cert: entry.art.cert, rip,
+        items: [], qty:0, matCalc:{}, lineTot:0, lineDer:0, lineIva:0, lineBaseIva:0
+      };
+      ordenGrupos.push(key);
+    }
+    const g = gruposPorRip[key];
+    g.items.push({line:entry.line, n:entry.line.n, med:entry.med, qty:entry.qty});
+    g.qty += entry.qty;
+    g.lineTot += entry.lineTot;
+    g.lineDer += entry.lineDer;
+    g.lineIva += entry.lineIva;
+    g.lineBaseIva += entry.lineBaseIva||0;
+    Object.entries(entry.matCalc).forEach(([k,v])=>{
+      if(!g.matCalc[k]){
+        g.matCalc[k] = {m:v.m, needed:0, cu:v.cu, detalles:[], totalLiq:0};
+      }
+      g.matCalc[k].needed += v.needed;
+      g.matCalc[k].detalles = g.matCalc[k].detalles.concat(v.detalles);
+      g.matCalc[k].totalLiq += v.totalLiq;
+    });
+  });
+  const liqGrupos = ordenGrupos.map(key=>gruposPorRip[key]);
+
   let html=`<div class="card" style="border-color:var(--pu)">
     <div class="ct" style="color:var(--pu)">Liquidación — Salida ${salida.nro}${salida.desc?' — '+salida.desc:''}</div>`;
 
-  liqByLine.forEach(({line,art,med,qty,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
-    const rip=art.rip[med]||'—';
+  liqGrupos.forEach(({items,qty,cert,rip,matCalc,lineTot,lineDer,lineIva,lineBaseIva})=>{
+    const itemNums = items.map(it=>it.line.itemNum).join(',');
+    const desc = items.map(it=>`${it.n} ${it.med}`).join(' + ');
     html+=`<div style="margin-bottom:16px;border:1px solid var(--bd2);border-radius:var(--rs);overflow:hidden">
       <div style="background:#1a1a2e;padding:6px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <strong style="color:#fff">Ítem ${line.itemNum} — ${line.n} ${med}</strong>
+        <strong style="color:#fff">Ítem ${itemNums} — ${desc}</strong>
         <span style="color:var(--pu)">${qty.toLocaleString('es-AR')} u</span>
-        <span style="color:#8a93b0;font-size:11px">RIP ${rip} — CERT 194/2025</span>
+        <span style="color:#8a93b0;font-size:11px">RIP ${rip} — CERT ${cert}/2025</span>
         <span style="color:var(--pu);margin-left:auto">Total: USD ${fmt(lineTot,2)}</span>
       </div>`;
 
@@ -2567,7 +2604,7 @@ function calcularLiqSalida(){
   <div style="margin-top:12px"><button class="btn btnpu" onclick="imprimirLiq()">🖨 Imprimir liquidación</button></div>
   </div>`;
 
-  liqState.liqByLine=liqByLine; liqState.grandTotal=grandTotal; liqState.grandDer=grandDer; liqState.grandIva=grandIva;
+  liqState.liqByLine=liqByLine; liqState.liqGrupos=liqGrupos; liqState.grandTotal=grandTotal; liqState.grandDer=grandDer; liqState.grandIva=grandIva;
   const resEl=document.getElementById('liq-resultado');
   resEl.style.display='block'; resEl.innerHTML=html;
   resEl.scrollIntoView({behavior:'smooth'});
