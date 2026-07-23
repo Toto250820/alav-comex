@@ -539,6 +539,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
             <div class="ii"><div class="il">Disponible actual</div><div class="iv" id="ajs-disponible">—</div></div>
           </div>
           <div class="fr">
+            <div class="ff"><label>Cantidad total cargada (corregir solo si el error es en la cantidad original)</label><input id="ajs-nueva-cantidad" type="number" step="0.01"/></div>
+          </div>
+          <div class="fr">
             <div class="ff"><label>Disponible correcto (lo que debería quedar)</label><input id="ajs-nuevo-disp" type="number" step="0.01"/></div>
           </div>
           <div class="fr">
@@ -3327,6 +3330,7 @@ function buscarParaAjuste(){
   document.getElementById('ajs-cantidad').textContent = fmt(r.cantidad||0) + ' ' + cu;
   document.getElementById('ajs-consumido').textContent = fmt(r.cancel_qty||0) + ' ' + cu;
   document.getElementById('ajs-disponible').textContent = fmt(disponible) + ' ' + cu;
+  document.getElementById('ajs-nueva-cantidad').value = (r.cantidad||0).toFixed(2);
   document.getElementById('ajs-nuevo-disp').value = disponible.toFixed(2);
   document.getElementById('ajs-motivo').value = '';
   document.getElementById('ajs-encontrado').style.display = 'block';
@@ -3334,30 +3338,40 @@ function buscarParaAjuste(){
 
 async function aplicarAjusteStock(){
   if(!ajusteEncontrado) return;
+  const nuevaCantidad = parseFloat(document.getElementById('ajs-nueva-cantidad').value);
   const nuevoDisponible = parseFloat(document.getElementById('ajs-nuevo-disp').value);
   const motivo = document.getElementById('ajs-motivo').value.trim();
   const msg = document.getElementById('ajs-msg');
   msg.style.display='block';
-  if(isNaN(nuevoDisponible) || !motivo){
-    msg.style.color='var(--rd)'; msg.textContent='Completá el disponible correcto y el motivo del ajuste.';
+  if(isNaN(nuevaCantidad) || isNaN(nuevoDisponible) || !motivo){
+    msg.style.color='var(--rd)'; msg.textContent='Completá cantidad, disponible y el motivo del ajuste.';
     return;
   }
   const r = ajusteEncontrado.row;
+  const cantidadAnterior = r.cantidad||0;
   const cancelQtyAnterior = r.cancel_qty||0;
-  const cancelQtyNuevo = (r.cantidad||0) - nuevoDisponible;
-  if(!confirm(`⚠️ Vas a corregir el stock de ${r.despacho} ít.${r.item}.${r.subitem}:\n\nConsumido: ${fmt(cancelQtyAnterior)} → ${fmt(cancelQtyNuevo)}\nDisponible: ${fmt((r.cantidad||0)-cancelQtyAnterior)} → ${fmt(nuevoDisponible)}\n\nMotivo: ${motivo}\n\n¿Confirmás?`)) return;
+  const cancelQtyNuevo = nuevaCantidad - nuevoDisponible;
+  const cambioCantidad = Math.abs(nuevaCantidad-cantidadAnterior)>0.01;
+
+  let confirmMsg = `⚠️ Vas a corregir el stock de ${r.despacho} ít.${r.item}.${r.subitem}:\n\n`;
+  if(cambioCantidad) confirmMsg += `Cantidad total cargada: ${fmt(cantidadAnterior)} → ${fmt(nuevaCantidad)}\n`;
+  confirmMsg += `Consumido: ${fmt(cancelQtyAnterior)} → ${fmt(cancelQtyNuevo)}\nDisponible: ${fmt(cantidadAnterior-cancelQtyAnterior)} → ${fmt(nuevoDisponible)}\n\nMotivo: ${motivo}\n\n¿Confirmás?`;
+  if(!confirm(confirmMsg)) return;
 
   try{
     const id = r.despacho+'_'+r.item+'_'+r.subitem;
+    const body = {cancel_qty: cancelQtyNuevo};
+    if(cambioCantidad) body.cantidad = nuevaCantidad;
     const result = await sbFetch('stock_base?id=eq.'+encodeURIComponent(id), {
       method:'PATCH', headers:{'Prefer':'return=representation'},
-      body: JSON.stringify({cancel_qty: cancelQtyNuevo})
+      body: JSON.stringify(body)
     });
     if(!result || !result.length){
       msg.style.color='var(--rd)'; msg.textContent='⚠ No se encontró la fila en Supabase para corregir (¿es un despacho cargado manualmente que todavía no sincronizó?).';
       return;
     }
-    r.cancel_qty = cancelQtyNuevo; // reflejar el cambio en memoria también
+    r.cancel_qty = cancelQtyNuevo;
+    if(cambioCantidad) r.cantidad = nuevaCantidad;
 
     const who = localStorage.getItem('ga_user_label')||'alguien';
     await sbFetch('ajustes_stock', {
@@ -3367,7 +3381,9 @@ async function aplicarAjusteStock(){
         despacho:r.despacho, item:r.item, subitem:r.subitem,
         material: ajusteEncontrado.mat, producto: r.producto||MAT_LABELS[ajusteEncontrado.mat]||'',
         cancel_qty_anterior: cancelQtyAnterior, cancel_qty_nuevo: cancelQtyNuevo,
-        diferencia: cancelQtyNuevo-cancelQtyAnterior, motivo, ajustado_por: who
+        diferencia: cancelQtyNuevo-cancelQtyAnterior,
+        motivo: motivo + (cambioCantidad ? ` [cantidad total: ${fmt(cantidadAnterior)} → ${fmt(nuevaCantidad)}]` : ''),
+        ajustado_por: who
       })
     });
 
