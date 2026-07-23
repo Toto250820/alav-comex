@@ -1887,7 +1887,7 @@ function imprimirPackingList(salOverride){
     if(grupo.length===1) return grupo[0];
     const principal = grupo.find(r=>r.tipo!=='art4009') || grupo[0];
     return {
-      itemNum: grupo.map(r=>r.itemNum).join(','),
+      itemNum: principal.itemNum,
       n: principal.n,
       med: principal.med,
       qty: grupo.reduce((s,r)=>s+r.qty,0),
@@ -2055,7 +2055,7 @@ function imprimirSalida(salOverride){
   ordenGrupos.forEach(function(key){
     const lineasGrupo = grupos[key];
     const principal = lineasGrupo.find(l=>l.tipo!=='art4009') || lineasGrupo[0];
-    const itemNums = lineasGrupo.map(l=>l.itemNum).join(',');
+    const itemNums = principal.itemNum;
     const qtyTotal = lineasGrupo.reduce((s,l)=>s+l.qty,0);
     const matKeys = getMatKeys(principal.tipo||'triples');
 
