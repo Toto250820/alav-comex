@@ -380,7 +380,18 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
 <!-- HISTORIAL -->
 <div id="sec-hist" class="sec">
-  <div class="stit">Historial ZFE3</div>
+  <div class="stit">Consumo por producto</div>
+  <div class="card">
+    <div class="fr">
+      <div class="ff" style="max-width:280px">
+        <label>Elegí un insumo/producto</label>
+        <select id="hist-mat-sel" onchange="renderConsumoProducto()"></select>
+      </div>
+    </div>
+  </div>
+  <div id="hist-consumo"></div>
+
+  <div class="stit" style="margin-top:22px">Historial ZFE3</div>
   <div id="hist-lista"></div>
 </div>
 
@@ -1171,7 +1182,7 @@ function showSec(id,btn){
   document.getElementById('sec-'+id).classList.add('active');
   btn.classList.add('active');
   if(id==='stock') renderStock();
-  if(id==='hist')  renderHist();
+  if(id==='hist')  { poblarSelectorConsumo(); renderHist(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -2948,6 +2959,76 @@ function onTntUnitChange(uid, cqMetros){
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────────────────
+function poblarSelectorConsumo(){
+  const sel = document.getElementById('hist-mat-sel');
+  if(!sel) return;
+  const valorActual = sel.value;
+  const opciones = Object.entries(MAT_LABELS).sort((a,b)=>a[1].localeCompare(b[1]));
+  sel.innerHTML = '<option value="">Seleccionar...</option>' +
+    opciones.map(([k,label])=>`<option value="${k}">${label}</option>`).join('');
+  if(valorActual) sel.value = valorActual;
+  renderConsumoProducto();
+}
+
+function renderConsumoProducto(){
+  const el = document.getElementById('hist-consumo');
+  if(!el) return;
+  const mat = document.getElementById('hist-mat-sel')?.value;
+  if(!mat){ el.innerHTML=''; return; }
+
+  const filas = [...(STOCK_BASE[mat]||[]), ...(stockExtra[mat]||[])];
+  if(!filas.length){ el.innerHTML='<div class="empty">No hay stock cargado para este insumo todavía.</div>'; return; }
+
+  const cu = CANCEL_UNIT[mat]||'kg';
+
+  el.innerHTML = filas.map(r=>{
+    const id = r.despacho+'_'+r.item+'_'+r.subitem;
+    const inicial = r.cantidad||0;
+    const consumido = r.cancel_qty||0;
+    const disponible = inicial - consumido;
+
+    // Buscar en qué ZFE3 se consumió este despacho, y cuánto en cada uno
+    const porZfe = {};
+    const ordenZfe = [];
+    salidaHistorial.forEach(s=>{
+      let cantEnEstaSalida = 0;
+      (s.cancelaciones||[]).forEach(c=>{
+        if(c.despacho===r.despacho && c.item_zfi===r.item && c.subitem===r.subitem){
+          cantEnEstaSalida += c.cantidad;
+        }
+      });
+      if(cantEnEstaSalida>0){
+        const key = s.zfeNro || s.nro;
+        if(!porZfe[key]){ porZfe[key] = {nro:s.nro, zfeNro:s.zfeNro, zfeFecha:s.zfeFecha, cantidad:0}; ordenZfe.push(key); }
+        porZfe[key].cantidad += cantEnEstaSalida;
+      }
+    });
+    const consumosZfe = ordenZfe.map(k=>porZfe[k]);
+    const identificado = consumosZfe.reduce((s,c)=>s+c.cantidad,0);
+    const sinIdentificar = consumido - identificado;
+
+    return `<div class="mb">
+      <div class="mh">
+        <div><span class="mono" style="font-weight:600">${r.despacho}</span> ít.${r.item}.${r.subitem} ${r.producto?`— <strong>${r.producto}</strong>`:''}</div>
+        <div style="display:flex;gap:14px;font-size:11px">
+          <span>Inicial: <strong>${fmt(inicial)} ${cu}</strong></span>
+          <span>Consumido: <strong style="color:var(--rd)">${fmt(consumido)} ${cu}</strong></span>
+          <span>Disponible: <strong style="color:var(--gr)">${fmt(disponible)} ${cu}</strong></span>
+        </div>
+      </div>
+      ${consumosZfe.length ? `<table><thead><tr><th>Salida</th><th>ZFE3</th><th>Fecha</th><th>Consumo</th></tr></thead><tbody>
+        ${consumosZfe.map(c=>`<tr>
+          <td class="mono">${c.nro}</td>
+          <td class="mono">${c.zfeNro||'—'}</td>
+          <td>${c.zfeFecha||'—'}</td>
+          <td class="mono">${fmt(c.cantidad)} ${cu}</td>
+        </tr>`).join('')}
+      </tbody></table>` : `<div class="empty" style="padding:10px">Sin consumos registrados en el historial de salidas.</div>`}
+      ${sinIdentificar > 0.01 ? `<div class="ssosp">⚠ ${fmt(sinIdentificar)} ${cu} consumidos que no se identificaron en el historial de salidas (pueden venir de un ZFE3 cargado antes de tener este historial, o desde "Cargar despacho por PDF").</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function renderHist(){
   const el=document.getElementById('hist-lista');
   if(!historial.length){el.innerHTML='<div class="empty">Sin registros.</div>';return;}
