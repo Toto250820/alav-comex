@@ -1870,7 +1870,35 @@ function imprimirPackingList(salOverride){
     totalQty+=qty; totalBultos+=bultos;
     totalKgNeto+=kgNeto; totalFOB+=valorTotal;
 
-    return {itemNum:l.itemNum, n:l.n, med, qty, bultos, kgNeto, kgBruto, precioUnit, valorTotal, rip:l.rip, cert:l.cert};
+    return {itemNum:l.itemNum, n:l.n, med, qty, bultos, kgNeto, kgBruto, precioUnit, valorTotal, rip:l.rip, cert:l.cert, tipo};
+  });
+
+  // Unificar filas equivalentes (misma regla que la liquidación — ver LIQ_EQUIVALENCIAS):
+  // TRIPLES /1 + TRIPLES E /3 aparecen como una sola fila "TRIPLES" con todo sumado.
+  const gruposPacking = {};
+  const ordenPacking = [];
+  rows.forEach(r=>{
+    const key = getEquivKey(r.tipo, r.med);
+    if(!gruposPacking[key]){ gruposPacking[key] = []; ordenPacking.push(key); }
+    gruposPacking[key].push(r);
+  });
+  const rowsUnificadas = ordenPacking.map(key=>{
+    const grupo = gruposPacking[key];
+    if(grupo.length===1) return grupo[0];
+    const principal = grupo.find(r=>r.tipo!=='art4009') || grupo[0];
+    return {
+      itemNum: grupo.map(r=>r.itemNum).join(','),
+      n: principal.n,
+      med: principal.med,
+      qty: grupo.reduce((s,r)=>s+r.qty,0),
+      bultos: grupo.reduce((s,r)=>s+r.bultos,0),
+      kgNeto: parseFloat(grupo.reduce((s,r)=>s+r.kgNeto,0).toFixed(2)),
+      kgBruto: parseFloat(grupo.reduce((s,r)=>s+r.kgBruto,0).toFixed(2)),
+      precioUnit: principal.precioUnit,
+      valorTotal: parseFloat(grupo.reduce((s,r)=>s+r.valorTotal,0).toFixed(2)),
+      rip: principal.rip,
+      cert: principal.cert
+    };
   });
 
   const flete = parseFloat((totalFOB*0.02).toFixed(2));
@@ -1919,7 +1947,7 @@ function imprimirPackingList(salOverride){
     +'<th>Val. Unit. (USD)</th><th>Val. Total (USD)</th><th>CTZF</th><th>RIP</th><th>Marca</th>'
     +'</tr></thead><tbody>';
 
-  rows.forEach(r=>{
+  rowsUnificadas.forEach(r=>{
     p+='<tr>'
       +'<td class="c">'+r.itemNum+'</td>'
       +'<td>'+r.n+'</td>'
