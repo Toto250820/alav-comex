@@ -416,6 +416,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div class="admtabs">
       <button class="admtab active" onclick="showAdmTab('adm-stock',this)">Cargar stock</button>
       <button class="admtab" onclick="showAdmTab('adm-avisos',this)">🔔 Avisos de Carga</button>
+      <button class="admtab" onclick="showAdmTab('adm-ajuste',this)">🔧 Corrección de Stock</button>
       <button class="admtab" onclick="showAdmTab('adm-pin',this)">Cambiar PIN</button>
     </div>
     <div id="adm-stock" class="admpanel active">
@@ -508,6 +509,48 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="card">
         <div class="ct">Avisos registrados</div>
         <div id="av-lista"><div class="empty">Ninguno.</div></div>
+      </div>
+    </div>
+    <div id="adm-ajuste" class="admpanel">
+      <div class="card" style="border-color:var(--rd)">
+        <div class="ct" style="color:var(--rd)">⚠ Reparación masiva — despachos ZFI6</div>
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">
+          Hasta hace poco, el consumo de despachos <b>ZFI6</b> quedaba bien registrado en el historial de salidas
+          pero <b>nunca se aplicaba de verdad</b> al stock en Supabase (ya corregido para las salidas nuevas).
+          Esto puede recalcular el "consumido" real de TODOS los despachos ZFI6, sumando lo que dice el historial de salidas,
+          y corregir los que estén desactualizados — con registro de auditoría de cada uno.
+        </div>
+        <button class="btn btnd" onclick="repararZFI6Masivo()">🔧 Revisar y reparar todos los ZFI6</button>
+        <div id="ajs-masivo-resultado" style="display:none;margin-top:10px"></div>
+      </div>
+      <div class="card" style="max-width:560px">
+        <div class="ct">Buscar despacho a corregir</div>
+        <div class="fr">
+          <div class="ff" style="max-width:210px"><label>Despacho</label><input id="ajs-desp" placeholder="ej: 26258ZFI8000028W" style="font-family:var(--mn);font-size:12px"/></div>
+          <div class="ff" style="max-width:90px"><label>Ítem</label><input id="ajs-item" type="number" value="1"/></div>
+          <div class="ff" style="max-width:90px"><label>Subítem</label><input id="ajs-sub" type="number" value="0"/></div>
+        </div>
+        <button class="btn btnpu" onclick="buscarParaAjuste()">🔍 Buscar</button>
+        <div id="ajs-encontrado" style="display:none;margin-top:14px">
+          <div class="ibox">
+            <div class="ii"><div class="il">Insumo</div><div class="iv" id="ajs-nombre">—</div></div>
+            <div class="ii"><div class="il">Cantidad cargada</div><div class="iv" id="ajs-cantidad">—</div></div>
+            <div class="ii"><div class="il">Consumido actual</div><div class="iv" id="ajs-consumido">—</div></div>
+            <div class="ii"><div class="il">Disponible actual</div><div class="iv" id="ajs-disponible">—</div></div>
+          </div>
+          <div class="fr">
+            <div class="ff"><label>Disponible correcto (lo que debería quedar)</label><input id="ajs-nuevo-disp" type="number" step="0.01"/></div>
+          </div>
+          <div class="fr">
+            <div class="ff"><label>Motivo del ajuste</label><input id="ajs-motivo" placeholder="ej: consumo duplicado durante prueba de ZFE3 000282P"/></div>
+          </div>
+          <button class="btn btnd" style="padding:8px 16px;font-size:13px" onclick="aplicarAjusteStock()">⚠ Aplicar corrección</button>
+        </div>
+        <div id="ajs-msg" style="margin-top:10px;font-size:12px;display:none"></div>
+      </div>
+      <div class="card">
+        <div class="ct">Últimos ajustes registrados</div>
+        <div id="ajs-lista"><div class="empty">Ninguno todavía.</div></div>
       </div>
     </div>
     <div id="adm-pin" class="admpanel">
@@ -1200,6 +1243,7 @@ function showAdmTab(id,btn){
       hEl.value = now.toTimeString().slice(0,5);
     }
   }
+  if(id==='adm-ajuste'){ loadAjustesStock(); }
 }
 
 // ── CALCULADORA ───────────────────────────────────────────────────────────────
@@ -2228,10 +2272,8 @@ function confirmarSalida(){
     saveSalidaToSupabase(_sal).catch(e=>console.error(e));
     if(_sal.cancelaciones) {
       _sal.cancelaciones.forEach(c=>{
-        if(!esNac(c.despacho)){
-          const r=Object.values(STOCK_BASE).flat().find(x=>x.despacho===c.despacho&&x.item===c.item_zfi&&x.subitem===c.subitem);
-          if(r) updateStockInSupabase(r.despacho,r.item,r.subitem,r.cancel_qty).catch(e=>console.error(e));
-        }
+        const r=Object.values(STOCK_BASE).flat().find(x=>x.despacho===c.despacho&&x.item===c.item_zfi&&x.subitem===c.subitem);
+        if(r) updateStockInSupabase(r.despacho,r.item,r.subitem,r.cancel_qty).catch(e=>console.error(e));
       });
     }
   }
@@ -3190,6 +3232,166 @@ async function sincronizarTodoStockExtra(){
     </div>`;
   }
   alert(`Listo: ${ok} sincronizados${fail?`, ${fail} con error (mirá el detalle debajo del botón)`:''}.`);
+}
+
+async function repararZFI6Masivo(){
+  if(!confirm('Esto va a revisar TODOS los despachos ZFI6 en stock, recalcular su consumo real según el historial de salidas, y corregir los que estén desactualizados. Puede tardar un rato. ¿Continuar?')) return;
+  const resEl = document.getElementById('ajs-masivo-resultado');
+  resEl.style.display='block'; resEl.innerHTML = '<div class="empty">Revisando...</div>';
+
+  // Juntar todos los despachos ZFI6 de STOCK_BASE + stockExtra
+  const candidatos = [];
+  Object.entries(STOCK_BASE).forEach(([mat,rows])=>{
+    (rows||[]).forEach(r=>{ if(esNac(r.despacho)) candidatos.push({mat,row:r}); });
+  });
+  Object.entries(stockExtra).forEach(([mat,rows])=>{
+    (rows||[]).forEach(r=>{ if(esNac(r.despacho)) candidatos.push({mat,row:r}); });
+  });
+
+  const discrepancias = [];
+  candidatos.forEach(({mat,row})=>{
+    let identificado = 0;
+    salidaHistorial.forEach(s=>{
+      (s.cancelaciones||[]).forEach(c=>{
+        if(c.despacho===row.despacho && c.item_zfi===row.item && c.subitem===row.subitem) identificado += c.cantidad;
+      });
+    });
+    const actual = row.cancel_qty||0;
+    if(Math.abs(identificado - actual) > 0.01 && identificado > actual){
+      discrepancias.push({mat, row, actual, correcto: identificado});
+    }
+  });
+
+  if(!discrepancias.length){
+    resEl.innerHTML = '<div class="ok">✓ Revisados '+candidatos.length+' despachos ZFI6 — no se encontraron discrepancias.</div>';
+    return;
+  }
+
+  resEl.innerHTML = `<div class="dupwarn">Se encontraron ${discrepancias.length} despacho(s) ZFI6 con consumo desactualizado. Aplicando correcciones...</div>`;
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+  let ok=0, fail=0;
+  for(const d of discrepancias){
+    try{
+      const id = d.row.despacho+'_'+d.row.item+'_'+d.row.subitem;
+      const result = await sbFetch('stock_base?id=eq.'+encodeURIComponent(id), {
+        method:'PATCH', headers:{'Prefer':'return=representation'},
+        body: JSON.stringify({cancel_qty: d.correcto})
+      });
+      if(result && result.length){
+        d.row.cancel_qty = d.correcto;
+        await sbFetch('ajustes_stock', {
+          method:'POST', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({
+            id: 'ajs_auto_'+id+'_'+Date.now(),
+            despacho:d.row.despacho, item:d.row.item, subitem:d.row.subitem,
+            material:d.mat, producto:d.row.producto||MAT_LABELS[d.mat]||'',
+            cancel_qty_anterior:d.actual, cancel_qty_nuevo:d.correcto, diferencia:d.correcto-d.actual,
+            motivo:'Reparación automática — consumo ZFI6 no sincronizado (bug de esNac() en confirmarSalida, ya corregido)',
+            ajustado_por: who
+          })
+        });
+        ok++;
+      } else fail++;
+    }catch(e){ fail++; }
+  }
+  renderStock();
+  loadAjustesStock();
+  resEl.innerHTML = `<div class="${fail?'err':'ok'}">
+    ${fail?'⚠️':'✓'} Reparados ${ok} despacho(s)${fail?`, ${fail} con error`:''}.
+    <ul style="margin:8px 0 0 18px;font-family:var(--mn);font-size:11px">
+      ${discrepancias.map(d=>`<li>${d.row.despacho} ít.${d.row.item}.${d.row.subitem} — ${d.row.producto||MAT_LABELS[d.mat]}: ${fmt(d.actual)} → ${fmt(d.correcto)}</li>`).join('')}
+    </ul></div>`;
+}
+
+let ajusteEncontrado = null; // {mat, row} del despacho que se está por corregir
+
+function buscarParaAjuste(){
+  const desp = document.getElementById('ajs-desp').value.trim();
+  const item = parseInt(document.getElementById('ajs-item').value)||1;
+  const sub = parseInt(document.getElementById('ajs-sub').value)||0;
+  const msg = document.getElementById('ajs-msg');
+  msg.style.display='block';
+  const encontrado = buscarEnStock(desp, item, sub);
+  if(!encontrado){
+    msg.style.color='var(--rd)'; msg.textContent='No se encontró ningún despacho con ese número/ítem/subítem.';
+    document.getElementById('ajs-encontrado').style.display='none';
+    ajusteEncontrado = null;
+    return;
+  }
+  msg.style.display='none';
+  ajusteEncontrado = encontrado;
+  const r = encontrado.row;
+  const cu = r.cancel_unit || CANCEL_UNIT[encontrado.mat] || '';
+  const disponible = (r.cantidad||0) - (r.cancel_qty||0);
+  document.getElementById('ajs-nombre').textContent = (r.producto || MAT_LABELS[encontrado.mat] || encontrado.mat);
+  document.getElementById('ajs-cantidad').textContent = fmt(r.cantidad||0) + ' ' + cu;
+  document.getElementById('ajs-consumido').textContent = fmt(r.cancel_qty||0) + ' ' + cu;
+  document.getElementById('ajs-disponible').textContent = fmt(disponible) + ' ' + cu;
+  document.getElementById('ajs-nuevo-disp').value = disponible.toFixed(2);
+  document.getElementById('ajs-motivo').value = '';
+  document.getElementById('ajs-encontrado').style.display = 'block';
+}
+
+async function aplicarAjusteStock(){
+  if(!ajusteEncontrado) return;
+  const nuevoDisponible = parseFloat(document.getElementById('ajs-nuevo-disp').value);
+  const motivo = document.getElementById('ajs-motivo').value.trim();
+  const msg = document.getElementById('ajs-msg');
+  msg.style.display='block';
+  if(isNaN(nuevoDisponible) || !motivo){
+    msg.style.color='var(--rd)'; msg.textContent='Completá el disponible correcto y el motivo del ajuste.';
+    return;
+  }
+  const r = ajusteEncontrado.row;
+  const cancelQtyAnterior = r.cancel_qty||0;
+  const cancelQtyNuevo = (r.cantidad||0) - nuevoDisponible;
+  if(!confirm(`⚠️ Vas a corregir el stock de ${r.despacho} ít.${r.item}.${r.subitem}:\n\nConsumido: ${fmt(cancelQtyAnterior)} → ${fmt(cancelQtyNuevo)}\nDisponible: ${fmt((r.cantidad||0)-cancelQtyAnterior)} → ${fmt(nuevoDisponible)}\n\nMotivo: ${motivo}\n\n¿Confirmás?`)) return;
+
+  try{
+    const id = r.despacho+'_'+r.item+'_'+r.subitem;
+    const result = await sbFetch('stock_base?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=representation'},
+      body: JSON.stringify({cancel_qty: cancelQtyNuevo})
+    });
+    if(!result || !result.length){
+      msg.style.color='var(--rd)'; msg.textContent='⚠ No se encontró la fila en Supabase para corregir (¿es un despacho cargado manualmente que todavía no sincronizó?).';
+      return;
+    }
+    r.cancel_qty = cancelQtyNuevo; // reflejar el cambio en memoria también
+
+    const who = localStorage.getItem('ga_user_label')||'alguien';
+    await sbFetch('ajustes_stock', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({
+        id: 'ajs_'+id+'_'+Date.now(),
+        despacho:r.despacho, item:r.item, subitem:r.subitem,
+        material: ajusteEncontrado.mat, producto: r.producto||MAT_LABELS[ajusteEncontrado.mat]||'',
+        cancel_qty_anterior: cancelQtyAnterior, cancel_qty_nuevo: cancelQtyNuevo,
+        diferencia: cancelQtyNuevo-cancelQtyAnterior, motivo, ajustado_por: who
+      })
+    });
+
+    msg.style.color='var(--gr)'; msg.textContent='✓ Corrección aplicada y registrada.';
+    document.getElementById('ajs-encontrado').style.display='none';
+    renderStock();
+    loadAjustesStock();
+  }catch(e){
+    msg.style.color='var(--rd)'; msg.textContent='⚠ Error aplicando la corrección: '+e.message;
+  }
+}
+
+async function loadAjustesStock(){
+  const el = document.getElementById('ajs-lista');
+  if(!el) return;
+  try{
+    const rows = await sbFetch('ajustes_stock?select=*&order=creado_en.desc&limit=20', {method:'GET', headers:{'Prefer':''}});
+    if(!rows || !rows.length){ el.innerHTML='<div class="empty">Ninguno todavía.</div>'; return; }
+    el.innerHTML = rows.map(a=>`<div style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px">
+      <span class="mono" style="font-weight:600">${a.despacho}</span> ít.${a.item}.${a.subitem} — ${a.producto||a.material}<br>
+      <span style="color:var(--tx3);font-size:11px">Consumido: ${fmt(a.cancel_qty_anterior)} → ${fmt(a.cancel_qty_nuevo)} (${a.diferencia>0?'+':''}${fmt(a.diferencia)}) · por ${a.ajustado_por} · ${new Date(a.creado_en).toLocaleString('es-AR')}</span><br>
+      <span style="font-style:italic;color:var(--tx2)">${a.motivo}</span>
+    </div>`).join('');
+  }catch(e){ /* si la tabla no existe todavía, no rompemos nada */ }
 }
 
 function slugify(txt){
