@@ -9,6 +9,7 @@
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ALAV COMEX">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2433,7 +2434,7 @@ function imprimirLiqSalida(){
     // Un solo nombre representativo (el artículo base, ej. TRIPLES, no la variante E)
     const principal = items.find(it=>it.line.tipo!=='art4009') || items[0];
     const desc = principal.n;
-    p+='<div class="line-hdr"><strong>Item '+itemNums+' — '+desc+'</strong>'
+    p+='<div class="line-hdr"><strong>'+desc+'</strong>'
       +'<span>'+qty.toLocaleString('es-AR')+' u</span><span>RIP '+rip+' — CERT '+cert+'</span>'
       +'<span style="margin-left:auto">Total: USD '+fmt(lineTot,2)+'</span></div>';
 
@@ -2454,7 +2455,7 @@ function imprimirLiqSalida(){
         +'</tbody></table>';
     });
 
-    p+='<div class="line-tot"><span><strong>Item '+itemNums+':</strong></span>'
+    p+='<div class="line-tot"><span><strong>Subtotal:</strong></span>'
       +'<span>Base IVA: <strong>USD '+fmt(lineBaseIva||0,2)+'</strong></span>'
       +'<span>Der.Import.: <strong>USD '+fmt(lineDer,2)+'</strong></span>'
       +'<span>IVA 21%: <strong>USD '+fmt(lineIva,2)+'</strong></span>'
@@ -2628,7 +2629,7 @@ function calcularLiqSalida(){
     const desc = principal.n;
     html+=`<div style="margin-bottom:16px;border:1px solid var(--bd2);border-radius:var(--rs);overflow:hidden">
       <div style="background:#1a1a2e;padding:6px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <strong style="color:#fff">Ítem ${itemNums} — ${desc}</strong>
+        <strong style="color:#fff">${desc}</strong>
         <span style="color:var(--pu)">${qty.toLocaleString('es-AR')} u</span>
         <span style="color:#8a93b0;font-size:11px">RIP ${rip} — CERT ${cert}/2025</span>
         <span style="color:var(--pu);margin-left:auto">Total: USD ${fmt(lineTot,2)}</span>
@@ -2664,7 +2665,7 @@ function calcularLiqSalida(){
       <div class="ii"><div class="il">Base IVA</div><div class="iv">USD ${fmt(lineBaseIva||0,2)}</div></div>
       <div class="ii"><div class="il">Der. Import.</div><div class="iv">USD ${fmt(lineDer,2)}</div></div>
       <div class="ii"><div class="il">IVA 21%</div><div class="iv">USD ${fmt(lineIva,2)}</div></div>
-      <div class="ii"><div class="il" style="color:var(--pu)">Total ítem ${itemNums}</div><div class="iv" style="color:var(--pu)">USD ${fmt(lineTot,2)}</div></div>
+      <div class="ii"><div class="il" style="color:var(--pu)">Total</div><div class="iv" style="color:var(--pu)">USD ${fmt(lineTot,2)}</div></div>
     </div></div>`;
   });
 
