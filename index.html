@@ -380,7 +380,13 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
 <!-- HISTORIAL -->
 <div id="sec-hist" class="sec">
-  <div class="stit">Consumo por producto</div>
+  <div class="stit">Gasto en aduana por artículo</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Por cada artículo y medida (ej. ACOLCHADOS TRIPLES /1): cantidad total sacada, consumo de cada materia prima (nacional incluido, aunque no pague derechos) y el total pagado de aduana — sumando todas las salidas confirmadas. Usa la misma unificación que la Liquidación (TRIPLES + TRIPLES E cuentan como uno solo).</div>
+    <div id="hist-aduana"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Consumo por producto</div>
   <div class="card">
     <div class="fr">
       <div class="ff" style="max-width:280px">
@@ -1228,7 +1234,7 @@ function showSec(id,btn){
   document.getElementById('sec-'+id).classList.add('active');
   btn.classList.add('active');
   if(id==='stock') renderStock();
-  if(id==='hist')  { poblarSelectorConsumo(); renderHist(); }
+  if(id==='hist')  { poblarSelectorConsumo(); renderHist(); renderHistorialAduana(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -1809,6 +1815,28 @@ const PRECIOS_USD = {
   patagonia3076: {'/1':3.96,'/3':5.80},
 };
 
+// NCM del ARTÍCULO TERMINADO (no de la materia prima) que se imprime en el Packing List.
+// Antes era una sola constante fija para todos los artículos — eso era el bug con Patagonia.
+// Patagonia tiene NCM distinta según la medida (/1 vs /3), por eso ahí es un objeto en vez de un string.
+const NCM_ARTICULO = {
+  triples:     '9404.90.00.900E',
+  bunny:       '9404.90.00.900E',
+  shura:       '9404.90.00.900E',
+  microsherpa: '9404.90.00.900E',
+  art4009:     '9404.90.00.900E',
+  micromicro:  '9404.90.00.900E',
+  suede:       '9404.90.00.900E',
+  patagonia3072: {'/1':'6301.40.00.300N','/3':'6301.40.00.100C'},
+  patagonia3074: {'/1':'6301.40.00.300N','/3':'6301.40.00.100C'},
+  patagonia3076: {'/1':'6301.40.00.300N','/3':'6301.40.00.100C'},
+};
+function getNCMArticulo(tipo, med){
+  const entry = NCM_ARTICULO[tipo];
+  if(!entry) return '9404.90.00.900E';
+  if(typeof entry === 'string') return entry;
+  return entry[med] || Object.values(entry)[0] || '9404.90.00.900E';
+}
+
 // Combinaciones tipo+medida EXPLÍCITAMENTE confirmadas como mismo consumo real —
 // se usa tanto en la liquidación como al imprimir la salida para María.
 // No alcanza con compartir el número de RIP (ej. MICRO/SHERPA y SUEDE lo comparten
@@ -1827,7 +1855,11 @@ function imprimirPackingList(salOverride){
   if(!sal||!sal.lineas.length){alert('No hay líneas en la salida.');return;}
   const marca = document.getElementById('sal-marca')?.value || 'CACHAREL';
   const fecha = new Date().toLocaleDateString('es-AR');
-  const NCM = '9404.90.00.900E';
+  // NCM: depende del artículo Y de la medida (Patagonia /1 vs /3 tienen NCM distinta).
+  // Si la salida mezcla artículos/medidas con NCM distinta, el header muestra la del primer renglón
+  // y cada fila de la tabla igual muestra la suya correcta.
+  const primeraLinea = sal.lineas[0];
+  const NCM = primeraLinea ? getNCMArticulo(primeraLinea.tipo||'triples', primeraLinea.med) : '9404.90.00.900E';
 
   // Calcular totales
   let totalQty=0, totalBultos=0, totalKgNeto=0, totalFOB=0;
@@ -1897,7 +1929,8 @@ function imprimirPackingList(salOverride){
       precioUnit: principal.precioUnit,
       valorTotal: parseFloat(grupo.reduce((s,r)=>s+r.valorTotal,0).toFixed(2)),
       rip: principal.rip,
-      cert: principal.cert
+      cert: principal.cert,
+      tipo: principal.tipo
     };
   });
 
@@ -1952,7 +1985,7 @@ function imprimirPackingList(salOverride){
       +'<td class="c">'+r.itemNum+'</td>'
       +'<td>'+r.n+'</td>'
       +'<td class="c">'+r.med+'</td>'
-      +'<td style="font-family:monospace;font-size:8px">'+NCM+'</td>'
+      +'<td style="font-family:monospace;font-size:8px">'+getNCMArticulo(r.tipo, r.med)+'</td>'
       +'<td class="r">'+r.qty.toLocaleString('es-AR')+'</td>'
       +'<td class="r">'+r.bultos+'</td>'
       +'<td class="r">'+r.kgNeto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
@@ -3032,6 +3065,104 @@ function onTntUnitChange(uid, cqMetros){
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────────────────
+// Para cada línea de una salida: consumo COMPLETO por materia prima (incluye nacional/ZFI6,
+// aunque no pague derechos) + el cálculo de liquidación real (solo paga lo ZFI8, como corresponde)
+function calcularConsumoYLiqParaSalida(salida){
+  const resultado = [];
+  (salida.lineas||[]).forEach(line=>{
+    const art = getArt(line.tipo||'triples');
+    const matKeys = getMatKeys(line.tipo||'triples');
+    const med = line.med;
+    const qty = line.qty;
+    const consumoPorMaterial = {};
+    let lineTot=0, lineDer=0, lineIva=0;
+
+    matKeys.forEach(k=>{
+      const m=MAT[k]; if(!m) return;
+      const needed=getNeeded(k,med,qty,line.tipo);
+      if(needed<=0) return;
+      consumoPorMaterial[k] = {needed, cu:CANCEL_UNIT[k], nombre:m.n};
+
+      const sels=(line.zfis||{})[k]||[];
+      const zfi8sels=sels.filter(s=>!esNac(s.row.despacho)); // solo lo importado paga derechos
+      zfi8sels.forEach(({row,taken})=>{
+        const dk=row.despacho+'_'+row.item+'_'+row.subitem;
+        const fl=fletesPatch[dk]?.flete??row.flete_desp??0;
+        const sg=fletesPatch[dk]?.seguro??row.seguro_desp??0;
+        const fobTotalDesp=fobDespPatch[dk]||row.fob_desp||row.fob||0;
+        const tntEnMetros = k==='tnt' && (row.tntUnit==='m' || row.unidad==='METRO' || row.cancel_unit==='m');
+        const cantOrigBase = tntEnMetros ? (row.cantidad||1) : (row.cancel_unit==='kg'||CANCEL_UNIT[k]==='kg')?(row.kgs_neto||row.cantidad||1):(row.cantidad||1);
+        const cantOrig=cantOrigPatch[dk]||cantOrigBase;
+        const fobItem=fobPatch[dk]||row.fob||0;
+        const precioUnit=cantOrig>0?fobItem/cantOrig:0;
+        const fobConsumed=parseFloat((taken*precioUnit).toFixed(4));
+        const prop=fobTotalDesp>0?fobConsumed/fobTotalDesp:0;
+        const fobProp=fobConsumed;
+        const fleteProp=fl*prop;
+        const seguroProp=sg*prop;
+        const cif=fobProp+fleteProp+seguroProp;
+        const tasa=TASAS[m.ncm]||0;
+        const derImp=cif*tasa;
+        const baseIva=cif+derImp;
+        const iva=baseIva*IVA;
+        lineTot += derImp+iva; lineDer += derImp; lineIva += iva;
+      });
+    });
+
+    resultado.push({nro:salida.nro, line, art, med, qty, consumoPorMaterial, lineTot, lineDer, lineIva});
+  });
+  return resultado;
+}
+
+function renderHistorialAduana(){
+  const el = document.getElementById('hist-aduana');
+  if(!el) return;
+  if(!salidaHistorial.length){ el.innerHTML='<div class="empty">Sin salidas confirmadas todavía.</div>'; return; }
+
+  const grupos = {}; // key (artículo+medida, con equivalencias ya resueltas) -> acumulado
+  salidaHistorial.forEach(s=>{
+    let porLinea;
+    try{ porLinea = calcularConsumoYLiqParaSalida(s); }catch(e){ return; }
+    porLinea.forEach(entry=>{
+      const key = getEquivKey(entry.line.tipo, entry.med);
+      if(!grupos[key]){
+        grupos[key] = {nombre:entry.art.n, med:entry.med, qty:0, salidas:new Set(), consumo:{}, der:0, iva:0, total:0};
+      }
+      const g = grupos[key];
+      if(entry.line.tipo!=='art4009') g.nombre = entry.art.n; // preferir siempre el nombre del artículo base
+      g.qty += entry.qty;
+      g.salidas.add(entry.nro);
+      g.der += entry.lineDer;
+      g.iva += entry.lineIva;
+      g.total += entry.lineTot;
+      Object.entries(entry.consumoPorMaterial).forEach(([k,v])=>{
+        if(!g.consumo[k]) g.consumo[k] = {needed:0, cu:v.cu, nombre:v.nombre};
+        g.consumo[k].needed += v.needed;
+      });
+    });
+  });
+
+  const filas = Object.values(grupos).sort((a,b)=>b.total-a.total);
+  if(!filas.length){ el.innerHTML='<div class="empty">Todavía no hay datos para mostrar.</div>'; return; }
+
+  el.innerHTML = filas.map(g=>{
+    const matRows = Object.values(g.consumo).sort((a,b)=>b.needed-a.needed).map(c=>
+      `<tr><td>${c.nombre}</td><td class="r mono">${fmt(c.needed)} ${c.cu}</td></tr>`
+    ).join('');
+    return `<div class="mb">
+      <div class="mh">
+        <div class="mn2">${g.nombre} ${g.med}</div>
+        <div style="display:flex;gap:14px;font-size:11px">
+          <span>Salidas: <strong>${g.salidas.size}</strong></span>
+          <span>Cantidad sacada: <strong>${fmt(g.qty)} u</strong></span>
+        </div>
+      </div>
+      <table><thead><tr><th>Materia prima consumida</th><th>Total</th></tr></thead><tbody>${matRows}</tbody></table>
+      <div class="sl">Der. Import.: USD ${fmt(g.der,2)} · IVA 21%: USD ${fmt(g.iva,2)} · <strong style="color:var(--pu)">Total pagado de aduana: USD ${fmt(g.total,2)}</strong></div>
+    </div>`;
+  }).join('');
+}
+
 function poblarSelectorConsumo(){
   const sel = document.getElementById('hist-mat-sel');
   if(!sel) return;
