@@ -397,7 +397,17 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   </div>
   <div id="hist-consumo"></div>
 
-  <div class="stit" style="margin-top:22px">Historial ZFE3</div>
+  <div class="stit" style="margin-top:22px">Historial de salidas por artículo</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Elegí un artículo para ver todas las salidas del año que lo usaron, en orden cronológico — pensado para imprimir y mostrarle a tu jefe el consumo que se fue dando.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:280px">
+        <label>Elegí un artículo</label>
+        <select id="hist-art-sel" onchange="renderHistorialArticulo()"></select>
+      </div>
+    </div>
+    <button class="btn btnp" id="hist-art-print-btn" style="display:none" onclick="imprimirHistorialArticulo()">🖨 Imprimir para mi jefe</button>
+  </div>
   <div id="hist-lista"></div>
 </div>
 
@@ -1234,7 +1244,7 @@ function showSec(id,btn){
   document.getElementById('sec-'+id).classList.add('active');
   btn.classList.add('active');
   if(id==='stock') renderStock();
-  if(id==='hist')  { poblarSelectorConsumo(); renderHist(); renderHistorialAduana(); }
+  if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); renderHistorialAduana(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -3233,23 +3243,181 @@ function renderConsumoProducto(){
   }).join('');
 }
 
-function renderHist(){
-  const el=document.getElementById('hist-lista');
-  if(!historial.length){el.innerHTML='<div class="empty">Sin registros.</div>';return;}
-  el.innerHTML=historial.map((h,i)=>`
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <span class="bdg bg">ZFE3</span>
-          <span class="mono" style="font-weight:600">${h.nro}</span>
-          <span class="t2">${h.fecha}</span>
-        </div>
-        <button class="btn btnd" onclick="delHist(${i})">✕</button>
-      </div>
-      <div style="font-size:12px">${(h.lineas||[]).map(l=>`<span class="tag">${l.artNum||l.n} ${l.med} × ${l.qty}</span>`).join('')}</div>
-    </div>`).join('');
+let historialArticuloActual = null; // {label, key, filas} de la última selección, para reusar al imprimir
+
+function poblarSelectorArticuloHist(){
+  const sel = document.getElementById('hist-art-sel');
+  if(!sel) return;
+  const valorActual = sel.value;
+  const vistos = {}; // key -> label
+  salidaHistorial.forEach(s=>{
+    (s.lineas||[]).forEach(l=>{
+      const key = getEquivKey(l.tipo, l.med);
+      if(!vistos[key]){
+        const art = getArt(l.tipo||'triples');
+        const principalEsBase = l.tipo!=='art4009';
+        vistos[key] = {label: art.n, esBase: principalEsBase};
+      } else if(l.tipo!=='art4009'){
+        vistos[key] = {label: getArt(l.tipo).n, esBase:true};
+      }
+    });
+  });
+  const opciones = Object.entries(vistos).sort((a,b)=>a[1].label.localeCompare(b[1].label));
+  sel.innerHTML = '<option value="">Seleccionar...</option>' +
+    opciones.map(([key,v])=>`<option value="${key}">${v.label}</option>`).join('');
+  if(valorActual) sel.value = valorActual;
+  renderHistorialArticulo();
 }
-function delHist(i){if(!confirm('¿Eliminar?')) return; historial.splice(i,1); save(); renderHist();}
+
+function renderHistorialArticulo(){
+  const el = document.getElementById('hist-lista');
+  const btn = document.getElementById('hist-art-print-btn');
+  if(!el) return;
+  const key = document.getElementById('hist-art-sel')?.value;
+  if(!key){ el.innerHTML=''; if(btn) btn.style.display='none'; historialArticuloActual=null; return; }
+
+  const filas = [];
+  salidaHistorial.forEach(s=>{
+    (s.lineas||[]).forEach(l=>{
+      if(getEquivKey(l.tipo, l.med) !== key) return;
+      filas.push({fecha: s.zfeFecha||s.ts||'', ts:s.ts, salidaNro:s.nro, zfeNro:s.zfeNro||'—', med:l.med, qty:l.qty||0});
+    });
+  });
+  filas.sort((a,b)=> new Date(a.ts||0) - new Date(b.ts||0)); // cronológico, más viejo primero
+
+  const opcionSel = document.getElementById('hist-art-sel');
+  const label = opcionSel.options[opcionSel.selectedIndex].textContent;
+
+  if(!filas.length){
+    el.innerHTML = '<div class="empty">No hay salidas registradas para este artículo.</div>';
+    if(btn) btn.style.display='none';
+    historialArticuloActual = null;
+    return;
+  }
+
+  const totalQty = filas.reduce((s,f)=>s+f.qty,0);
+  historialArticuloActual = {label, key, filas, totalQty};
+
+  el.innerHTML = `<div class="card">
+    <div class="ct">${label} — ${filas.length} salida${filas.length!==1?'s':''} en el historial</div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Salida</th><th>ZFE3</th><th>Medida</th><th>Cantidad</th></tr></thead><tbody>
+      ${filas.map(f=>`<tr>
+        <td>${f.fecha}</td><td class="mono">${f.salidaNro}</td><td class="mono">${f.zfeNro}</td>
+        <td>${f.med}</td><td class="mono">${fmt(f.qty)} u</td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div class="sl" style="margin-top:6px">Total del año: <strong>${fmt(totalQty)} u</strong> en ${filas.length} salida${filas.length!==1?'s':''}</div>
+  </div>`;
+  if(btn) btn.style.display='inline-block';
+}
+
+function imprimirHistorialArticulo(){
+  if(!historialArticuloActual) return;
+  const {label, key, filas, totalQty} = historialArticuloActual;
+  const fechaHoy = new Date().toLocaleDateString('es-AR');
+
+  // Recalcular consumo de materia prima (nacional + importado por separado) y totales de aduana
+  // para TODAS las salidas de este artículo en el año, reusando la misma fórmula que el resto de la app.
+  const consumo = {}; // k -> {nombre, cu, nacional, importado}
+  let totalDer=0, totalIva=0, totalAduana=0;
+
+  salidaHistorial.forEach(s=>{
+    (s.lineas||[]).forEach(line=>{
+      if(getEquivKey(line.tipo, line.med) !== key) return;
+      const art = getArt(line.tipo||'triples');
+      const matKeys = getMatKeys(line.tipo||'triples');
+      const med = line.med, qty = line.qty;
+
+      matKeys.forEach(k=>{
+        const m=MAT[k]; if(!m) return;
+        const needed=getNeeded(k,med,qty,line.tipo);
+        if(needed<=0) return;
+        const cu=CANCEL_UNIT[k];
+        if(!consumo[k]) consumo[k]={nombre:m.n, cu, nacional:0, importado:0};
+        const sels=(line.zfis||{})[k]||[];
+
+        sels.forEach(({row,taken})=>{
+          if(esNac(row.despacho)){
+            consumo[k].nacional += taken;
+            return;
+          }
+          consumo[k].importado += taken;
+          const dk=row.despacho+'_'+row.item+'_'+row.subitem;
+          const fl=fletesPatch[dk]?.flete??row.flete_desp??0;
+          const sg=fletesPatch[dk]?.seguro??row.seguro_desp??0;
+          const fobTotalDesp=fobDespPatch[dk]||row.fob_desp||row.fob||0;
+          const tntEnMetros = k==='tnt' && (row.tntUnit==='m' || row.unidad==='METRO' || row.cancel_unit==='m');
+          const cantOrigBase = tntEnMetros ? (row.cantidad||1) : (row.cancel_unit==='kg'||CANCEL_UNIT[k]==='kg')?(row.kgs_neto||row.cantidad||1):(row.cantidad||1);
+          const cantOrig=cantOrigPatch[dk]||cantOrigBase;
+          const fobItem=fobPatch[dk]||row.fob||0;
+          const precioUnit=cantOrig>0?fobItem/cantOrig:0;
+          const fobConsumed=parseFloat((taken*precioUnit).toFixed(4));
+          const prop=fobTotalDesp>0?fobConsumed/fobTotalDesp:0;
+          const cif=fobConsumed+(fl*prop)+(sg*prop);
+          const tasa=TASAS[m.ncm]||0;
+          const derImp=cif*tasa;
+          const iva=(cif+derImp)*IVA;
+          totalDer+=derImp; totalIva+=iva; totalAduana+=derImp+iva;
+        });
+      });
+    });
+  });
+
+  const consumoRows = Object.values(consumo).sort((a,b)=>(b.nacional+b.importado)-(a.nacional+a.importado));
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    +'<title>Historial '+label+'</title>'
+    +'<style>'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:9.5px;color:#000;padding:10px}'
+    +'h1{font-size:13px;font-weight:700;margin-bottom:1px}'
+    +'.sub{font-size:10px;color:#000;margin-bottom:8px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px}'
+    +'.item-hdr{background:#1a1a2e;color:#fff;padding:4px 8px;margin:8px 0 3px;font-size:10px;font-weight:700;display:flex;gap:12px;align-items:center}'
+    +'table{width:100%;border-collapse:collapse;margin-bottom:4px}'
+    +'th{background:#e8e8e8;border:1px solid #aaa;padding:3px 5px;font-weight:700;font-size:9px;text-align:left;white-space:nowrap}'
+    +'td{border:1px solid #ccc;padding:2px 5px;font-size:9px;vertical-align:middle}'
+    +'td.r{text-align:right}'
+    +'.nac{color:#1a7a3c;font-weight:700}'
+    +'.tots{margin-top:12px;border-top:2px solid #000;padding-top:8px;display:flex;gap:24px;flex-wrap:wrap}'
+    +'.ti{display:flex;flex-direction:column;gap:2px}.tl{font-size:8px;text-transform:uppercase}.tv{font-size:13px;font-weight:700}'
+    +'.footer{margin-top:10px;border-top:1px solid #ccc;padding-top:4px;font-size:8px;text-align:center}'
+    +'@media print{@page{size:A4;margin:12mm}}'
+    +'</style></head><body>';
+
+  p+='<div class="hdr">'
+    +'<div><h1>'+label+' — Historial de salidas del año</h1>'
+    +'<div class="sub">ALAV SRL — Z.F. GENERAL PICO</div></div>'
+    +'<div style="text-align:right;font-size:9px">Emitido: '+fechaHoy+'</div>'
+    +'</div>';
+
+  p+='<div class="item-hdr"><span>SALIDAS</span><span>'+totalQty.toLocaleString('es-AR')+' unidades totales</span><span style="margin-left:auto">'+filas.length+' salida'+(filas.length!==1?'s':'')+'</span></div>';
+  p+='<table><thead><tr><th>Fecha</th><th>Salida</th><th>ZFE3</th><th>Medida</th><th class="r">Cantidad</th></tr></thead><tbody>'
+    + filas.map(f=>'<tr><td>'+f.fecha+'</td><td>'+f.salidaNro+'</td><td>'+f.zfeNro+'</td><td>'+f.med+'</td><td class="r">'+f.qty.toLocaleString('es-AR')+' u</td></tr>').join('')
+    + '</tbody></table>';
+
+  p+='<div class="item-hdr"><span>CONSUMO DE MATERIA PRIMA (año completo)</span></div>';
+  p+='<table><thead><tr><th>Insumo</th><th class="r">Consumido — Nacional (ZFI6)</th><th class="r">Consumido — Importado (ZFI8)</th><th class="r">Total</th></tr></thead><tbody>'
+    + consumoRows.map(c=>'<tr><td>'+c.nombre+'</td>'
+        +'<td class="r nac">'+(c.nacional>0?fmt(c.nacional)+' '+c.cu:'—')+'</td>'
+        +'<td class="r">'+(c.importado>0?fmt(c.importado)+' '+c.cu:'—')+'</td>'
+        +'<td class="r"><strong>'+fmt(c.nacional+c.importado)+' '+c.cu+'</strong></td></tr>').join('')
+    + '</tbody></table>';
+
+  p+='<div class="tots">'
+    +'<div class="ti"><div class="tl">Derechos de Importación</div><div class="tv">USD '+fmt(totalDer,2)+'</div></div>'
+    +'<div class="ti"><div class="tl">IVA 21%</div><div class="tv">USD '+fmt(totalIva,2)+'</div></div>'
+    +'<div class="ti"><div class="tl">Total pagado de aduana</div><div class="tv">USD '+fmt(totalAduana,2)+'</div></div>'
+    +'</div>';
+
+  p+='<div class="footer">ALAV SRL — Z.F. GENERAL PICO — Historial '+label+' — '+fechaHoy+'</div>';
+  p+='</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+}
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 function checkPin(){
