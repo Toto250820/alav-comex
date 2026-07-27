@@ -1181,8 +1181,12 @@ function getNeeded(k,med,qty,tipo){
   const m=MAT[k];if(!m)return 0;
   // Excepción: MICRO/MICRO en /1 (RIP #17) consume 0.72 kg/u de Microfibra 90g, no el 0.36 general
   if(k==='micro90' && tipo==='micromicro' && med==='/1') return parseFloat((qty*0.72).toFixed(4));
+  // Excepción: MICRO/MICRO en /1 (RIP #17) consume 0.768 kg/u de Microfibra 100g, no el 0.384 general
+  if(k==='micro100' && tipo==='micromicro' && med==='/1') return parseFloat((qty*0.768).toFixed(4));
   // Excepción: MICRO/MICRO en /4 (RIP #19) consume 1.248 kg/u de Microfibra 100g, no el 0.624 general
   if(k==='micro100' && tipo==='micromicro' && med==='/4') return parseFloat((qty*1.248).toFixed(4));
+  // Excepción: MICRO/MICRO en /5 (RIP #20) consume 1.456 kg/u de Microfibra 100g, no el 0.728 general
+  if(k==='micro100' && tipo==='micromicro' && med==='/5') return parseFloat((qty*1.456).toFixed(4));
   // Excepción: TRIPLES E (art4009) en /3 es en realidad la RIP #1 del cert 194 (misma que TRIPLES /1) —
   // usa el consumo original de /1, no el de /3 (que es otra RIP distinta, la #2)
   if(tipo==='art4009' && med==='/3') return parseFloat((qty*(m.pm['/1']||0)).toFixed(4));
@@ -2132,7 +2136,9 @@ function imprimirSalida(salOverride){
       const sels = ordenDesp.map(dk=>porDespacho[dk]);
 
       const xUnit = (k==='micro90' && principal.tipo==='micromicro' && principal.med==='/1') ? 0.72
+        : (k==='micro100' && principal.tipo==='micromicro' && principal.med==='/1') ? 0.768
         : (k==='micro100' && principal.tipo==='micromicro' && principal.med==='/4') ? 1.248
+        : (k==='micro100' && principal.tipo==='micromicro' && principal.med==='/5') ? 1.456
         : (m.pm[principal.med]||0);
 
       if(!sels.length){
