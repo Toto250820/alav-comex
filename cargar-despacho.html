@@ -101,6 +101,27 @@ input.narrow{width:80px}
   <div class="loading"><div class="spin"></div> Leyendo el PDF...</div>
 </div>
 
+<div class="card">
+  <div class="stit">ET19 sin PDF (cargado por otro despachante)</div>
+  <div class="sub">Si el ET19 lo hizo otra persona y no tenés el PDF, cargalo a mano acá para tener igual el recordatorio de vencimiento.</div>
+  <div class="fr">
+    <div class="ff" style="max-width:220px"><label>Despacho</label>
+      <input id="et-man-desp" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px"/>
+    </div>
+    <div class="ff" style="max-width:170px"><label>Fecha oficialización</label>
+      <input id="et-man-fecha" type="date"/>
+    </div>
+    <div class="ff" style="max-width:170px"><label>Plazo autorizado</label>
+      <select id="et-man-meses">
+        <option value="22" selected>22 meses (estándar)</option>
+        <option value="12">12 meses (1 año — especial)</option>
+        <option value="24">24 meses (2 años)</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn btnp" onclick="cargarET19Manual()">Calcular vencimiento</button>
+</div>
+
 <div id="error-box"></div>
 
 <div id="et19-box" style="display:none">
@@ -109,9 +130,16 @@ input.narrow{width:80px}
     <div class="hdrinfo">
       <div class="hi"><label>Despacho</label><b id="et-despacho">—</b></div>
       <div class="hi"><label>Oficialización</label><b id="et-fecha">—</b></div>
-      <div class="hi"><label>Vencimiento (+22 meses)</label><b id="et-venc" style="color:var(--rd)">—</b></div>
+      <div class="hi"><label>Plazo autorizado</label>
+        <select id="et-meses" onchange="recalcularVencimientoET19()" style="font-family:var(--mn);font-size:13px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
+          <option value="22" selected>22 meses (estándar)</option>
+          <option value="12">12 meses (1 año — autorización especial)</option>
+          <option value="24">24 meses (2 años)</option>
+        </select>
+      </div>
+      <div class="hi"><label>Vencimiento</label><b id="et-venc" style="color:var(--rd)">—</b></div>
     </div>
-    <div class="sub">Este ET19 tiene que reimportarse como ZFI6 antes de la fecha de vencimiento. Agregalo al calendario para que los 3 tengan el recordatorio.</div>
+    <div class="sub">Este ET19 tiene que reimportarse como ZFI6 antes de la fecha de vencimiento. Si te autorizaron un plazo distinto al estándar, elegilo arriba antes de agregar el recordatorio. Agregalo al calendario para que los 3 tengan el aviso.</div>
     <div class="actions" style="justify-content:flex-start">
       <a id="et-cal-link" class="btn btnp" style="text-decoration:none" href="#" target="_blank">📅 Agregar a Google Calendar (los 3 invitados)</a>
       <button class="btn" onclick="resetTool()">Cargar otro PDF</button>
@@ -312,6 +340,7 @@ const dropEl = document.getElementById('drop');
 dropEl.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
 
 let currentParsed = null;
+let currentET19 = null;
 
 const CALENDAR_GUESTS = ['javis.spinelli@gmail.com','alav.pico@gmail.com','admi.alavpico02@gmail.com'];
 
@@ -328,23 +357,46 @@ function toDDMMYYYY(fechaISO){
   return `${d}/${m}/${y}`;
 }
 
+function cargarET19Manual(){
+  const desp = document.getElementById('et-man-desp').value.trim();
+  const fecha = document.getElementById('et-man-fecha').value;
+  const meses = document.getElementById('et-man-meses').value;
+  document.getElementById('error-box').innerHTML='';
+  if(!desp || !fecha){
+    document.getElementById('error-box').innerHTML = '<div class="err">⚠️ Completá el despacho y la fecha de oficialización.</div>';
+    return;
+  }
+  renderET19({despacho: desp, tipo:'ET19', fecha});
+  document.getElementById('et-meses').value = meses;
+  recalcularVencimientoET19();
+  document.getElementById('et19-box').scrollIntoView({behavior:'smooth'});
+}
+
 function renderET19(p){
-  const venc = addMonthsISO(p.fecha, 22);
-  const vencISO = venc.toISOString().slice(0,10);
+  currentET19 = p;
   document.getElementById('et-despacho').textContent = p.despacho;
   document.getElementById('et-fecha').textContent = toDDMMYYYY(p.fecha);
+  document.getElementById('et-meses').value = '22';
+  document.getElementById('et19-box').style.display = 'block';
+  recalcularVencimientoET19();
+}
+
+function recalcularVencimientoET19(){
+  if(!currentET19) return;
+  const p = currentET19;
+  const meses = parseInt(document.getElementById('et-meses').value) || 22;
+  const venc = addMonthsISO(p.fecha, meses);
+  const vencISO = venc.toISOString().slice(0,10);
   document.getElementById('et-venc').textContent = toDDMMYYYY(vencISO);
 
   const start = toYYYYMMDD(venc);
   const endDt = new Date(venc); endDt.setUTCDate(endDt.getUTCDate()+1);
   const end = toYYYYMMDD(endDt);
   const text = encodeURIComponent(`Vencimiento ET19 ${p.despacho} — reimportar como ZFI6`);
-  const details = encodeURIComponent(`El ET19 ${p.despacho} (oficializado el ${toDDMMYYYY(p.fecha)}) vence el ${toDDMMYYYY(vencISO)}. Debe reimportarse como ZFI6 antes de esta fecha.`);
+  const details = encodeURIComponent(`El ET19 ${p.despacho} (oficializado el ${toDDMMYYYY(p.fecha)}) vence el ${toDDMMYYYY(vencISO)} — plazo autorizado: ${meses} meses. Debe reimportarse como ZFI6 antes de esta fecha.`);
   const add = encodeURIComponent(CALENDAR_GUESTS.join(','));
   const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&add=${add}`;
   document.getElementById('et-cal-link').href = url;
-
-  document.getElementById('et19-box').style.display = 'block';
 }
 
 async function renderZFE3(p){
@@ -592,6 +644,7 @@ async function confirmarCarga(){
 
 function resetTool(){
   currentParsed = null;
+  currentET19 = null;
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
