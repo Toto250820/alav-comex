@@ -101,6 +101,27 @@ input.narrow{width:80px}
   <div class="loading"><div class="spin"></div> Leyendo el PDF...</div>
 </div>
 
+<div class="card">
+  <div class="stit">ET19 sin PDF (cargado por otro despachante)</div>
+  <div class="sub">Si el ET19 lo hizo otra persona y no tenés el PDF, cargalo a mano acá para tener igual el recordatorio de vencimiento.</div>
+  <div class="fr">
+    <div class="ff" style="max-width:220px"><label>Despacho</label>
+      <input id="et-man-desp" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px"/>
+    </div>
+    <div class="ff" style="max-width:170px"><label>Fecha oficialización</label>
+      <input id="et-man-fecha" type="date"/>
+    </div>
+    <div class="ff" style="max-width:170px"><label>Plazo autorizado</label>
+      <select id="et-man-meses">
+        <option value="22" selected>22 meses (estándar)</option>
+        <option value="12">12 meses (1 año — especial)</option>
+        <option value="24">24 meses (2 años)</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn btnp" onclick="cargarET19Manual()">Calcular vencimiento</button>
+</div>
+
 <div id="error-box"></div>
 
 <div id="et19-box" style="display:none">
@@ -334,6 +355,21 @@ function toYYYYMMDD(dt){
 function toDDMMYYYY(fechaISO){
   const [y,m,d] = fechaISO.split('-');
   return `${d}/${m}/${y}`;
+}
+
+function cargarET19Manual(){
+  const desp = document.getElementById('et-man-desp').value.trim();
+  const fecha = document.getElementById('et-man-fecha').value;
+  const meses = document.getElementById('et-man-meses').value;
+  document.getElementById('error-box').innerHTML='';
+  if(!desp || !fecha){
+    document.getElementById('error-box').innerHTML = '<div class="err">⚠️ Completá el despacho y la fecha de oficialización.</div>';
+    return;
+  }
+  renderET19({despacho: desp, tipo:'ET19', fecha});
+  document.getElementById('et-meses').value = meses;
+  recalcularVencimientoET19();
+  document.getElementById('et19-box').scrollIntoView({behavior:'smooth'});
 }
 
 function renderET19(p){
