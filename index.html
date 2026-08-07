@@ -197,6 +197,23 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div style="margin-top:10px"><a href="#" style="font-size:11px;color:var(--tx3)" onclick="document.getElementById('name-modal').style.display='none';return false;">Cancelar</a></div>
   </div>
 </div>
+<div id="proveedor-modal" style="display:none;position:fixed;inset:0;background:rgba(23,33,44,.75);z-index:998;align-items:center;justify-content:center">
+  <div class="pincard" style="width:320px">
+    <div class="pintit">➕ NUEVO PROVEEDOR</div>
+    <div class="pinsub">Código corto y nombre completo</div>
+    <div style="text-align:left;margin-top:10px">
+      <label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Código</label>
+      <input id="prov-codigo-inp" placeholder="ej: WUXI" style="width:100%;margin-bottom:10px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:13px;padding:7px 9px;outline:none;box-sizing:border-box"/>
+      <label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Nombre completo</label>
+      <input id="prov-nombre-inp" placeholder="ej: Textil Wuxi SRL" style="width:100%;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:13px;padding:7px 9px;outline:none;box-sizing:border-box"/>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn btnp" style="flex:1" onclick="confirmarProveedorNuevo()">Guardar</button>
+      <button class="btn" onclick="document.getElementById('proveedor-modal').style.display='none'">Cancelar</button>
+    </div>
+    <div id="prov-modal-msg" style="display:none;margin-top:8px;font-size:11px;color:var(--rd)"></div>
+  </div>
+</div>
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <button id="chat-fab" onclick="toggleChat()" title="Chat interno">
@@ -3206,20 +3223,34 @@ function poblarSelectorProveedores(){
   if(valorActual) sel.value = valorActual;
 }
 
-async function agregarProveedorNuevo(){
-  const codigo = prompt('Código del proveedor (corto, ej: WUXI):');
-  if(!codigo || !codigo.trim()) return;
-  const nombre = prompt('Nombre completo del proveedor:');
-  if(!nombre || !nombre.trim()) return;
-  const codigoLimpio = codigo.trim().toUpperCase();
+function agregarProveedorNuevo(){
+  document.getElementById('prov-codigo-inp').value = '';
+  document.getElementById('prov-nombre-inp').value = '';
+  document.getElementById('prov-modal-msg').style.display = 'none';
+  document.getElementById('proveedor-modal').style.display = 'flex';
+  document.getElementById('prov-codigo-inp').focus();
+}
+
+async function confirmarProveedorNuevo(){
+  const codigo = document.getElementById('prov-codigo-inp').value.trim();
+  const nombre = document.getElementById('prov-nombre-inp').value.trim();
+  const msg = document.getElementById('prov-modal-msg');
+  if(!codigo || !nombre){
+    msg.style.display='block'; msg.textContent = 'Completá el código y el nombre.';
+    return;
+  }
+  const codigoLimpio = codigo.toUpperCase();
   try{
     await sbFetch('proveedores', {
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({codigo: codigoLimpio, nombre: nombre.trim()})
+      body: JSON.stringify({codigo: codigoLimpio, nombre})
     });
     await loadProveedores();
     document.getElementById('oc-proveedor').value = codigoLimpio;
-  }catch(e){ alert('Error agregando el proveedor: '+e.message); }
+    document.getElementById('proveedor-modal').style.display = 'none';
+  }catch(e){
+    msg.style.display='block'; msg.textContent = 'Error guardando: '+e.message;
+  }
 }
 
 // ═══════════════════════════════════════════
