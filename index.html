@@ -170,6 +170,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="nb nliq" onclick="showSec('liq',this)">$ Liquidación</button>
     <button class="nb" onclick="showSec('stock',this)">Stock</button>
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
+    <button class="nb" onclick="showSec('compras',this)">🛒 Compras</button>
     <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
     <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr)">📄 Cargar despacho (PDF)</a>
   </div>
@@ -403,6 +404,39 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="btn btnp" id="hist-art-print-btn" style="display:none" onclick="imprimirHistorialArticulo()">🖨 Imprimir para mi jefe</button>
   </div>
   <div id="hist-lista"></div>
+</div>
+
+<!-- COMPRAS -->
+<div id="sec-compras" class="sec">
+  <div class="stit">Nueva orden de compra</div>
+  <div class="card">
+    <div class="fr">
+      <div class="ff" style="max-width:240px"><label>Proveedor</label>
+        <div style="display:flex;gap:6px">
+          <select id="oc-proveedor" style="flex:1"><option value="">Cargando...</option></select>
+          <button class="btn" onclick="agregarProveedorNuevo()" title="Agregar proveedor nuevo" style="padding:7px 10px">+</button>
+        </div>
+      </div>
+      <div class="ff" style="max-width:160px"><label>Fecha de emisión</label>
+        <input id="oc-fecha-emision" type="date"/>
+      </div>
+      <div class="ff" style="max-width:160px"><label>Fecha de entrega esperada</label>
+        <input id="oc-fecha-entrega" type="date"/>
+      </div>
+    </div>
+
+    <div style="margin:14px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Ítems de la orden</label></div>
+    <div id="oc-items-lista"></div>
+    <button class="btn" style="margin-top:6px" onclick="agregarLineaOC()">+ Agregar ítem</button>
+
+    <div class="fr" style="margin-top:14px"><div class="ff"><label>Nota general (opcional)</label><input id="oc-nota" placeholder="ej: coordinar con Fernando la recepción"/></div></div>
+
+    <div style="margin-top:14px"><button class="btn btnp" onclick="guardarOrdenCompra()">✓ Guardar orden</button></div>
+    <div id="oc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Órdenes registradas</div>
+  <div id="oc-lista"><div class="empty">Cargando...</div></div>
 </div>
 
 <!-- ADMIN -->
@@ -1243,6 +1277,7 @@ function showSec(id,btn){
   btn.classList.add('active');
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
+  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -3147,6 +3182,271 @@ function renderConsumoProducto(){
 }
 
 let historialArticuloActual = null; // {label, key, filas} de la última selección, para reusar al imprimir
+
+// ── Proveedores (código + nombre, para completar rápido la orden) ──────────────
+let proveedoresList = [];
+
+async function loadProveedores(){
+  try{
+    const rows = await sbFetch('proveedores?select=*&order=nombre.asc', {method:'GET', headers:{'Prefer':''}});
+    proveedoresList = rows || [];
+  }catch(e){ proveedoresList = []; }
+  poblarSelectorProveedores();
+}
+
+function poblarSelectorProveedores(){
+  const sel = document.getElementById('oc-proveedor');
+  if(!sel) return;
+  const valorActual = sel.value;
+  if(!proveedoresList.length){
+    sel.innerHTML = '<option value="">Sin proveedores cargados — tocá "+"</option>';
+    return;
+  }
+  sel.innerHTML = proveedoresList.map(p=>`<option value="${p.codigo}">${p.codigo} — ${p.nombre}</option>`).join('');
+  if(valorActual) sel.value = valorActual;
+}
+
+async function agregarProveedorNuevo(){
+  const codigo = prompt('Código del proveedor (corto, ej: WUXI):');
+  if(!codigo || !codigo.trim()) return;
+  const nombre = prompt('Nombre completo del proveedor:');
+  if(!nombre || !nombre.trim()) return;
+  const codigoLimpio = codigo.trim().toUpperCase();
+  try{
+    await sbFetch('proveedores', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({codigo: codigoLimpio, nombre: nombre.trim()})
+    });
+    await loadProveedores();
+    document.getElementById('oc-proveedor').value = codigoLimpio;
+  }catch(e){ alert('Error agregando el proveedor: '+e.message); }
+}
+
+// ═══════════════════════════════════════════
+// ÓRDENES DE COMPRA
+// ═══════════════════════════════════════════
+let ocItemIndices = [];
+let ocNextIdx = 0;
+let ordenesCompra = [];
+
+function agregarLineaOC(){
+  const idx = ocNextIdx++;
+  ocItemIndices.push(idx);
+  const opciones = Object.entries(MAT_LABELS).sort((a,b)=>a[1].localeCompare(b[1]))
+    .map(([k,label])=>`<option value="${k}">${label}</option>`).join('');
+  const div = document.createElement('div');
+  div.id = 'oc-item-'+idx;
+  div.className = 'fr';
+  div.style.alignItems = 'flex-end';
+  div.innerHTML = `
+    <div class="ff" style="max-width:200px"><label>Insumo</label>
+      <select id="oc-insumo-${idx}"><option value="">Otro (escribir abajo)</option>${opciones}</select>
+    </div>
+    <div class="ff" style="max-width:170px"><label>Nombre (si elegiste "Otro")</label>
+      <input id="oc-insumo-nombre-${idx}" placeholder="nombre libre"/>
+    </div>
+    <div class="ff" style="max-width:110px"><label>Cantidad</label>
+      <input id="oc-cant-${idx}" type="number" step="0.01"/>
+    </div>
+    <div class="ff" style="max-width:110px"><label>Unidad</label>
+      <select id="oc-unidad-${idx}"><option value="kg">kg</option><option value="m">m</option><option value="u">u</option></select>
+    </div>
+    <div class="ff"><label>Nota</label><input id="oc-nota-${idx}" placeholder="opcional"/></div>
+    <button class="btn btnd" onclick="quitarLineaOC(${idx})" style="margin-bottom:1px">✕</button>
+  `;
+  document.getElementById('oc-items-lista').appendChild(div);
+}
+
+function quitarLineaOC(idx){
+  const el = document.getElementById('oc-item-'+idx);
+  if(el) el.remove();
+  ocItemIndices = ocItemIndices.filter(i=>i!==idx);
+}
+
+async function guardarOrdenCompra(){
+  const proveedorCodigo = document.getElementById('oc-proveedor').value;
+  const proveedorObj = proveedoresList.find(p=>p.codigo===proveedorCodigo);
+  const proveedor = proveedorObj ? proveedorObj.nombre : '';
+  const fechaEmision = document.getElementById('oc-fecha-emision').value;
+  const fechaEntrega = document.getElementById('oc-fecha-entrega').value;
+  const nota = document.getElementById('oc-nota').value.trim();
+  const msg = document.getElementById('oc-msg');
+  msg.style.display = 'block';
+
+  if(!proveedor || !fechaEmision || !fechaEntrega || !ocItemIndices.length){
+    msg.style.color='var(--rd)'; msg.textContent='Completá proveedor, las dos fechas, y al menos un ítem.';
+    return;
+  }
+
+  const items = [];
+  for(const idx of ocItemIndices){
+    const matKey = document.getElementById('oc-insumo-'+idx).value;
+    const nombreLibre = document.getElementById('oc-insumo-nombre-'+idx).value.trim();
+    const insumo = matKey ? MAT_LABELS[matKey] : nombreLibre;
+    const cantidad = parseFloat(document.getElementById('oc-cant-'+idx).value);
+    const unidad = document.getElementById('oc-unidad-'+idx).value;
+    const itemNota = document.getElementById('oc-nota-'+idx).value.trim();
+    if(!insumo || isNaN(cantidad)){
+      msg.style.color='var(--rd)'; msg.textContent='Cada ítem necesita insumo y cantidad.';
+      return;
+    }
+    items.push({insumo, cantidad, unidad, nota:itemNota});
+  }
+
+  const numero = 'OC-' + (ordenesCompra.length+1).toString().padStart(4,'0');
+  const id = 'oc_'+Date.now();
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('ordenes_compra', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({
+        id, numero, proveedor, proveedor_codigo: proveedorCodigo, fecha_emision:fechaEmision, fecha_entrega:fechaEntrega,
+        items: JSON.stringify(items), nota, estado:'pendiente', creado_por: who
+      })
+    });
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Orden ${numero} guardada. Se abrió Google Calendar para dejar registrada la fecha del pedido.`;
+    document.getElementById('oc-proveedor').value='';
+    document.getElementById('oc-fecha-entrega').value='';
+    document.getElementById('oc-nota').value='';
+    document.getElementById('oc-items-lista').innerHTML='';
+    ocItemIndices=[]; agregarLineaOC();
+    await loadOrdenesCompra();
+    agregarOrdenACalendar(id);
+  }catch(e){
+    msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando la orden: '+e.message;
+  }
+}
+
+async function loadOrdenesCompra(){
+  const el = document.getElementById('oc-lista');
+  try{
+    const rows = await sbFetch('ordenes_compra?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
+    ordenesCompra = rows || [];
+    renderOrdenesCompra();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de órdenes (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderOrdenesCompra(){
+  const el = document.getElementById('oc-lista');
+  if(!el) return;
+  if(!ordenesCompra.length){ el.innerHTML='<div class="empty">Sin órdenes registradas todavía.</div>'; return; }
+  const ESTADO_TAG = {pendiente:'by', recibida:'bg', cancelada:'br'};
+  el.innerHTML = ordenesCompra.map(o=>{
+    let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+    return `<div class="mb">
+      <div class="mh">
+        <div><span class="mono" style="font-weight:600">${o.numero}</span> — <strong>${o.proveedor}</strong>
+          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${(o.estado||'pendiente').toUpperCase()}</span>
+        </div>
+        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision} · Entrega: ${o.fecha_entrega} · por ${o.creado_por||'?'}</div>
+      </div>
+      <table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>
+        ${items.map(it=>`<tr><td>${it.insumo}</td><td class="mono">${fmt(it.cantidad)} ${it.unidad}</td><td>${it.nota||''}</td></tr>`).join('')}
+      </tbody></table>
+      ${o.nota?`<div class="nbox">${o.nota}</div>`:''}
+      <div style="display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap">
+        <button class="btn" onclick="imprimirOrdenCompra('${o.id}')">🖨 Imprimir / PDF</button>
+        <button class="btn" onclick="enviarOrdenPorMail('${o.id}')">📧 Enviar por mail</button>
+        <button class="btn" onclick="agregarOrdenACalendar('${o.id}')">📅 Agregar a Calendar</button>
+        ${o.estado==='pendiente'?`<button class="btn btng" onclick="marcarEstadoOC('${o.id}','recibida')">✓ Marcar recibida</button>
+        <button class="btn btnd" onclick="marcarEstadoOC('${o.id}','cancelada')">✕ Cancelar orden</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function enviarOrdenPorMail(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+
+  const asunto = encodeURIComponent(`Orden de Compra ${o.numero} — ${o.proveedor}`);
+  const cuerpo = encodeURIComponent(
+    `Orden de Compra ${o.numero}\n`+
+    `Proveedor: ${o.proveedor}\n`+
+    `Fecha de emisión: ${o.fecha_emision}\n`+
+    `Fecha de entrega esperada: ${o.fecha_entrega}\n\n`+
+    `Ítems:\n`+
+    items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}${it.nota?' ('+it.nota+')':''}`).join('\n')+
+    (o.nota?`\n\nNota: ${o.nota}`:'')+
+    `\n\n— ALAV SRL, Z.F. General Pico`
+  );
+  const to = AVISO_GUESTS.join(',');
+  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
+}
+
+function agregarOrdenACalendar(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+
+  const fechaEmision = new Date(o.fecha_emision+'T00:00:00');
+  const start = fechaEmision.toISOString().slice(0,10).replace(/-/g,'');
+  const endDt = new Date(fechaEmision); endDt.setUTCDate(endDt.getUTCDate()+1);
+  const end = endDt.toISOString().slice(0,10).replace(/-/g,'');
+
+  const text = encodeURIComponent(`Orden de Compra realizada — ${o.numero} — ${o.proveedor}`);
+  const details = encodeURIComponent(
+    `Se realizó el pedido a ${o.proveedor} el ${o.fecha_emision}.\n`+
+    `Entrega esperada: ${o.fecha_entrega}\n\n`+
+    `Ítems:\n`+items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n')
+  );
+  const add = encodeURIComponent(AVISO_GUESTS.join(','));
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&add=${add}`;
+  window.open(url, '_blank');
+}
+
+async function marcarEstadoOC(id, estado){
+  if(!confirm(`¿Marcar esta orden como "${estado}"?`)) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({estado})
+    });
+    await loadOrdenesCompra();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+function imprimirOrdenCompra(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Orden de Compra '+o.numero+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}'
+    +'h1{font-size:18px}table{width:100%;border-collapse:collapse;margin:10px 0}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
+    +'td{border:1px solid #ccc;padding:6px 8px}'
+    +'.info{display:flex;gap:30px;margin-bottom:14px}.il{font-size:9px;text-transform:uppercase;color:#555}.iv{font-size:13px;font-weight:700}'
+    +'.firma{margin-top:60px;display:flex;gap:60px}.firma div{border-top:1px solid #000;padding-top:6px;width:200px;text-align:center;font-size:10px}'
+    +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
+
+  p+='<div class="hdr"><div><h1>ORDEN DE COMPRA '+o.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Emitida: '+o.fecha_emision+'</div></div>';
+
+  p+='<div class="info">'
+    +'<div><div class="il">Proveedor</div><div class="iv">'+o.proveedor+'</div></div>'
+    +'<div><div class="il">Fecha de entrega esperada</div><div class="iv">'+o.fecha_entrega+'</div></div>'
+    +'</div>';
+
+  p+='<table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>'
+    + items.map(it=>'<tr><td>'+it.insumo+'</td><td>'+it.cantidad.toLocaleString('es-AR')+' '+it.unidad+'</td><td>'+(it.nota||'')+'</td></tr>').join('')
+    + '</tbody></table>';
+
+  if(o.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+o.nota+'</div>';
+
+  p+='<div class="firma"><div>Firma ALAV SRL</div><div>Firma Proveedor</div></div>';
+  p+='</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+}
 
 function poblarSelectorArticuloHist(){
   const sel = document.getElementById('hist-art-sel');
