@@ -438,9 +438,6 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="ff" style="max-width:160px"><label>Fecha de emisión</label>
         <input id="oc-fecha-emision" type="date"/>
       </div>
-      <div class="ff" style="max-width:160px"><label>Fecha de entrega esperada</label>
-        <input id="oc-fecha-entrega" type="date"/>
-      </div>
     </div>
 
     <div style="margin:14px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Ítems de la orden</label></div>
@@ -3301,13 +3298,12 @@ async function guardarOrdenCompra(){
   const proveedorObj = proveedoresList.find(p=>p.codigo===proveedorCodigo);
   const proveedor = proveedorObj ? proveedorObj.nombre : '';
   const fechaEmision = document.getElementById('oc-fecha-emision').value;
-  const fechaEntrega = document.getElementById('oc-fecha-entrega').value;
   const nota = document.getElementById('oc-nota').value.trim();
   const msg = document.getElementById('oc-msg');
   msg.style.display = 'block';
 
-  if(!proveedor || !fechaEmision || !fechaEntrega || !ocItemIndices.length){
-    msg.style.color='var(--rd)'; msg.textContent='Completá proveedor, las dos fechas, y al menos un ítem.';
+  if(!proveedor || !fechaEmision || !ocItemIndices.length){
+    msg.style.color='var(--rd)'; msg.textContent='Completá proveedor, la fecha de emisión, y al menos un ítem.';
     return;
   }
 
@@ -3323,7 +3319,7 @@ async function guardarOrdenCompra(){
       msg.style.color='var(--rd)'; msg.textContent='Cada ítem necesita insumo y cantidad.';
       return;
     }
-    items.push({insumo, cantidad, unidad, nota:itemNota});
+    items.push({insumo, cantidad, unidad, nota:itemNota, recibido:0});
   }
 
   const numero = 'OC-' + (ordenesCompra.length+1).toString().padStart(4,'0');
@@ -3334,13 +3330,12 @@ async function guardarOrdenCompra(){
     await sbFetch('ordenes_compra', {
       method:'POST', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({
-        id, numero, proveedor, proveedor_codigo: proveedorCodigo, fecha_emision:fechaEmision, fecha_entrega:fechaEntrega,
-        items: JSON.stringify(items), nota, estado:'pendiente', creado_por: who
+        id, numero, proveedor, proveedor_codigo: proveedorCodigo, fecha_emision:fechaEmision, et19:null,
+        items: JSON.stringify(items), nota, estado:'abierta', creado_por: who
       })
     });
-    msg.style.color='var(--gr)'; msg.textContent=`✓ Orden ${numero} guardada. Se abrió Google Calendar para dejar registrada la fecha del pedido.`;
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Orden ${numero} guardada — queda ABIERTA hasta que se coteje el pedido y se cargue la ET19. Se abrió Google Calendar para dejar registrada la fecha del pedido.`;
     document.getElementById('oc-proveedor').value='';
-    document.getElementById('oc-fecha-entrega').value='';
     document.getElementById('oc-nota').value='';
     document.getElementById('oc-items-lista').innerHTML='';
     ocItemIndices=[]; agregarLineaOC();
@@ -3366,29 +3361,107 @@ function renderOrdenesCompra(){
   const el = document.getElementById('oc-lista');
   if(!el) return;
   if(!ordenesCompra.length){ el.innerHTML='<div class="empty">Sin órdenes registradas todavía.</div>'; return; }
-  const ESTADO_TAG = {pendiente:'by', recibida:'bg', cancelada:'br'};
+  const ESTADO_TAG = {abierta:'by', cerrada:'bg', cancelada:'br'};
   el.innerHTML = ordenesCompra.map(o=>{
     let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+    const editable = o.estado==='abierta';
+    const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
+    const tieneET19 = !!(o.et19 && o.et19.trim());
+    const puedeCerrar = cien && tieneET19;
+
     return `<div class="mb">
       <div class="mh">
         <div><span class="mono" style="font-weight:600">${o.numero}</span> — <strong>${o.proveedor}</strong>
-          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${(o.estado||'pendiente').toUpperCase()}</span>
+          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${(o.estado||'abierta').toUpperCase()}</span>
         </div>
-        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision} · Entrega: ${o.fecha_entrega} · por ${o.creado_por||'?'}</div>
+        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision} · por ${o.creado_por||'?'}</div>
       </div>
-      <table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>
-        ${items.map(it=>`<tr><td>${it.insumo}</td><td class="mono">${fmt(it.cantidad)} ${it.unidad}</td><td>${it.nota||''}</td></tr>`).join('')}
+
+      <div class="pbox">
+        <div><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">ET19 asociada</span>
+          ${editable ? `<div style="display:flex;gap:6px;margin-top:3px">
+              <input id="oc-et19-${o.id}" value="${o.et19||''}" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+              <button class="btn" onclick="guardarET19Orden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
+            </div>`
+          : `<strong>${o.et19||'—'}</strong>`}
+        </div>
+      </div>
+
+      <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Recibido</th><th>%</th><th>Nota</th></tr></thead><tbody>
+        ${items.map((it,i)=>{
+          const pct = it.cantidad>0 ? Math.round(((it.recibido||0)/it.cantidad)*100) : 0;
+          const cumplido = (it.recibido||0) >= it.cantidad;
+          return `<tr class="${cumplido?'rnac':''}">
+            <td>${it.insumo}</td>
+            <td class="mono">${fmt(it.cantidad)} ${it.unidad}</td>
+            <td>${editable
+              ? `<input id="oc-recibido-${o.id}-${i}" type="number" step="0.01" value="${it.recibido||0}" class="qinp" style="width:90px"/>`
+              : `<span class="mono">${fmt(it.recibido||0)} ${it.unidad}</span>`}</td>
+            <td class="mono" style="color:${cumplido?'var(--gr)':'var(--tx3)'}">${pct}%</td>
+            <td>${it.nota||''}</td>
+          </tr>`;
+        }).join('')}
       </tbody></table>
       ${o.nota?`<div class="nbox">${o.nota}</div>`:''}
+
       <div style="display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap">
         <button class="btn" onclick="imprimirOrdenCompra('${o.id}')">🖨 Imprimir / PDF</button>
         <button class="btn" onclick="enviarOrdenPorMail('${o.id}')">📧 Enviar por mail</button>
         <button class="btn" onclick="agregarOrdenACalendar('${o.id}')">📅 Agregar a Calendar</button>
-        ${o.estado==='pendiente'?`<button class="btn btng" onclick="marcarEstadoOC('${o.id}','recibida')">✓ Marcar recibida</button>
-        <button class="btn btnd" onclick="marcarEstadoOC('${o.id}','cancelada')">✕ Cancelar orden</button>`:''}
+        ${editable?`
+          <button class="btn btnpu" onclick="guardarCotejoOrden('${o.id}')">✓ Guardar cotejo</button>
+          <button class="btn ${puedeCerrar?'btng':''}" ${puedeCerrar?'':'disabled title="Falta completar el 100% recibido y/o cargar la ET19"'} onclick="cerrarOrdenCompra('${o.id}')">🔒 Cerrar orden${puedeCerrar?'':' (falta '+(!cien?'cotejo 100%':'')+((!cien&&!tieneET19)?' y ':'')+(!tieneET19?'ET19':'')+')'}</button>
+          <button class="btn btnd" onclick="marcarEstadoOC('${o.id}','cancelada')">✕ Cancelar orden</button>
+        `:''}
       </div>
     </div>`;
   }).join('');
+}
+
+async function guardarET19Orden(id){
+  const inp = document.getElementById('oc-et19-'+id);
+  if(!inp) return;
+  const et19 = inp.value.trim();
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({et19: et19||null})
+    });
+    await loadOrdenesCompra();
+  }catch(e){ alert('Error guardando la ET19: '+e.message); }
+}
+
+async function guardarCotejoOrden(id, silencioso){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+  items = items.map((it,i)=>{
+    const inp = document.getElementById('oc-recibido-'+id+'-'+i);
+    const recibido = inp ? parseFloat(inp.value)||0 : (it.recibido||0);
+    return {...it, recibido};
+  });
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({items: JSON.stringify(items)})
+    });
+    await loadOrdenesCompra();
+    if(!silencioso){
+      const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
+      showToast(cien ? '✓ Cotejo guardado — llegó el 100%, ya podés cerrar la orden si tenés la ET19 cargada.' : '✓ Cotejo guardado — todavía no llegó el 100%.');
+    }
+  }catch(e){ alert('Error guardando el cotejo: '+e.message); }
+}
+
+async function cerrarOrdenCompra(id){
+  if(!confirm('¿Cerrar esta orden de compra? Ya no se va a poder editar el cotejo ni la ET19.')) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({estado:'cerrada'})
+    });
+    await loadOrdenesCompra();
+  }catch(e){ alert('Error cerrando la orden: '+e.message); }
 }
 
 function enviarOrdenPorMail(id){
@@ -3400,8 +3473,7 @@ function enviarOrdenPorMail(id){
   const cuerpo = encodeURIComponent(
     `Orden de Compra ${o.numero}\n`+
     `Proveedor: ${o.proveedor}\n`+
-    `Fecha de emisión: ${o.fecha_emision}\n`+
-    `Fecha de entrega esperada: ${o.fecha_entrega}\n\n`+
+    `Fecha de emisión: ${o.fecha_emision}\n\n`+
     `Ítems:\n`+
     items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}${it.nota?' ('+it.nota+')':''}`).join('\n')+
     (o.nota?`\n\nNota: ${o.nota}`:'')+
@@ -3423,8 +3495,7 @@ function agregarOrdenACalendar(id){
 
   const text = encodeURIComponent(`Orden de Compra realizada — ${o.numero} — ${o.proveedor}`);
   const details = encodeURIComponent(
-    `Se realizó el pedido a ${o.proveedor} el ${o.fecha_emision}.\n`+
-    `Entrega esperada: ${o.fecha_entrega}\n\n`+
+    `Se realizó el pedido a ${o.proveedor} el ${o.fecha_emision}.\n\n`+
     `Ítems:\n`+items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n')
   );
   const add = encodeURIComponent(AVISO_GUESTS.join(','));
@@ -3463,7 +3534,7 @@ function imprimirOrdenCompra(id){
 
   p+='<div class="info">'
     +'<div><div class="il">Proveedor</div><div class="iv">'+o.proveedor+'</div></div>'
-    +'<div><div class="il">Fecha de entrega esperada</div><div class="iv">'+o.fecha_entrega+'</div></div>'
+    +(o.et19?'<div><div class="il">ET19</div><div class="iv">'+o.et19+'</div></div>':'')
     +'</div>';
 
   p+='<table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>'
@@ -3711,7 +3782,7 @@ function editAdmStock(mat, i){
   document.getElementById('adm-item').value = r.item;
   document.getElementById('adm-sub').value = r.subitem;
   document.getElementById('adm-fecha').value = r.fecha||'';
-  document.getElementById('adm-cant').value = r.cantidad;
+  document.getElementById('adm-cant').value = r.cantidad_item_real!=null ? r.cantidad_item_real : r.cantidad;
   document.getElementById('adm-total-declarar').value = r.total_declarar!=null ? r.total_declarar : '';
   document.getElementById('adm-unidad').value = r.unidad||'KILOGRAMO';
   document.getElementById('adm-ncm').value = r.ncm||'';
@@ -3763,7 +3834,7 @@ async function pushStockRowToSupabase(mat, r){
         producto:r.producto||'', detalle:r.detalle||'', fecha:r.fecha||'',
         sospechoso:r.sospechoso||false,
         fob_desp:r.fob_desp||0, flete_desp:r.flete_desp||0, seguro_desp:r.seguro_desp||0,
-        ncm: r.ncm||null, derecho_pct: r.derecho_pct??null, total_declarar: r.total_declarar??null
+        ncm: r.ncm||null, derecho_pct: r.derecho_pct??null, total_declarar: r.total_declarar??null, cantidad_item_real: r.cantidad_item_real??null
       }])
     });
     return {ok:true};
@@ -3992,8 +4063,10 @@ async function addStock(){
   const item=parseInt(document.getElementById('adm-item').value)||1;
   const sub=parseInt(document.getElementById('adm-sub').value)||0;
   const fecha=document.getElementById('adm-fecha').value;
-  const cant=parseFloat(document.getElementById('adm-cant').value);
+  const cantidadItem=parseFloat(document.getElementById('adm-cant').value);
   const totalDeclarar=parseFloat(document.getElementById('adm-total-declarar').value);
+  // El TOTAL a declarar es el que rige el stock (disponible, descuentos); si no se cargó, se usa la cantidad del ítem.
+  const cant = isNaN(totalDeclarar) ? cantidadItem : totalDeclarar;
   const unidad=document.getElementById('adm-unidad').value;
   const ncm=document.getElementById('adm-ncm').value.trim();
   const derecho=parseFloat(document.getElementById('adm-derecho').value);
@@ -4051,7 +4124,7 @@ async function addStock(){
       cancel_qty:cancelQtyPrevio,cancel_unit:cu,
       fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
       ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho,
-      total_declarar: isNaN(totalDeclarar)?null:totalDeclarar
+      total_declarar: isNaN(totalDeclarar)?null:totalDeclarar, cantidad_item_real: isNaN(cantidadItem)?null:cantidadItem
     };
     if(!stockExtra[mat]) stockExtra[mat]=[];
     stockExtra[mat].push(nuevaFila);
@@ -4072,7 +4145,7 @@ async function addStock(){
     cancel_qty:0,cancel_unit:cu,
     fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
     ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho,
-    total_declarar: isNaN(totalDeclarar)?null:totalDeclarar
+    total_declarar: isNaN(totalDeclarar)?null:totalDeclarar, cantidad_item_real: isNaN(cantidadItem)?null:cantidadItem
   };
   if(!stockExtra[mat]) stockExtra[mat]=[];
   stockExtra[mat].push(nuevaFila);
@@ -4111,7 +4184,7 @@ function renderAdmStock(){
   keys.forEach(k=>stockExtra[k].forEach((r,i)=>{
     const cu=r.cancel_unit||CANCEL_UNIT[k];
     html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
-      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cantidad||0)} ${cu}</strong> cargados <span style="color:var(--tx3)">(disponible: ${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${cu})</span> ${fmtU(r.fob)}${r.total_declarar!=null?` <span class="t2 mono" style="font-size:10px">TOTAL a declarar: ${fmt(r.total_declarar)} ${cu}</span>`:''}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
+      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cantidad||0)} ${cu}</strong> en stock (TOTAL a declarar) <span style="color:var(--tx3)">(disponible: ${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${cu})</span> ${fmtU(r.fob)}${r.cantidad_item_real!=null?` <span class="t2 mono" style="font-size:10px">Cant. total del ítem (ref.): ${fmt(r.cantidad_item_real)} ${cu}</span>`:''}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
       <div style="display:flex;gap:6px">
         <button class="btn" style="padding:4px 10px;font-size:11px" onclick="editAdmStock('${k}',${i})">✎ Editar</button>
         <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
