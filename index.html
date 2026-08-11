@@ -508,7 +508,8 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           <div class="ff" style="max-width:130px"><label>Fecha</label><input id="adm-fecha" type="date"/></div>
         </div>
         <div class="fr">
-          <div class="ff" style="max-width:130px"><label>Cantidad</label><input id="adm-cant" type="number" step="0.01"/></div>
+          <div class="ff" style="max-width:150px"><label>Cantidad TOTAL del Ítem</label><input id="adm-cant" type="number" step="0.01"/></div>
+          <div class="ff" style="max-width:150px"><label>TOTAL a declarar</label><input id="adm-total-declarar" type="number" step="0.01"/></div>
           <div class="ff" style="max-width:120px"><label>Unidad</label>
             <select id="adm-unidad"><option value="KILOGRAMO">KILOGRAMO</option><option value="METRO">METRO</option><option value="UNIDAD">UNIDAD</option></select>
           </div>
@@ -3711,6 +3712,7 @@ function editAdmStock(mat, i){
   document.getElementById('adm-sub').value = r.subitem;
   document.getElementById('adm-fecha').value = r.fecha||'';
   document.getElementById('adm-cant').value = r.cantidad;
+  document.getElementById('adm-total-declarar').value = r.total_declarar!=null ? r.total_declarar : '';
   document.getElementById('adm-unidad').value = r.unidad||'KILOGRAMO';
   document.getElementById('adm-ncm').value = r.ncm||'';
   if(r.ncm) formatNCM(document.getElementById('adm-ncm'));
@@ -3731,7 +3733,7 @@ function editAdmStock(mat, i){
 
 function cancelarEdicionStock(){
   editandoStock = null;
-  ['adm-desp','adm-cant','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
+  ['adm-desp','adm-cant','adm-total-declarar','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
   document.getElementById('adm-mat').value='';
@@ -3760,7 +3762,8 @@ async function pushStockRowToSupabase(mat, r){
         unidad:r.unidad||'KILOGRAMO', fob:r.fob||0, cif:r.cif||0, kgs_neto:r.kgs_neto||0,
         producto:r.producto||'', detalle:r.detalle||'', fecha:r.fecha||'',
         sospechoso:r.sospechoso||false,
-        fob_desp:r.fob_desp||0, flete_desp:r.flete_desp||0, seguro_desp:r.seguro_desp||0
+        fob_desp:r.fob_desp||0, flete_desp:r.flete_desp||0, seguro_desp:r.seguro_desp||0,
+        ncm: r.ncm||null, derecho_pct: r.derecho_pct??null, total_declarar: r.total_declarar??null
       }])
     });
     return {ok:true};
@@ -3990,6 +3993,7 @@ async function addStock(){
   const sub=parseInt(document.getElementById('adm-sub').value)||0;
   const fecha=document.getElementById('adm-fecha').value;
   const cant=parseFloat(document.getElementById('adm-cant').value);
+  const totalDeclarar=parseFloat(document.getElementById('adm-total-declarar').value);
   const unidad=document.getElementById('adm-unidad').value;
   const ncm=document.getElementById('adm-ncm').value.trim();
   const derecho=parseFloat(document.getElementById('adm-derecho').value);
@@ -4046,7 +4050,8 @@ async function addStock(){
       fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,
       cancel_qty:cancelQtyPrevio,cancel_unit:cu,
       fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
-      ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho
+      ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho,
+      total_declarar: isNaN(totalDeclarar)?null:totalDeclarar
     };
     if(!stockExtra[mat]) stockExtra[mat]=[];
     stockExtra[mat].push(nuevaFila);
@@ -4066,7 +4071,8 @@ async function addStock(){
     fob,cif:0,producto:nombreInsumo,detalle:det,fecha,sospechoso:false,
     cancel_qty:0,cancel_unit:cu,
     fob_desp:fobDesp,flete_desp:flete,seguro_desp:seguro,
-    ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho
+    ncm: ncm||null, derecho_pct: isNaN(derecho)?null:derecho,
+    total_declarar: isNaN(totalDeclarar)?null:totalDeclarar
   };
   if(!stockExtra[mat]) stockExtra[mat]=[];
   stockExtra[mat].push(nuevaFila);
@@ -4076,7 +4082,7 @@ async function addStock(){
   msg.textContent = subio.ok
     ? `✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible. Ya está sincronizado, lo va a ver Marina/Carina y el lector de ZFE3 también.`
     : `⚠ ${desp} agregado localmente, pero falló la sincronización con Supabase: ${subio.error}`;
-  ['adm-desp','adm-cant','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
+  ['adm-desp','adm-cant','adm-total-declarar','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
   document.getElementById('adm-mat').value='';
@@ -4105,7 +4111,7 @@ function renderAdmStock(){
   keys.forEach(k=>stockExtra[k].forEach((r,i)=>{
     const cu=r.cancel_unit||CANCEL_UNIT[k];
     html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
-      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cantidad||0)} ${cu}</strong> cargados <span style="color:var(--tx3)">(disponible: ${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${cu})</span> ${fmtU(r.fob)}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
+      <div><span class="bdg bb">${MAT_LABELS[k]||k}</span> <span class="mono">${r.despacho}</span> ít.${r.item}.${r.subitem} — ${r.producto?`<strong>${r.producto}</strong> — `:''}<strong>${fmt(r.cantidad||0)} ${cu}</strong> cargados <span style="color:var(--tx3)">(disponible: ${fmt((r.cantidad||0)-(r.cancel_qty||0))} ${cu})</span> ${fmtU(r.fob)}${r.total_declarar!=null?` <span class="t2 mono" style="font-size:10px">TOTAL a declarar: ${fmt(r.total_declarar)} ${cu}</span>`:''}${r.ncm?` <span class="t2 mono" style="font-size:10px">NCM ${r.ncm}</span>`:''}${r.derecho_pct!=null?` <span class="t2" style="font-size:10px">· ${r.derecho_pct}% der.</span>`:''}</div>
       <div style="display:flex;gap:6px">
         <button class="btn" style="padding:4px 10px;font-size:11px" onclick="editAdmStock('${k}',${i})">✎ Editar</button>
         <button class="btn btnd" onclick="delAdmStock('${k}',${i})">✕</button>
