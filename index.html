@@ -3375,8 +3375,7 @@ function renderOrdenesCompra(){
     let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
     const editableCotejo = o.estado==='abierta';
     const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
-    const itemsExcedente = items.filter(it=>(it.recibido||0) > it.cantidad)
-      .map(it=>({...it, excedente: parseFloat((it.recibido-it.cantidad).toFixed(4))}));
+    const itemsExcedente = items.filter(it=>(it.excedente_detectado||0) > 0);
     const hayExcedente = itemsExcedente.length>0;
 
     // ¿Ya existe una OC complementaria vinculada, y ella misma llegó a confirmada/cerrada?
@@ -3388,7 +3387,7 @@ function renderOrdenesCompra(){
     const puedeCargarEt19 = puedeCargarSita && tieneSita;
     const tieneET19 = !!(o.et19 && o.et19.trim());
 
-    let estadoTxt = 'ABIERTA — cotejando mercadería';
+    let estadoTxt = hayExcedente && !excedenteRegularizado ? 'ABIERTA — esperando OC complementaria por excedente' : 'ABIERTA — cotejando mercadería';
     if(o.estado==='confirmada'){
       if(!excedenteRegularizado) estadoTxt = 'CONFIRMADA — esperando OC complementaria por excedente';
       else if(!tieneSita) estadoTxt = 'CONFIRMADA — falta cargar el SITA';
@@ -3403,14 +3402,14 @@ function renderOrdenesCompra(){
           <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${estadoTxt}</span>
           ${o.orden_relacionada?`<span class="bdg by">OC COMPLEMENTARIA</span>`:''}
         </div>
-        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision} · por ${o.creado_por||'?'}</div>
+        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision}${o.fecha_cierre?` · Cierre: ${o.fecha_cierre}`:''}${o.sita?` · SITA: ${o.sita}`:''}${o.et19?` · ET19: ${o.et19}`:''} · por ${o.creado_por||'?'}</div>
       </div>
 
-      ${(o.estado==='confirmada' && hayExcedente && !excedenteRegularizado) ? `
+      ${(hayExcedente && !excedenteRegularizado) ? `
         <div class="ibox" style="border-color:var(--rd);background:var(--rbg)">
           <div style="width:100%">
             <div style="color:var(--rd);font-weight:600;font-size:12px;margin-bottom:6px">⚠ Llegó de más — hace falta una OC complementaria antes de poder cargar el SITA</div>
-            ${itemsExcedente.map(it=>`<div style="font-size:12px">• ${it.insumo}: <strong>+${fmt(it.excedente)} ${it.unidad}</strong> de más</div>`).join('')}
+            ${itemsExcedente.map(it=>`<div style="font-size:12px">• ${it.insumo}: <strong>+${fmt(it.excedente_detectado)} ${it.unidad}</strong> de más</div>`).join('')}
             <button class="btn btnd" style="margin-top:8px" onclick='crearOCComplementaria("${o.id}", ${JSON.stringify(itemsExcedente).replace(/'/g,"&#39;")})'>➕ Crear OC complementaria por el excedente</button>
           </div>
         </div>
@@ -3426,13 +3425,20 @@ function renderOrdenesCompra(){
         </div>
       </div>` : ''}
 
-      ${puedeCargarEt19 ? `<div class="pbox">
-        <div><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">ET19 asociada</span>
-          ${!tieneET19 ? `<div style="display:flex;gap:6px;margin-top:3px">
-              <input id="oc-et19-${o.id}" value="${o.et19||''}" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+      ${puedeCargarEt19 ? `<div class="pbox" style="flex-direction:column;align-items:flex-start;gap:8px">
+        <div style="width:100%"><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">ET19 asociada</span>
+          ${!tieneET19 ? `<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;align-items:flex-end">
+              <div><label style="font-size:9px;color:var(--tx3);display:block">Nº ET19</label>
+                <input id="oc-et19-${o.id}" value="${o.et19||''}" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
+              <div><label style="font-size:9px;color:var(--tx3);display:block">Fecha oficialización</label>
+                <input id="oc-et19-fecha-${o.id}" type="date" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
+              <div><label style="font-size:9px;color:var(--tx3);display:block">Plazo</label>
+                <select id="oc-et19-meses-${o.id}" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
+                  <option value="22" selected>22 meses</option><option value="12">12 meses</option><option value="24">24 meses</option>
+                </select></div>
               <button class="btn" onclick="guardarET19Orden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
             </div>`
-          : `<strong>${o.et19}</strong>`}
+          : `<strong>${o.et19}</strong>${o.et19_fecha?` <span class="t2" style="font-size:11px">— vence ${fmtFechaET19Orden(o)}</span> <button class="btn" style="font-size:10px;padding:3px 8px;margin-left:6px" onclick="enviarMailVencimientoET19('${o.id}')">📧 Mail con vencimiento</button>`:''}`}
         </div>
       </div>` : ''}
 
@@ -3440,14 +3446,14 @@ function renderOrdenesCompra(){
         ${items.map((it,i)=>{
           const pct = it.cantidad>0 ? Math.round(((it.recibido||0)/it.cantidad)*100) : 0;
           const cumplido = (it.recibido||0) >= it.cantidad;
-          const exceso = (it.recibido||0) > it.cantidad;
+          const exceso = (it.excedente_detectado||0) > 0;
           return `<tr class="${exceso?'rsosp':(cumplido?'rnac':'')}">
             <td>${it.insumo}</td>
             <td class="mono">${fmt(it.cantidad)} ${it.unidad}</td>
             <td>${editableCotejo
               ? `<input id="oc-recibido-${o.id}-${i}" type="number" step="0.01" value="${it.recibido||0}" class="qinp" style="width:90px"/>`
               : `<span class="mono">${fmt(it.recibido||0)} ${it.unidad}</span>`}
-              ${exceso?` <span class="bdg by" style="margin-left:4px">⚠ +${fmt((it.recibido||0)-it.cantidad)} de más</span>`:''}</td>
+              ${exceso?` <span class="bdg by" style="margin-left:4px">⚠ +${fmt(it.excedente_detectado)} de más — pendiente de OC complementaria</span>`:''}</td>
             <td class="mono" style="color:${exceso?'var(--yw)':(cumplido?'var(--gr)':'var(--tx3)')}">${pct}%</td>
             <td>${it.nota||''}</td>
           </tr>`;
@@ -3505,7 +3511,7 @@ function crearOCComplementaria(parentId, itemsExcedente){
     agregarLineaOC();
     const idx = ocItemIndices[ocItemIndices.length-1];
     document.getElementById('oc-insumo-nombre-'+idx).value = it.insumo;
-    document.getElementById('oc-cant-'+idx).value = it.excedente;
+    document.getElementById('oc-cant-'+idx).value = it.excedente_detectado;
     document.getElementById('oc-unidad-'+idx).value = it.unidad;
   });
 
@@ -3514,15 +3520,45 @@ function crearOCComplementaria(parentId, itemsExcedente){
 
 async function guardarET19Orden(id){
   const inp = document.getElementById('oc-et19-'+id);
+  const fechaInp = document.getElementById('oc-et19-fecha-'+id);
+  const mesesInp = document.getElementById('oc-et19-meses-'+id);
   if(!inp) return;
   const et19 = inp.value.trim();
+  const et19_fecha = fechaInp ? fechaInp.value : null;
+  const et19_meses = mesesInp ? parseInt(mesesInp.value)||22 : 22;
+  if(!et19){ alert('Escribí el número de ET19.'); return; }
   try{
     await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
       method:'PATCH', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({et19: et19||null})
+      body: JSON.stringify({et19, et19_fecha: et19_fecha||null, et19_meses})
     });
     await loadOrdenesCompra();
   }catch(e){ alert('Error guardando la ET19: '+e.message); }
+}
+
+function vencimientoET19Orden(o){
+  if(!o.et19_fecha) return null;
+  const d = new Date(o.et19_fecha+'T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + (o.et19_meses||22));
+  return d;
+}
+function fmtFechaET19Orden(o){
+  const d = vencimientoET19Orden(o);
+  return d ? d.toLocaleDateString('es-AR', {timeZone:'UTC'}) : '—';
+}
+
+function enviarMailVencimientoET19(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  const venc = vencimientoET19Orden(o);
+  if(!venc){ alert('Esta ET19 no tiene fecha de oficialización cargada.'); return; }
+  const asunto = encodeURIComponent(`Vencimiento ET19 ${o.et19} — Orden ${o.numero}`);
+  const cuerpo = encodeURIComponent(
+    `La ET19 ${o.et19} (de la orden de compra ${o.numero} — ${o.proveedor}) vence el ${venc.toLocaleDateString('es-AR',{timeZone:'UTC'})}.\n`+
+    `Debe reimportarse como ZFI6 antes de esa fecha.\n\n— ALAV SRL, Z.F. General Pico`
+  );
+  const to = AVISO_GUESTS.join(',');
+  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
 }
 
 async function confirmarCantidadOrden(id){
@@ -3531,7 +3567,7 @@ async function confirmarCantidadOrden(id){
   let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
   const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
   if(!cien){ alert('Todavía falta que llegue el 100% de algún ítem para confirmar la cantidad.'); return; }
-  const hayExcedente = items.some(it=>(it.recibido||0) > it.cantidad);
+  const hayExcedente = items.some(it=>(it.excedente_detectado||0) > 0);
   const confirmMsg = hayExcedente
     ? '¿Confirmar la cantidad de esta orden? Ojo: llegó de más en algún ítem — te va a pedir que cargues una OC complementaria por ese excedente antes de poder cargar el SITA.'
     : '¿Confirmar la cantidad de esta orden? La mercadería queda cerrada por cantidad — después vas a poder cargarle el SITA y la ET19.';
@@ -3552,8 +3588,12 @@ async function guardarCotejoOrden(id, silencioso){
   let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
   items = items.map((it,i)=>{
     const inp = document.getElementById('oc-recibido-'+id+'-'+i);
-    const recibido = inp ? parseFloat(inp.value)||0 : (it.recibido||0);
-    return {...it, recibido};
+    const ingresado = inp ? parseFloat(inp.value)||0 : (it.recibido||0);
+    // La orden original nunca queda con más de lo pedido — el excedente se registra aparte
+    // y hay que tramitarlo en una OC nueva, no se le agrega a esta.
+    const recibido = Math.min(ingresado, it.cantidad);
+    const excedente_detectado = Math.max(0, parseFloat((ingresado - it.cantidad).toFixed(4)));
+    return {...it, recibido, excedente_detectado};
   });
   try{
     await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
@@ -3561,10 +3601,11 @@ async function guardarCotejoOrden(id, silencioso){
       body: JSON.stringify({items: JSON.stringify(items)})
     });
     await loadOrdenesCompra();
-    const excedidos = items.filter(it=>(it.recibido||0) > it.cantidad);
+    const excedidos = items.filter(it=>(it.excedente_detectado||0) > 0);
     if(excedidos.length){
       alert('⚠️ Llegó MÁS de lo pedido en ' + excedidos.length + ' ítem(s):\n\n'
-        + excedidos.map(it=>`• ${it.insumo}: pedido ${fmt(it.cantidad)} ${it.unidad}, recibido ${fmt(it.recibido)} ${it.unidad} (+${fmt(it.recibido-it.cantidad)} ${it.unidad} de más)`).join('\n'));
+        + excedidos.map(it=>`• ${it.insumo}: pedido ${fmt(it.cantidad)} ${it.unidad}, llegaron ${fmt(it.excedente_detectado)} ${it.unidad} de más`).join('\n')
+        + '\n\nEsta orden queda con la cantidad original — el excedente hay que tramitarlo en una OC nueva, ya te dejé el botón para armarla.');
     } else if(!silencioso){
       const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
       showToast(cien ? '✓ Cotejo guardado — llegó el 100%, ya podés cerrar la orden si tenés la ET19 cargada.' : '✓ Cotejo guardado — todavía no llegó el 100%.');
@@ -3577,7 +3618,7 @@ async function cerrarOrdenCompra(id){
   try{
     await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
       method:'PATCH', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({estado:'cerrada'})
+      body: JSON.stringify({estado:'cerrada', fecha_cierre: new Date().toISOString().slice(0,10)})
     });
     await loadOrdenesCompra();
   }catch(e){ alert('Error cerrando la orden: '+e.message); }
@@ -3644,8 +3685,7 @@ function imprimirOrdenCompra(id){
     +'h1{font-size:18px}table{width:100%;border-collapse:collapse;margin:10px 0}'
     +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
     +'td{border:1px solid #ccc;padding:6px 8px}'
-    +'.info{display:flex;gap:30px;margin-bottom:14px}.il{font-size:9px;text-transform:uppercase;color:#555}.iv{font-size:13px;font-weight:700}'
-    +'.firma{margin-top:60px;display:flex;gap:60px}.firma div{border-top:1px solid #000;padding-top:6px;width:200px;text-align:center;font-size:10px}'
+    +'.info{display:flex;gap:24px;margin-bottom:14px;flex-wrap:wrap}.il{font-size:9px;text-transform:uppercase;color:#555}.iv{font-size:13px;font-weight:700}'
     +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
 
   p+='<div class="hdr"><div><h1>ORDEN DE COMPRA '+o.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
@@ -3653,6 +3693,9 @@ function imprimirOrdenCompra(id){
 
   p+='<div class="info">'
     +'<div><div class="il">Proveedor</div><div class="iv">'+o.proveedor+'</div></div>'
+    +'<div><div class="il">Fecha de pedido</div><div class="iv">'+o.fecha_emision+'</div></div>'
+    +(o.fecha_cierre?'<div><div class="il">Fecha de cierre</div><div class="iv">'+o.fecha_cierre+'</div></div>':'')
+    +(o.sita?'<div><div class="il">SITA</div><div class="iv">'+o.sita+'</div></div>':'')
     +(o.et19?'<div><div class="il">ET19</div><div class="iv">'+o.et19+'</div></div>':'')
     +'</div>';
 
@@ -3662,7 +3705,6 @@ function imprimirOrdenCompra(id){
 
   if(o.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+o.nota+'</div>';
 
-  p+='<div class="firma"><div>Firma ALAV SRL</div><div>Firma Proveedor</div></div>';
   p+='</body></html>';
 
   const win = window.open('', '_blank');
