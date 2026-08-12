@@ -426,6 +426,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <!-- COMPRAS -->
 <div id="sec-compras" class="sec">
   <div class="stit">Nueva orden de compra</div>
+  <div id="oc-complementaria-aviso" class="ibox" style="display:none;border-color:var(--yw)"></div>
   <div class="card">
     <div class="fr">
       <div class="ff" style="max-width:240px"><label>Proveedor</label>
@@ -3258,6 +3259,7 @@ async function confirmarProveedorNuevo(){
 let ocItemIndices = [];
 let ocNextIdx = 0;
 let ordenesCompra = [];
+let ocComplementariaDePadre = null; // id de la orden padre, cuando se está armando una OC complementaria por excedente
 
 function agregarLineaOC(){
   const idx = ocNextIdx++;
@@ -3325,20 +3327,27 @@ async function guardarOrdenCompra(){
   const numero = 'OC-' + (ordenesCompra.length+1).toString().padStart(4,'0');
   const id = 'oc_'+Date.now();
   const who = localStorage.getItem('ga_user_label')||'alguien';
+  const ordenRelacionada = ocComplementariaDePadre;
 
   try{
     await sbFetch('ordenes_compra', {
       method:'POST', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({
-        id, numero, proveedor, proveedor_codigo: proveedorCodigo, fecha_emision:fechaEmision, et19:null,
-        items: JSON.stringify(items), nota, estado:'abierta', creado_por: who
+        id, numero, proveedor, proveedor_codigo: proveedorCodigo, fecha_emision:fechaEmision, et19:null, sita:null,
+        items: JSON.stringify(items), nota, estado:'abierta', creado_por: who,
+        orden_relacionada: ordenRelacionada||null
       })
     });
-    msg.style.color='var(--gr)'; msg.textContent=`✓ Orden ${numero} guardada — queda ABIERTA hasta que se coteje el pedido y se cargue la ET19. Se abrió Google Calendar para dejar registrada la fecha del pedido.`;
+    msg.style.color='var(--gr)';
+    msg.textContent = ordenRelacionada
+      ? `✓ Orden ${numero} guardada como COMPLEMENTARIA de la orden original. Cotejala igual que cualquier otra.`
+      : `✓ Orden ${numero} guardada — queda ABIERTA hasta que se coteje el pedido, se cargue el SITA y la ET19. Se abrió Google Calendar para dejar registrada la fecha del pedido.`;
     document.getElementById('oc-proveedor').value='';
     document.getElementById('oc-nota').value='';
     document.getElementById('oc-items-lista').innerHTML='';
     ocItemIndices=[]; agregarLineaOC();
+    ocComplementariaDePadre = null;
+    document.getElementById('oc-complementaria-aviso').style.display='none';
     await loadOrdenesCompra();
     agregarOrdenACalendar(id);
   }catch(e){
@@ -3361,43 +3370,85 @@ function renderOrdenesCompra(){
   const el = document.getElementById('oc-lista');
   if(!el) return;
   if(!ordenesCompra.length){ el.innerHTML='<div class="empty">Sin órdenes registradas todavía.</div>'; return; }
-  const ESTADO_TAG = {abierta:'by', cerrada:'bg', cancelada:'br'};
+  const ESTADO_TAG = {abierta:'by', confirmada:'bb', cerrada:'bg', cancelada:'br'};
   el.innerHTML = ordenesCompra.map(o=>{
     let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
-    const editable = o.estado==='abierta';
+    const editableCotejo = o.estado==='abierta';
     const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
+    const itemsExcedente = items.filter(it=>(it.recibido||0) > it.cantidad)
+      .map(it=>({...it, excedente: parseFloat((it.recibido-it.cantidad).toFixed(4))}));
+    const hayExcedente = itemsExcedente.length>0;
+
+    // ¿Ya existe una OC complementaria vinculada, y ella misma llegó a confirmada/cerrada?
+    const complementaria = ordenesCompra.find(x=>x.orden_relacionada===o.id);
+    const excedenteRegularizado = !hayExcedente || (complementaria && (complementaria.estado==='confirmada'||complementaria.estado==='cerrada'));
+
+    const puedeCargarSita = o.estado==='confirmada' && excedenteRegularizado;
+    const tieneSita = !!(o.sita && o.sita.trim());
+    const puedeCargarEt19 = puedeCargarSita && tieneSita;
     const tieneET19 = !!(o.et19 && o.et19.trim());
-    const puedeCerrar = cien && tieneET19;
+
+    let estadoTxt = 'ABIERTA — cotejando mercadería';
+    if(o.estado==='confirmada'){
+      if(!excedenteRegularizado) estadoTxt = 'CONFIRMADA — esperando OC complementaria por excedente';
+      else if(!tieneSita) estadoTxt = 'CONFIRMADA — falta cargar el SITA';
+      else if(!tieneET19) estadoTxt = 'CONFIRMADA — falta cargar la ET19';
+      else estadoTxt = 'CONFIRMADA — lista para cerrar';
+    } else if(o.estado==='cerrada') estadoTxt = 'CERRADA';
+    else if(o.estado==='cancelada') estadoTxt = 'CANCELADA';
 
     return `<div class="mb">
       <div class="mh">
         <div><span class="mono" style="font-weight:600">${o.numero}</span> — <strong>${o.proveedor}</strong>
-          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${(o.estado||'abierta').toUpperCase()}</span>
+          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${estadoTxt}</span>
+          ${o.orden_relacionada?`<span class="bdg by">OC COMPLEMENTARIA</span>`:''}
         </div>
         <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision} · por ${o.creado_por||'?'}</div>
       </div>
 
-      <div class="pbox">
+      ${(o.estado==='confirmada' && hayExcedente && !excedenteRegularizado) ? `
+        <div class="ibox" style="border-color:var(--rd);background:var(--rbg)">
+          <div style="width:100%">
+            <div style="color:var(--rd);font-weight:600;font-size:12px;margin-bottom:6px">⚠ Llegó de más — hace falta una OC complementaria antes de poder cargar el SITA</div>
+            ${itemsExcedente.map(it=>`<div style="font-size:12px">• ${it.insumo}: <strong>+${fmt(it.excedente)} ${it.unidad}</strong> de más</div>`).join('')}
+            <button class="btn btnd" style="margin-top:8px" onclick='crearOCComplementaria("${o.id}", ${JSON.stringify(itemsExcedente).replace(/'/g,"&#39;")})'>➕ Crear OC complementaria por el excedente</button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${puedeCargarSita ? `<div class="pbox">
+        <div><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">SITA</span>
+          ${!tieneSita ? `<div style="display:flex;gap:6px;margin-top:3px">
+              <input id="oc-sita-${o.id}" value="${o.sita||''}" placeholder="Nº de SITA" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+              <button class="btn" onclick="guardarSitaOrden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
+            </div>`
+          : `<strong>${o.sita}</strong>`}
+        </div>
+      </div>` : ''}
+
+      ${puedeCargarEt19 ? `<div class="pbox">
         <div><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">ET19 asociada</span>
-          ${editable ? `<div style="display:flex;gap:6px;margin-top:3px">
+          ${!tieneET19 ? `<div style="display:flex;gap:6px;margin-top:3px">
               <input id="oc-et19-${o.id}" value="${o.et19||''}" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
               <button class="btn" onclick="guardarET19Orden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
             </div>`
-          : `<strong>${o.et19||'—'}</strong>`}
+          : `<strong>${o.et19}</strong>`}
         </div>
-      </div>
+      </div>` : ''}
 
       <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Recibido</th><th>%</th><th>Nota</th></tr></thead><tbody>
         ${items.map((it,i)=>{
           const pct = it.cantidad>0 ? Math.round(((it.recibido||0)/it.cantidad)*100) : 0;
           const cumplido = (it.recibido||0) >= it.cantidad;
-          return `<tr class="${cumplido?'rnac':''}">
+          const exceso = (it.recibido||0) > it.cantidad;
+          return `<tr class="${exceso?'rsosp':(cumplido?'rnac':'')}">
             <td>${it.insumo}</td>
             <td class="mono">${fmt(it.cantidad)} ${it.unidad}</td>
-            <td>${editable
+            <td>${editableCotejo
               ? `<input id="oc-recibido-${o.id}-${i}" type="number" step="0.01" value="${it.recibido||0}" class="qinp" style="width:90px"/>`
-              : `<span class="mono">${fmt(it.recibido||0)} ${it.unidad}</span>`}</td>
-            <td class="mono" style="color:${cumplido?'var(--gr)':'var(--tx3)'}">${pct}%</td>
+              : `<span class="mono">${fmt(it.recibido||0)} ${it.unidad}</span>`}
+              ${exceso?` <span class="bdg by" style="margin-left:4px">⚠ +${fmt((it.recibido||0)-it.cantidad)} de más</span>`:''}</td>
+            <td class="mono" style="color:${exceso?'var(--yw)':(cumplido?'var(--gr)':'var(--tx3)')}">${pct}%</td>
             <td>${it.nota||''}</td>
           </tr>`;
         }).join('')}
@@ -3408,14 +3459,57 @@ function renderOrdenesCompra(){
         <button class="btn" onclick="imprimirOrdenCompra('${o.id}')">🖨 Imprimir / PDF</button>
         <button class="btn" onclick="enviarOrdenPorMail('${o.id}')">📧 Enviar por mail</button>
         <button class="btn" onclick="agregarOrdenACalendar('${o.id}')">📅 Agregar a Calendar</button>
-        ${editable?`
+        ${editableCotejo?`
           <button class="btn btnpu" onclick="guardarCotejoOrden('${o.id}')">✓ Guardar cotejo</button>
-          <button class="btn ${puedeCerrar?'btng':''}" ${puedeCerrar?'':'disabled title="Falta completar el 100% recibido y/o cargar la ET19"'} onclick="cerrarOrdenCompra('${o.id}')">🔒 Cerrar orden${puedeCerrar?'':' (falta '+(!cien?'cotejo 100%':'')+((!cien&&!tieneET19)?' y ':'')+(!tieneET19?'ET19':'')+')'}</button>
+          <button class="btn ${cien?'btng':''}" ${cien?'':'disabled title="Todavía no llegó el 100% de la mercadería"'} onclick="confirmarCantidadOrden('${o.id}')">📦 Confirmar cantidad${cien?'':' (falta llegar al 100%)'}</button>
           <button class="btn btnd" onclick="marcarEstadoOC('${o.id}','cancelada')">✕ Cancelar orden</button>
+        `:''}
+        ${puedeCargarEt19?`
+          <button class="btn ${tieneET19?'btng':''}" ${tieneET19?'':'disabled title="Cargá el número de ET19 primero"'} onclick="cerrarOrdenCompra('${o.id}')">🔒 Cerrar orden${tieneET19?'':' (falta la ET19)'}</button>
         `:''}
       </div>
     </div>`;
   }).join('');
+}
+
+async function guardarSitaOrden(id){
+  const inp = document.getElementById('oc-sita-'+id);
+  if(!inp) return;
+  const sita = inp.value.trim();
+  if(!sita){ alert('Escribí el número de SITA.'); return; }
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({sita})
+    });
+    await loadOrdenesCompra();
+  }catch(e){ alert('Error guardando el SITA: '+e.message); }
+}
+
+function crearOCComplementaria(parentId, itemsExcedente){
+  const parent = ordenesCompra.find(x=>x.id===parentId);
+  if(!parent) return;
+  ocComplementariaDePadre = parentId;
+
+  const aviso = document.getElementById('oc-complementaria-aviso');
+  aviso.style.display = 'flex';
+  aviso.innerHTML = `<div style="width:100%"><strong style="color:var(--yw)">⚠ Estás armando la OC complementaria de ${parent.numero}</strong><br>
+    <span style="font-size:12px">Se precargó el excedente que llegó de más. Completá y guardá como cualquier otra orden.</span>
+    <br><a href="#" onclick="ocComplementariaDePadre=null;document.getElementById('oc-complementaria-aviso').style.display='none';return false;" style="font-size:11px;color:var(--tx3)">Cancelar</a></div>`;
+
+  // Precargar proveedor (mismo que la orden original) y los ítems con el excedente
+  document.getElementById('oc-proveedor').value = parent.proveedor_codigo || '';
+  document.getElementById('oc-items-lista').innerHTML = '';
+  ocItemIndices = [];
+  itemsExcedente.forEach(it=>{
+    agregarLineaOC();
+    const idx = ocItemIndices[ocItemIndices.length-1];
+    document.getElementById('oc-insumo-nombre-'+idx).value = it.insumo;
+    document.getElementById('oc-cant-'+idx).value = it.excedente;
+    document.getElementById('oc-unidad-'+idx).value = it.unidad;
+  });
+
+  document.querySelector('.stit').scrollIntoView({behavior:'smooth'});
 }
 
 async function guardarET19Orden(id){
@@ -3429,6 +3523,27 @@ async function guardarET19Orden(id){
     });
     await loadOrdenesCompra();
   }catch(e){ alert('Error guardando la ET19: '+e.message); }
+}
+
+async function confirmarCantidadOrden(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+  const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
+  if(!cien){ alert('Todavía falta que llegue el 100% de algún ítem para confirmar la cantidad.'); return; }
+  const hayExcedente = items.some(it=>(it.recibido||0) > it.cantidad);
+  const confirmMsg = hayExcedente
+    ? '¿Confirmar la cantidad de esta orden? Ojo: llegó de más en algún ítem — te va a pedir que cargues una OC complementaria por ese excedente antes de poder cargar el SITA.'
+    : '¿Confirmar la cantidad de esta orden? La mercadería queda cerrada por cantidad — después vas a poder cargarle el SITA y la ET19.';
+  if(!confirm(confirmMsg)) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({estado:'confirmada'})
+    });
+    await loadOrdenesCompra();
+    showToast(hayExcedente ? '✓ Cantidad confirmada — falta la OC complementaria por el excedente.' : '✓ Cantidad confirmada — ahora podés cargarle el SITA.');
+  }catch(e){ alert('Error confirmando la cantidad: '+e.message); }
 }
 
 async function guardarCotejoOrden(id, silencioso){
@@ -3446,7 +3561,11 @@ async function guardarCotejoOrden(id, silencioso){
       body: JSON.stringify({items: JSON.stringify(items)})
     });
     await loadOrdenesCompra();
-    if(!silencioso){
+    const excedidos = items.filter(it=>(it.recibido||0) > it.cantidad);
+    if(excedidos.length){
+      alert('⚠️ Llegó MÁS de lo pedido en ' + excedidos.length + ' ítem(s):\n\n'
+        + excedidos.map(it=>`• ${it.insumo}: pedido ${fmt(it.cantidad)} ${it.unidad}, recibido ${fmt(it.recibido)} ${it.unidad} (+${fmt(it.recibido-it.cantidad)} ${it.unidad} de más)`).join('\n'));
+    } else if(!silencioso){
       const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
       showToast(cien ? '✓ Cotejo guardado — llegó el 100%, ya podés cerrar la orden si tenés la ET19 cargada.' : '✓ Cotejo guardado — todavía no llegó el 100%.');
     }
