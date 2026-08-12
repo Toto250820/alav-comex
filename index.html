@@ -451,6 +451,17 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="oc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 
+  <div class="stit" style="margin-top:22px">Proforma Invoice (PI) — juntar varias OC bajo un mismo SITA</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Elegí las órdenes CONFIRMADAS que van a compartir un mismo SITA. Se junta el detalle de todas, le ponés el valor unitario en USD a cada ítem, y calcula el total solo.</div>
+    <div id="pi-oc-checklist"><div class="empty">Cargando órdenes...</div></div>
+    <button class="btn btnp" style="margin-top:10px" onclick="generarPI()">🧾 Generar PI con las seleccionadas</button>
+    <div id="pi-armado"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Proforma Invoice generadas</div>
+  <div id="pi-lista"><div class="empty">Ninguna todavía.</div></div>
+
   <div class="stit" style="margin-top:22px">Órdenes registradas</div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
 </div>
@@ -1294,7 +1305,7 @@ function showSec(id,btn){
   btn.classList.add('active');
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
-  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
+  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra().then(renderChecklistPI); loadProveedores(); loadPIs(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -3672,6 +3683,176 @@ async function marcarEstadoOC(id, estado){
     });
     await loadOrdenesCompra();
   }catch(e){ alert('Error: '+e.message); }
+}
+
+// ═══════════════════════════════════════════
+// PROFORMA INVOICE (PI) — junta varias OC bajo un mismo SITA
+// ═══════════════════════════════════════════
+let pisGeneradas = [];
+let piItemsActuales = null; // items combinados de la PI que se está armando ahora
+
+function renderChecklistPI(){
+  const el = document.getElementById('pi-oc-checklist');
+  if(!el) return;
+  // Solo tiene sentido juntar órdenes CONFIRMADAS que todavía no tienen SITA
+  const candidatas = ordenesCompra.filter(o=>o.estado==='confirmada' && !(o.sita&&o.sita.trim()));
+  if(!candidatas.length){ el.innerHTML='<div class="empty">No hay órdenes confirmadas esperando SITA por ahora.</div>'; return; }
+  el.innerHTML = candidatas.map(o=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="pi-oc-check" value="${o.id}"/>
+      <span class="mono" style="font-weight:600">${o.numero}</span> — ${o.proveedor}
+    </label>`).join('');
+}
+
+function generarPI(){
+  const checks = [...document.querySelectorAll('.pi-oc-check:checked')].map(c=>c.value);
+  if(checks.length<2){ alert('Elegí al menos 2 órdenes para juntar en una PI (si es solo una, no hace falta juntar nada).'); return; }
+
+  const ordenesSel = checks.map(id=>ordenesCompra.find(o=>o.id===id)).filter(Boolean);
+  const items = [];
+  ordenesSel.forEach(o=>{
+    let ocItems=[]; try{ ocItems = JSON.parse(o.items||'[]'); }catch(e){}
+    ocItems.forEach(it=>items.push({insumo:it.insumo, cantidad:it.cantidad, unidad:it.unidad, orden_origen:o.numero, valor_unitario:0}));
+  });
+  piItemsActuales = {ordenesIds: checks, ordenesNumeros: ordenesSel.map(o=>o.numero), items};
+
+  const cont = document.getElementById('pi-armado');
+  cont.innerHTML = `
+    <div style="margin-top:14px;border-top:1px dashed var(--bd2);padding-top:12px">
+      <div class="ct">Ítems combinados de: ${ordenesSel.map(o=>o.numero).join(', ')}</div>
+      <table><thead><tr><th>Insumo</th><th>De la orden</th><th>Cantidad</th><th>Valor unit. USD</th><th>Total USD</th></tr></thead><tbody id="pi-items-tbody">
+        ${items.map((it,i)=>`<tr>
+          <td>${it.insumo}</td>
+          <td class="mono">${it.orden_origen}</td>
+          <td class="mono">${fmt(it.cantidad)} ${it.unidad}</td>
+          <td><input id="pi-valor-${i}" type="number" step="0.0001" value="0" class="qinp" style="width:100px" oninput="recalcularTotalPI()"/></td>
+          <td class="mono" id="pi-total-${i}">USD 0.00</td>
+        </tr>`).join('')}
+      </tbody></table>
+      <div class="sl" style="margin-top:6px">TOTAL PI: <strong id="pi-total-general" style="color:var(--pu)">USD 0.00</strong></div>
+      <div class="fr" style="margin-top:10px">
+        <div class="ff" style="max-width:200px"><label>Nº de SITA</label><input id="pi-sita-inp" placeholder="Nº de SITA"/></div>
+        <div class="ff" style="max-width:160px"><label>Fecha</label><input id="pi-fecha-inp" type="date" value="${new Date().toISOString().slice(0,10)}"/></div>
+      </div>
+      <button class="btn btnp" style="margin-top:8px" onclick="guardarPI()">✓ Guardar PI y vincular el SITA a las órdenes</button>
+    </div>`;
+}
+
+function recalcularTotalPI(){
+  if(!piItemsActuales) return;
+  let totalGeneral = 0;
+  piItemsActuales.items.forEach((it,i)=>{
+    const valorUnit = parseFloat(document.getElementById('pi-valor-'+i).value)||0;
+    const total = valorUnit * it.cantidad;
+    it.valor_unitario = valorUnit;
+    it.valor_total = total;
+    totalGeneral += total;
+    document.getElementById('pi-total-'+i).textContent = 'USD ' + fmt(total,2);
+  });
+  document.getElementById('pi-total-general').textContent = 'USD ' + fmt(totalGeneral,2);
+}
+
+async function guardarPI(){
+  if(!piItemsActuales) return;
+  const sita = document.getElementById('pi-sita-inp').value.trim();
+  const fecha = document.getElementById('pi-fecha-inp').value;
+  if(!sita || !fecha){ alert('Completá el número de SITA y la fecha.'); return; }
+  recalcularTotalPI();
+  const totalUsd = piItemsActuales.items.reduce((s,it)=>s+(it.valor_total||0),0);
+  const numero = 'PI-' + (pisGeneradas.length+1).toString().padStart(4,'0');
+  const id = 'pi_'+Date.now();
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('pi_proforma', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({
+        id, numero, fecha,
+        ordenes_ids: JSON.stringify(piItemsActuales.ordenesIds),
+        ordenes_numeros: JSON.stringify(piItemsActuales.ordenesNumeros),
+        items: JSON.stringify(piItemsActuales.items),
+        total_usd: totalUsd, sita, creado_por: who
+      })
+    });
+    // Vincular el mismo SITA a todas las órdenes que se juntaron
+    for(const ocId of piItemsActuales.ordenesIds){
+      await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(ocId), {
+        method:'PATCH', headers:{'Prefer':'return=minimal'},
+        body: JSON.stringify({sita})
+      });
+    }
+    const cantidadOrdenes = piItemsActuales.ordenesNumeros.length;
+    piItemsActuales = null;
+    document.getElementById('pi-armado').innerHTML = '';
+    await loadOrdenesCompra();
+    renderChecklistPI();
+    await loadPIs();
+    showToast(`✓ ${numero} guardada — SITA ${sita} vinculado a ${cantidadOrdenes} órdenes.`);
+  }catch(e){ alert('Error guardando la PI: '+e.message); }
+}
+
+async function loadPIs(){
+  const el = document.getElementById('pi-lista');
+  try{
+    const rows = await sbFetch('pi_proforma?select=*&order=creado_en.desc&limit=50', {method:'GET', headers:{'Prefer':''}});
+    pisGeneradas = rows || [];
+    renderPIs();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de PI (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderPIs(){
+  const el = document.getElementById('pi-lista');
+  if(!el) return;
+  if(!pisGeneradas.length){ el.innerHTML='<div class="empty">Ninguna todavía.</div>'; return; }
+  el.innerHTML = pisGeneradas.map(pi=>{
+    let ordenesNums=[]; try{ ordenesNums = JSON.parse(pi.ordenes_numeros||'[]'); }catch(e){}
+    return `<div class="mb">
+      <div class="mh">
+        <div><span class="mono" style="font-weight:600">${pi.numero}</span> — junta ${ordenesNums.join(', ')} <span class="bdg bb">SITA ${pi.sita}</span></div>
+        <div style="font-size:11px;color:var(--tx3)">Fecha: ${pi.fecha} · Total: USD ${fmt(pi.total_usd,2)} · por ${pi.creado_por||'?'}</div>
+      </div>
+      <div style="padding:8px 12px"><button class="btn" onclick="imprimirPI('${pi.id}')">🖨 Imprimir / PDF</button></div>
+    </div>`;
+  }).join('');
+}
+
+function imprimirPI(id){
+  const pi = pisGeneradas.find(x=>x.id===id);
+  if(!pi) return;
+  let items=[]; try{ items = JSON.parse(pi.items||'[]'); }catch(e){}
+  let ordenesNums=[]; try{ ordenesNums = JSON.parse(pi.ordenes_numeros||'[]'); }catch(e){}
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Proforma Invoice '+pi.numero+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}'
+    +'h1{font-size:18px}table{width:100%;border-collapse:collapse;margin:10px 0}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
+    +'td{border:1px solid #ccc;padding:6px 8px}.r{text-align:right}'
+    +'.info{display:flex;gap:24px;margin-bottom:14px;flex-wrap:wrap}.il{font-size:9px;text-transform:uppercase;color:#555}.iv{font-size:13px;font-weight:700}'
+    +'.tot{margin-top:14px;border-top:2px solid #000;padding-top:10px;font-size:15px;font-weight:700;text-align:right}'
+    +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
+
+  p+='<div class="hdr"><div><h1>PROFORMA INVOICE '+pi.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Fecha: '+pi.fecha+'</div></div>';
+
+  p+='<div class="info">'
+    +'<div><div class="il">SITA</div><div class="iv">'+pi.sita+'</div></div>'
+    +'<div><div class="il">Órdenes de compra</div><div class="iv">'+ordenesNums.join(', ')+'</div></div>'
+    +'</div>';
+
+  p+='<table><thead><tr><th>Insumo</th><th>Orden</th><th class="r">Cantidad</th><th class="r">Valor Unit. USD</th><th class="r">Total USD</th></tr></thead><tbody>'
+    + items.map(it=>'<tr><td>'+it.insumo+'</td><td>'+it.orden_origen+'</td><td class="r">'+it.cantidad.toLocaleString('es-AR')+' '+it.unidad+'</td><td class="r">'+(it.valor_unitario||0).toFixed(4)+'</td><td class="r">'+(it.valor_total||0).toFixed(2)+'</td></tr>').join('')
+    + '</tbody></table>';
+
+  p+='<div class="tot">TOTAL: USD '+ (pi.total_usd||0).toFixed(2) +'</div>';
+  p+='</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
 }
 
 function imprimirOrdenCompra(id){
