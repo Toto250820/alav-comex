@@ -694,7 +694,16 @@ async function loadStockFromSupabase() {
     rows.forEach(r => {
       const id = r.despacho+'_'+r.item+'_'+r.subitem;
       if (idsLocalesManual.has(id)) return;
-      if (STOCK_BASE[r.material] !== undefined) {
+      // Si el material de esta fila no está en la lista fija ni en las categorías
+      // custom ya conocidas, la creamos al vuelo — así ninguna fila real de Supabase
+      // queda "invisible" en Stock por no reconocer su categoría (bug detectado con
+      // despachos como BOLSA PVC de 23258ZFI8000060P).
+      if (STOCK_BASE[r.material] === undefined) {
+        STOCK_BASE[r.material] = [];
+        if(!MAT_LABELS[r.material]) MAT_LABELS[r.material] = r.producto || r.material;
+        if(!CANCEL_UNIT[r.material]) CANCEL_UNIT[r.material] = r.cancel_unit || 'kg';
+      }
+      {
         STOCK_BASE[r.material].push({
           despacho: r.despacho, item: r.item, subitem: r.subitem,
           cantidad: parseFloat(r.cantidad), cancel_qty: parseFloat(r.cancel_qty||0),
