@@ -1314,7 +1314,7 @@ function showSec(id,btn){
   btn.classList.add('active');
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
-  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra().then(renderChecklistPI); loadProveedores(); loadPIs(); }
+  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); loadPIs(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -3381,6 +3381,7 @@ async function loadOrdenesCompra(){
     const rows = await sbFetch('ordenes_compra?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
     ordenesCompra = rows || [];
     renderOrdenesCompra();
+    renderChecklistPI(); // siempre en sync — antes solo se cargaba una vez al entrar a la pantalla
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de órdenes (¿corriste el SQL en Supabase?).</div>';
   }
