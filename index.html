@@ -3716,7 +3716,7 @@ function renderChecklistPI(){
 
 function generarPI(){
   const checks = [...document.querySelectorAll('.pi-oc-check:checked')].map(c=>c.value);
-  if(checks.length<2){ alert('Elegí al menos 2 órdenes para juntar en una PI (si es solo una, no hace falta juntar nada).'); return; }
+  if(checks.length<1){ alert('Elegí al menos 1 orden para generar la PI.'); return; }
 
   const ordenesSel = checks.map(id=>ordenesCompra.find(o=>o.id===id)).filter(Boolean);
   const items = [];
