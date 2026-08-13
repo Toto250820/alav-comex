@@ -3741,7 +3741,7 @@ function generarPI(){
       </tbody></table>
       <div class="sl" style="margin-top:6px">TOTAL PI: <strong id="pi-total-general" style="color:var(--pu)">USD 0.00</strong></div>
       <div class="fr" style="margin-top:10px">
-        <div class="ff" style="max-width:200px"><label>Nº de SITA</label><input id="pi-sita-inp" placeholder="Nº de SITA"/></div>
+        <div class="ff" style="max-width:200px"><label>Nº de SITA (opcional — normalmente lo autoriza ARCA después)</label><input id="pi-sita-inp" placeholder="dejalo vacío si todavía no lo tenés"/></div>
         <div class="ff" style="max-width:160px"><label>Fecha</label><input id="pi-fecha-inp" type="date" value="${new Date().toISOString().slice(0,10)}"/></div>
       </div>
       <button class="btn btnp" style="margin-top:8px" onclick="guardarPI()">✓ Guardar PI y vincular el SITA a las órdenes</button>
@@ -3766,7 +3766,7 @@ async function guardarPI(){
   if(!piItemsActuales) return;
   const sita = document.getElementById('pi-sita-inp').value.trim();
   const fecha = document.getElementById('pi-fecha-inp').value;
-  if(!sita || !fecha){ alert('Completá el número de SITA y la fecha.'); return; }
+  if(!fecha){ alert('Completá la fecha.'); return; }
   recalcularTotalPI();
   const totalUsd = piItemsActuales.items.reduce((s,it)=>s+(it.valor_total||0),0);
   const numero = 'PI-' + (pisGeneradas.length+1).toString().padStart(4,'0');
@@ -3781,15 +3781,18 @@ async function guardarPI(){
         ordenes_ids: JSON.stringify(piItemsActuales.ordenesIds),
         ordenes_numeros: JSON.stringify(piItemsActuales.ordenesNumeros),
         items: JSON.stringify(piItemsActuales.items),
-        total_usd: totalUsd, sita, creado_por: who
+        total_usd: totalUsd, sita: sita||null, creado_por: who
       })
     });
-    // Vincular el mismo SITA a todas las órdenes que se juntaron
-    for(const ocId of piItemsActuales.ordenesIds){
-      await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(ocId), {
-        method:'PATCH', headers:{'Prefer':'return=minimal'},
-        body: JSON.stringify({sita})
-      });
+    // Si ya tenés el SITA (poco común al generar la PI, pero por si acaso), lo vinculamos ya mismo.
+    // Si no, queda pendiente — se vincula después con "Cargar SITA" en la lista de PI generadas.
+    if(sita){
+      for(const ocId of piItemsActuales.ordenesIds){
+        await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(ocId), {
+          method:'PATCH', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({sita})
+        });
+      }
     }
     const cantidadOrdenes = piItemsActuales.ordenesNumeros.length;
     piItemsActuales = null;
@@ -3797,7 +3800,9 @@ async function guardarPI(){
     await loadOrdenesCompra();
     renderChecklistPI();
     await loadPIs();
-    showToast(`✓ ${numero} guardada — SITA ${sita} vinculado a ${cantidadOrdenes} órdenes.`);
+    showToast(sita
+      ? `✓ ${numero} guardada — SITA ${sita} vinculado a ${cantidadOrdenes} órdenes.`
+      : `✓ ${numero} guardada — cuando ARCA te autorice el SITA, cargalo desde la lista de abajo.`);
   }catch(e){ alert('Error guardando la PI: '+e.message); }
 }
 
@@ -3818,15 +3823,19 @@ function renderPIs(){
   if(!pisGeneradas.length){ el.innerHTML='<div class="empty">Ninguna todavía.</div>'; return; }
   el.innerHTML = pisGeneradas.map(pi=>{
     let ordenesNums=[]; try{ ordenesNums = JSON.parse(pi.ordenes_numeros||'[]'); }catch(e){}
+    const tieneSita = !!(pi.sita && pi.sita.trim());
     return `<div class="mb">
       <div class="mh">
-        <div><span class="mono" style="font-weight:600">${pi.numero}</span> — junta ${ordenesNums.join(', ')} <span class="bdg bb">SITA ${pi.sita}</span></div>
+        <div><span class="mono" style="font-weight:600">${pi.numero}</span> — junta ${ordenesNums.join(', ')}
+          ${tieneSita ? `<span class="bdg bb">SITA ${pi.sita}</span>` : ''}
+        </div>
         <div style="font-size:11px;color:var(--tx3)">Fecha: ${pi.fecha} · Total: USD ${fmt(pi.total_usd,2)} · por ${pi.creado_por||'?'}</div>
       </div>
       <div style="padding:8px 12px"><button class="btn" onclick="imprimirPI('${pi.id}')">🖨 Imprimir / PDF</button></div>
     </div>`;
   }).join('');
 }
+
 
 function imprimirPI(id){
   const pi = pisGeneradas.find(x=>x.id===id);
