@@ -171,6 +171,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <button class="nb" onclick="showSec('stock',this)">Stock</button>
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
     <button class="nb" onclick="showSec('compras',this)">🛒 Compras</button>
+    <button class="nb" onclick="showSec('merc',this)">📦 Stock Mercadería</button>
     <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
     <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr)">📄 Cargar despacho (PDF)</a>
   </div>
@@ -464,6 +465,42 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
   <div class="stit" style="margin-top:22px">Órdenes registradas</div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
+</div>
+
+<!-- STOCK MERCADERÍA -->
+<div id="sec-merc" class="sec">
+  <div class="stit">Cargar stock de mercadería</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cargá cuánto tenés de cada artículo terminado, indicando en qué depósito está. Si cargás el mismo artículo en el mismo depósito otra vez, se suma al total — no genera un renglón repetido. El mismo artículo en los dos depósitos queda separado.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:240px"><label>Artículo</label><input id="merc-articulo" placeholder="ej: TRIPLES /1 CACHAREL"/></div>
+      <div class="ff" style="max-width:160px"><label>Depósito</label>
+        <select id="merc-ubicacion"><option value="zona">Zona (fábrica)</option><option value="externo">Galpón Externo</option></select>
+      </div>
+      <div class="ff" style="max-width:130px"><label>Cantidad</label><input id="merc-cantidad" type="number" step="1"/></div>
+    </div>
+    <button class="btn btnp" onclick="agregarStockMercaderia()">+ Sumar al stock</button>
+    <div id="merc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Stock actual por depósito</div>
+  <div id="merc-lista"><div class="empty">Cargando...</div></div>
+
+  <div class="stit" style="margin-top:22px">Nuevo remito de carga/viaje</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cada ítem del remito indica de qué depósito sale — podés combinar Zona y Externo en el mismo viaje.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:160px"><label>Fecha</label><input id="rem-fecha" type="date"/></div>
+    </div>
+    <div id="rem-items-lista"></div>
+    <button class="btn" style="margin-top:6px" onclick="agregarLineaRemito()">+ Agregar ítem</button>
+    <div class="fr" style="margin-top:10px"><div class="ff"><label>Nota (opcional)</label><input id="rem-nota" placeholder="ej: viaje a depósito cliente X"/></div></div>
+    <button class="btn btnp" style="margin-top:10px" onclick="guardarRemito()">✓ Guardar remito y descontar stock</button>
+    <div id="rem-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Remitos registrados</div>
+  <div id="rem-lista"><div class="empty">Cargando...</div></div>
 </div>
 
 <!-- ADMIN -->
@@ -1315,6 +1352,7 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); loadPIs(); }
+  if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -3905,6 +3943,237 @@ function imprimirOrdenCompra(id){
 
   if(o.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+o.nota+'</div>';
 
+  p+='</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+}
+
+// ═══════════════════════════════════════════
+// STOCK MERCADERÍA (producto terminado, por depósito)
+// ═══════════════════════════════════════════
+let stockMercaderia = [];
+
+async function loadStockMercaderia(){
+  const el = document.getElementById('merc-lista');
+  try{
+    const rows = await sbFetch('stock_mercaderia?select=*&order=articulo.asc', {method:'GET', headers:{'Prefer':''}});
+    stockMercaderia = rows || [];
+    renderStockMercaderia();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de stock de mercadería (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderStockMercaderia(){
+  const el = document.getElementById('merc-lista');
+  if(!el) return;
+  if(!stockMercaderia.length){ el.innerHTML='<div class="empty">Sin stock cargado todavía.</div>'; return; }
+  const porArticulo = {};
+  stockMercaderia.forEach(r=>{
+    if(!porArticulo[r.articulo]) porArticulo[r.articulo] = {zona:0, externo:0};
+    porArticulo[r.articulo][r.ubicacion] = (porArticulo[r.articulo][r.ubicacion]||0) + (r.cantidad||0);
+  });
+  const filas = Object.entries(porArticulo).sort((a,b)=>a[0].localeCompare(b[0]));
+  el.innerHTML = `<div class="tw"><table><thead><tr><th>Artículo</th><th>Zona</th><th>Externo</th><th>Total</th></tr></thead><tbody>
+    ${filas.map(([art,v])=>`<tr>
+      <td>${art}</td>
+      <td class="mono">${fmt(v.zona||0)}</td>
+      <td class="mono">${fmt(v.externo||0)}</td>
+      <td class="mono"><strong>${fmt((v.zona||0)+(v.externo||0))}</strong></td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+async function agregarStockMercaderia(){
+  const articulo = document.getElementById('merc-articulo').value.trim();
+  const ubicacion = document.getElementById('merc-ubicacion').value;
+  const cantidad = parseFloat(document.getElementById('merc-cantidad').value);
+  const msg = document.getElementById('merc-msg');
+  msg.style.display = 'block';
+  if(!articulo || isNaN(cantidad)){ msg.style.color='var(--rd)'; msg.textContent='Completá artículo y cantidad.'; return; }
+
+  const id = slugify(articulo)+'_'+ubicacion;
+  const existente = stockMercaderia.find(r=>r.id===id);
+  const nuevaCantidad = (existente?existente.cantidad:0) + cantidad;
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('stock_mercaderia', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({id, articulo, ubicacion, cantidad:nuevaCantidad, actualizado_por:who, actualizado_en:new Date().toISOString()})
+    });
+    msg.style.color='var(--gr)';
+    msg.textContent = `✓ ${articulo} (${ubicacion==='zona'?'Zona':'Externo'}): ahora ${fmt(nuevaCantidad)} en total en ese depósito.`;
+    document.getElementById('merc-articulo').value=''; document.getElementById('merc-cantidad').value='';
+    await loadStockMercaderia();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
+}
+
+// ═══════════════════════════════════════════
+// REMITOS DE CARGA/VIAJE
+// ═══════════════════════════════════════════
+let remItemIndices = [];
+let remNextIdx = 0;
+let remitosCarga = [];
+
+function agregarLineaRemito(){
+  const idx = remNextIdx++;
+  remItemIndices.push(idx);
+  const articulos = [...new Set(stockMercaderia.map(r=>r.articulo))].sort();
+  const opciones = articulos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  const div = document.createElement('div');
+  div.id = 'rem-item-'+idx;
+  div.className = 'fr';
+  div.style.alignItems = 'flex-end';
+  div.innerHTML = `
+    <div class="ff" style="max-width:190px"><label>Artículo (de la lista)</label>
+      <select id="rem-articulo-sel-${idx}" onchange="document.getElementById('rem-articulo-nombre-${idx}').value=this.value">
+        <option value="">Elegir o escribir al lado</option>${opciones}
+      </select>
+    </div>
+    <div class="ff" style="max-width:170px"><label>O escribir el nombre</label>
+      <input id="rem-articulo-nombre-${idx}" placeholder="nombre del artículo"/>
+    </div>
+    <div class="ff" style="max-width:90px"><label>Bultos</label><input id="rem-bultos-${idx}" type="number" step="1"/></div>
+    <div class="ff" style="max-width:100px"><label>Unidades</label><input id="rem-unidades-${idx}" type="number" step="1"/></div>
+    <div class="ff" style="max-width:140px"><label>Sale de</label>
+      <select id="rem-ubicacion-${idx}"><option value="zona">Zona</option><option value="externo">Externo</option></select>
+    </div>
+    <button class="btn btnd" onclick="quitarLineaRemito(${idx})" style="margin-bottom:1px">✕</button>
+  `;
+  document.getElementById('rem-items-lista').appendChild(div);
+}
+
+function quitarLineaRemito(idx){
+  const el = document.getElementById('rem-item-'+idx);
+  if(el) el.remove();
+  remItemIndices = remItemIndices.filter(i=>i!==idx);
+}
+
+async function guardarRemito(){
+  const fecha = document.getElementById('rem-fecha').value;
+  const nota = document.getElementById('rem-nota').value.trim();
+  const msg = document.getElementById('rem-msg');
+  msg.style.display = 'block';
+  if(!fecha || !remItemIndices.length){ msg.style.color='var(--rd)'; msg.textContent='Completá la fecha y al menos un ítem.'; return; }
+
+  const items = [];
+  for(const idx of remItemIndices){
+    const sel = document.getElementById('rem-articulo-sel-'+idx).value;
+    const nombreLibre = document.getElementById('rem-articulo-nombre-'+idx).value.trim();
+    const articulo = nombreLibre || sel;
+    const bultos = parseFloat(document.getElementById('rem-bultos-'+idx).value)||0;
+    const unidades = parseFloat(document.getElementById('rem-unidades-'+idx).value);
+    const ubicacion = document.getElementById('rem-ubicacion-'+idx).value;
+    if(!articulo || isNaN(unidades)){
+      msg.style.color='var(--rd)'; msg.textContent='Cada ítem necesita artículo y cantidad de unidades.';
+      return;
+    }
+    items.push({articulo, bultos, unidades, ubicacion});
+  }
+
+  // Verificar que haya stock suficiente en cada depósito ANTES de descontar nada
+  const faltantes = [];
+  items.forEach(it=>{
+    const id = slugify(it.articulo)+'_'+it.ubicacion;
+    const row = stockMercaderia.find(r=>r.id===id);
+    const disponible = row?row.cantidad:0;
+    if(disponible < it.unidades) faltantes.push(`${it.articulo} (${it.ubicacion==='zona'?'Zona':'Externo'}): pedís ${fmt(it.unidades)}, hay ${fmt(disponible)} disponible`);
+  });
+  if(faltantes.length){
+    msg.style.color='var(--rd)';
+    msg.innerHTML = '⚠ No hay stock suficiente para este remito:<br>' + faltantes.join('<br>');
+    return;
+  }
+
+  const numero = 'REM-' + (remitosCarga.length+1).toString().padStart(4,'0');
+  const id = 'rem_'+Date.now();
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('remitos_carga', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({id, numero, fecha, items:JSON.stringify(items), nota, creado_por:who})
+    });
+    // Descontar del depósito correspondiente, ítem por ítem
+    for(const it of items){
+      const idMerc = slugify(it.articulo)+'_'+it.ubicacion;
+      const row = stockMercaderia.find(r=>r.id===idMerc);
+      const nuevaCantidad = (row?row.cantidad:0) - it.unidades;
+      await sbFetch('stock_mercaderia', {
+        method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({id:idMerc, articulo:it.articulo, ubicacion:it.ubicacion, cantidad:nuevaCantidad, actualizado_por:who, actualizado_en:new Date().toISOString()})
+      });
+    }
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Remito ${numero} guardado y stock descontado.`;
+    document.getElementById('rem-items-lista').innerHTML=''; remItemIndices=[]; agregarLineaRemito();
+    document.getElementById('rem-nota').value='';
+    await loadStockMercaderia();
+    await loadRemitos();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando el remito: '+e.message; }
+}
+
+async function loadRemitos(){
+  const el = document.getElementById('rem-lista');
+  try{
+    const rows = await sbFetch('remitos_carga?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
+    remitosCarga = rows || [];
+    renderRemitos();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de remitos (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderRemitos(){
+  const el = document.getElementById('rem-lista');
+  if(!el) return;
+  if(!remitosCarga.length){ el.innerHTML='<div class="empty">Sin remitos registrados todavía.</div>'; return; }
+  el.innerHTML = remitosCarga.map(r=>{
+    let items=[]; try{ items = JSON.parse(r.items||'[]'); }catch(e){}
+    const combinado = new Set(items.map(it=>it.ubicacion)).size>1;
+    return `<div class="mb">
+      <div class="mh">
+        <div><span class="mono" style="font-weight:600">${r.numero}</span>
+          <span class="bdg ${combinado?'bb':'bg'}">${combinado?'COMBINADO':(items[0]?.ubicacion==='zona'?'ZONA':'EXTERNO')}</span>
+        </div>
+        <div style="font-size:11px;color:var(--tx3)">Fecha: ${r.fecha} · por ${r.creado_por||'?'}</div>
+      </div>
+      <table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito</th></tr></thead><tbody>
+        ${items.map(it=>`<tr><td>${it.articulo}</td><td class="mono">${fmt(it.bultos)}</td><td class="mono">${fmt(it.unidades)}</td><td>${it.ubicacion==='zona'?'Zona':'Externo'}</td></tr>`).join('')}
+      </tbody></table>
+      ${r.nota?`<div class="nbox">${r.nota}</div>`:''}
+      <div style="padding:8px 12px"><button class="btn" onclick="imprimirRemito('${r.id}')">🖨 Imprimir / PDF</button></div>
+    </div>`;
+  }).join('');
+}
+
+function imprimirRemito(id){
+  const r = remitosCarga.find(x=>x.id===id);
+  if(!r) return;
+  let items=[]; try{ items = JSON.parse(r.items||'[]'); }catch(e){}
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Remito '+r.numero+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}'
+    +'h1{font-size:18px}table{width:100%;border-collapse:collapse;margin:10px 0}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
+    +'td{border:1px solid #ccc;padding:6px 8px}'
+    +'.firma{margin-top:60px;display:flex;gap:60px}.firma div{border-top:1px solid #000;padding-top:6px;width:200px;text-align:center;font-size:10px}'
+    +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
+
+  p+='<div class="hdr"><div><h1>REMITO DE CARGA '+r.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Fecha: '+r.fecha+'</div></div>';
+
+  p+='<table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito de origen</th></tr></thead><tbody>'
+    + items.map(it=>'<tr><td>'+it.articulo+'</td><td>'+it.bultos.toLocaleString('es-AR')+'</td><td>'+it.unidades.toLocaleString('es-AR')+'</td><td>'+(it.ubicacion==='zona'?'Zona (fábrica)':'Galpón Externo')+'</td></tr>').join('')
+    + '</tbody></table>';
+
+  if(r.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+r.nota+'</div>';
+
+  p+='<div class="firma"><div>Firma quien entrega</div><div>Firma quien recibe</div></div>';
   p+='</body></html>';
 
   const win = window.open('', '_blank');
