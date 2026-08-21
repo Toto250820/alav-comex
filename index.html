@@ -473,7 +473,19 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="card">
     <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cargá cuánto tenés de cada artículo terminado, indicando en qué depósito está. Si cargás el mismo artículo en el mismo depósito otra vez, se suma al total — no genera un renglón repetido. El mismo artículo en los dos depósitos queda separado.</div>
     <div class="fr">
-      <div class="ff" style="max-width:240px"><label>Artículo</label><input id="merc-articulo" placeholder="ej: TRIPLES /1 CACHAREL"/></div>
+      <div class="ff" style="max-width:220px"><label>Artículo (código y nombre, el que uses vos)</label>
+        <input id="merc-nombre" list="merc-articulos-usados" placeholder="ej: 3041 - Rabbit"/>
+        <datalist id="merc-articulos-usados"></datalist>
+      </div>
+      <div class="ff" style="max-width:100px"><label>Medida</label>
+        <select id="merc-medida">
+          <option value="">Sin medida</option>
+          <option value="/1">/1</option>
+          <option value="/3">/3</option>
+          <option value="/4">/4</option>
+          <option value="/5">/5</option>
+        </select>
+      </div>
       <div class="ff" style="max-width:160px"><label>Depósito</label>
         <select id="merc-ubicacion"><option value="zona">Zona (fábrica)</option><option value="externo">Galpón Externo</option></select>
       </div>
@@ -3970,6 +3982,12 @@ async function loadStockMercaderia(){
 function renderStockMercaderia(){
   const el = document.getElementById('merc-lista');
   if(!el) return;
+  // Poblar sugerencias de artículos ya usados (sin la medida, para reusar el nombre base)
+  const dl = document.getElementById('merc-articulos-usados');
+  if(dl){
+    const bases = [...new Set(stockMercaderia.map(r=>r.articulo.replace(/\s*\/[1345]$/,'')))].sort();
+    dl.innerHTML = bases.map(b=>`<option value="${b}"></option>`).join('');
+  }
   if(!stockMercaderia.length){ el.innerHTML='<div class="empty">Sin stock cargado todavía.</div>'; return; }
   const porArticulo = {};
   stockMercaderia.forEach(r=>{
@@ -3988,12 +4006,14 @@ function renderStockMercaderia(){
 }
 
 async function agregarStockMercaderia(){
-  const articulo = document.getElementById('merc-articulo').value.trim();
+  const nombreBase = document.getElementById('merc-nombre').value.trim();
+  const med = document.getElementById('merc-medida').value;
+  const articulo = med ? `${nombreBase} ${med}` : nombreBase;
   const ubicacion = document.getElementById('merc-ubicacion').value;
   const cantidad = parseFloat(document.getElementById('merc-cantidad').value);
   const msg = document.getElementById('merc-msg');
   msg.style.display = 'block';
-  if(!articulo || isNaN(cantidad)){ msg.style.color='var(--rd)'; msg.textContent='Completá artículo y cantidad.'; return; }
+  if(!nombreBase || isNaN(cantidad)){ msg.style.color='var(--rd)'; msg.textContent='Completá el nombre del artículo y la cantidad.'; return; }
 
   const id = slugify(articulo)+'_'+ubicacion;
   const existente = stockMercaderia.find(r=>r.id===id);
@@ -4007,7 +4027,7 @@ async function agregarStockMercaderia(){
     });
     msg.style.color='var(--gr)';
     msg.textContent = `✓ ${articulo} (${ubicacion==='zona'?'Zona':'Externo'}): ahora ${fmt(nuevaCantidad)} en total en ese depósito.`;
-    document.getElementById('merc-articulo').value=''; document.getElementById('merc-cantidad').value='';
+    document.getElementById('merc-nombre').value=''; document.getElementById('merc-medida').value=''; document.getElementById('merc-cantidad').value='';
     await loadStockMercaderia();
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
 }
@@ -4022,20 +4042,22 @@ let remitosCarga = [];
 function agregarLineaRemito(){
   const idx = remNextIdx++;
   remItemIndices.push(idx);
-  const articulos = [...new Set(stockMercaderia.map(r=>r.articulo))].sort();
-  const opciones = articulos.map(a=>`<option value="${a}">${a}</option>`).join('');
   const div = document.createElement('div');
   div.id = 'rem-item-'+idx;
   div.className = 'fr';
   div.style.alignItems = 'flex-end';
   div.innerHTML = `
-    <div class="ff" style="max-width:190px"><label>Artículo (de la lista)</label>
-      <select id="rem-articulo-sel-${idx}" onchange="document.getElementById('rem-articulo-nombre-${idx}').value=this.value">
-        <option value="">Elegir o escribir al lado</option>${opciones}
-      </select>
+    <div class="ff" style="max-width:190px"><label>Artículo</label>
+      <input id="rem-nombre-${idx}" list="merc-articulos-usados" placeholder="ej: 3041 - Rabbit"/>
     </div>
-    <div class="ff" style="max-width:170px"><label>O escribir el nombre</label>
-      <input id="rem-articulo-nombre-${idx}" placeholder="nombre del artículo"/>
+    <div class="ff" style="max-width:90px"><label>Medida</label>
+      <select id="rem-medida-${idx}">
+        <option value="">Sin medida</option>
+        <option value="/1">/1</option>
+        <option value="/3">/3</option>
+        <option value="/4">/4</option>
+        <option value="/5">/5</option>
+      </select>
     </div>
     <div class="ff" style="max-width:90px"><label>Bultos</label><input id="rem-bultos-${idx}" type="number" step="1"/></div>
     <div class="ff" style="max-width:100px"><label>Unidades</label><input id="rem-unidades-${idx}" type="number" step="1"/></div>
@@ -4062,9 +4084,9 @@ async function guardarRemito(){
 
   const items = [];
   for(const idx of remItemIndices){
-    const sel = document.getElementById('rem-articulo-sel-'+idx).value;
-    const nombreLibre = document.getElementById('rem-articulo-nombre-'+idx).value.trim();
-    const articulo = nombreLibre || sel;
+    const nombreBase = document.getElementById('rem-nombre-'+idx).value.trim();
+    const med = document.getElementById('rem-medida-'+idx).value;
+    const articulo = med ? `${nombreBase} ${med}` : nombreBase;
     const bultos = parseFloat(document.getElementById('rem-bultos-'+idx).value)||0;
     const unidades = parseFloat(document.getElementById('rem-unidades-'+idx).value);
     const ubicacion = document.getElementById('rem-ubicacion-'+idx).value;
