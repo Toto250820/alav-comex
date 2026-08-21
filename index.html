@@ -502,7 +502,10 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="card">
     <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cada ítem del remito indica de qué depósito sale — podés combinar Zona y Externo en el mismo viaje.</div>
     <div class="fr">
-      <div class="ff" style="max-width:160px"><label>Fecha</label><input id="rem-fecha" type="date"/></div>
+      <div class="ff" style="max-width:200px"><label>Empresa de transporte</label><input id="rem-empresa" placeholder="ej: Transportes Fernández"/></div>
+      <div class="ff" style="max-width:200px"><label>Chofer (nombre y apellido)</label><input id="rem-chofer" placeholder="ej: Juan Pérez"/></div>
+      <div class="ff" style="max-width:150px"><label>Fecha de carga</label><input id="rem-fecha" type="date"/></div>
+      <div class="ff" style="max-width:150px"><label>Fecha de entrega</label><input id="rem-fecha-entrega" type="date"/></div>
     </div>
     <div id="rem-items-lista"></div>
     <button class="btn" style="margin-top:6px" onclick="agregarLineaRemito()">+ Agregar ítem</button>
@@ -4077,10 +4080,13 @@ function quitarLineaRemito(idx){
 
 async function guardarRemito(){
   const fecha = document.getElementById('rem-fecha').value;
+  const fechaEntrega = document.getElementById('rem-fecha-entrega').value;
+  const empresa = document.getElementById('rem-empresa').value.trim();
+  const chofer = document.getElementById('rem-chofer').value.trim();
   const nota = document.getElementById('rem-nota').value.trim();
   const msg = document.getElementById('rem-msg');
   msg.style.display = 'block';
-  if(!fecha || !remItemIndices.length){ msg.style.color='var(--rd)'; msg.textContent='Completá la fecha y al menos un ítem.'; return; }
+  if(!fecha || !remItemIndices.length){ msg.style.color='var(--rd)'; msg.textContent='Completá la fecha de carga y al menos un ítem.'; return; }
 
   const items = [];
   for(const idx of remItemIndices){
@@ -4118,7 +4124,7 @@ async function guardarRemito(){
   try{
     await sbFetch('remitos_carga', {
       method:'POST', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({id, numero, fecha, items:JSON.stringify(items), nota, creado_por:who})
+      body: JSON.stringify({id, numero, fecha, fecha_entrega:fechaEntrega||null, empresa, chofer, items:JSON.stringify(items), nota, creado_por:who})
     });
     // Descontar del depósito correspondiente, ítem por ítem
     for(const it of items){
@@ -4132,7 +4138,7 @@ async function guardarRemito(){
     }
     msg.style.color='var(--gr)'; msg.textContent=`✓ Remito ${numero} guardado y stock descontado.`;
     document.getElementById('rem-items-lista').innerHTML=''; remItemIndices=[]; agregarLineaRemito();
-    document.getElementById('rem-nota').value='';
+    document.getElementById('rem-nota').value=''; document.getElementById('rem-empresa').value=''; document.getElementById('rem-chofer').value=''; document.getElementById('rem-fecha-entrega').value='';
     await loadStockMercaderia();
     await loadRemitos();
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando el remito: '+e.message; }
@@ -4161,7 +4167,7 @@ function renderRemitos(){
         <div><span class="mono" style="font-weight:600">${r.numero}</span>
           <span class="bdg ${combinado?'bb':'bg'}">${combinado?'COMBINADO':(items[0]?.ubicacion==='zona'?'ZONA':'EXTERNO')}</span>
         </div>
-        <div style="font-size:11px;color:var(--tx3)">Fecha: ${r.fecha} · por ${r.creado_por||'?'}</div>
+        <div style="font-size:11px;color:var(--tx3)">Carga: ${r.fecha}${r.fecha_entrega?` · Entrega: ${r.fecha_entrega}`:''}${r.empresa?` · ${r.empresa}`:''}${r.chofer?` · Chofer: ${r.chofer}`:''} · por ${r.creado_por||'?'}</div>
       </div>
       <table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito</th></tr></thead><tbody>
         ${items.map(it=>`<tr><td>${it.articulo}</td><td class="mono">${fmt(it.bultos)}</td><td class="mono">${fmt(it.unidades)}</td><td>${it.ubicacion==='zona'?'Zona':'Externo'}</td></tr>`).join('')}
@@ -4184,16 +4190,24 @@ function imprimirRemito(id){
     +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
     +'td{border:1px solid #ccc;padding:6px 8px}'
     +'.firma{margin-top:60px;display:flex;gap:60px}.firma div{border-top:1px solid #000;padding-top:6px;width:200px;text-align:center;font-size:10px}'
+    +'.info{display:flex;gap:24px;margin-bottom:14px;flex-wrap:wrap}.il{font-size:9px;text-transform:uppercase;color:#555}.iv{font-size:13px;font-weight:700}'
     +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
 
   p+='<div class="hdr"><div><h1>REMITO DE CARGA '+r.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
-    +'<div style="text-align:right">Fecha: '+r.fecha+'</div></div>';
+    +'<div style="text-align:right">Fecha de carga: '+r.fecha+'</div></div>';
+
+  p+='<div class="info">'
+    +(r.empresa?'<div><div class="il">Empresa de transporte</div><div class="iv">'+r.empresa+'</div></div>':'')
+    +(r.chofer?'<div><div class="il">Chofer</div><div class="iv">'+r.chofer+'</div></div>':'')
+    +'<div><div class="il">Fecha de carga</div><div class="iv">'+r.fecha+'</div></div>'
+    +(r.fecha_entrega?'<div><div class="il">Fecha de entrega</div><div class="iv">'+r.fecha_entrega+'</div></div>':'')
+    +'</div>';
 
   p+='<table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito de origen</th></tr></thead><tbody>'
     + items.map(it=>'<tr><td>'+it.articulo+'</td><td>'+it.bultos.toLocaleString('es-AR')+'</td><td>'+it.unidades.toLocaleString('es-AR')+'</td><td>'+(it.ubicacion==='zona'?'Zona (fábrica)':'Galpón Externo')+'</td></tr>').join('')
     + '</tbody></table>';
 
-  if(r.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+r.nota+'</div>';
+  if(r.nota) p+='<div style="margin-top:16px;padding:12px 16px;border:2px solid #000;border-radius:4px;font-size:20px;font-weight:700;text-align:center">'+r.nota+'</div>';
 
   p+='<div class="firma"><div>Firma quien entrega</div><div>Firma quien recibe</div></div>';
   p+='</body></html>';
