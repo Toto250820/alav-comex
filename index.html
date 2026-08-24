@@ -4913,7 +4913,6 @@ async function enviarAlertaStockMinimo(mat){
       method:'PATCH', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({ultimo_aviso: ahora})
     });
-    m.ultimo_aviso = ahora;
   }catch(e){ console.error('No se pudo guardar la fecha de aviso:', e); }
 
   // Recordatorio en Google Calendar a la semana, para hacer seguimiento del pedido
@@ -4927,35 +4926,34 @@ async function enviarAlertaStockMinimo(mat){
   const addCal = encodeURIComponent([...AVISO_GUESTS, 'comex@alavsrl.com', 'alavsrl.gerencia.pico@gmail.com'].join(','));
   const urlCal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${textoCal}&dates=${startCal}/${endCal}&details=${detalleCal}&add=${addCal}`;
   window.open(urlCal, '_blank');
-  renderStockMinimos();
-  chequearAlertaStockMinimoGlobal();
+
+  // Recargamos todo de nuevo desde Supabase (en vez de solo actualizar a mano en memoria),
+  // así la pantalla nunca puede quedar desincronizada con lo que realmente se guardó.
+  await loadStockMinimos();
+  await chequearAlertaStockMinimoGlobal();
 }
 
 async function marcarPedidoRealizado(mat){
   const fecha = document.getElementById('min-pedido-fecha-'+mat).value;
   if(!fecha){ alert('Elegí la fecha en que se hizo el pedido.'); return; }
-  const m = stockMinimos.find(x=>x.material===mat);
   try{
     await sbFetch('stock_minimos?material=eq.'+encodeURIComponent(mat), {
       method:'PATCH', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({pedido_realizado_fecha: fecha})
     });
-    if(m) m.pedido_realizado_fecha = fecha;
-    renderStockMinimos();
+    await loadStockMinimos();
     showToast('✓ Pedido marcado como realizado.');
   }catch(e){ alert('Error: '+e.message); }
 }
 
 async function desmarcarPedidoRealizado(mat){
   if(!confirm('¿Deshacer la marca de "pedido realizado"?')) return;
-  const m = stockMinimos.find(x=>x.material===mat);
   try{
     await sbFetch('stock_minimos?material=eq.'+encodeURIComponent(mat), {
       method:'PATCH', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({pedido_realizado_fecha: null})
     });
-    if(m) m.pedido_realizado_fecha = null;
-    renderStockMinimos();
+    await loadStockMinimos();
   }catch(e){ alert('Error: '+e.message); }
 }
 
