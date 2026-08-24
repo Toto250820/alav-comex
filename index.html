@@ -186,6 +186,11 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <button onclick="location.reload()">Actualizar ahora</button>
   <button onclick="dismissUpdateBanner()" style="background:none;border-color:var(--tx3);color:var(--tx3)">Después</button>
 </div>
+<div id="minimo-banner" class="update-banner" style="background:var(--rbg);border-bottom-color:rgba(173,49,49,.3);color:var(--rd)">
+  <span id="minimo-banner-txt">⚠️ Insumos en stock mínimo</span>
+  <button onclick="irAStockMinimo()" style="border-color:var(--rd);background:var(--rd)">Ver y avisar a Compras</button>
+  <button onclick="document.getElementById('minimo-banner').style.display='none'" style="background:none;border-color:var(--tx3);color:var(--tx3)">Después</button>
+</div>
 <div id="name-modal">
   <div class="pincard">
     <div class="pintit">👋 ¿QUIÉN SOS?</div>
@@ -922,6 +927,7 @@ async function initFromSupabase() {
   const stockOk = await loadStockFromSupabase();
   await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
   if(stockOk) { renderStock(); renderSalidaHist(); }
+  await chequearAlertaStockMinimoGlobal();
 }
 
 // ═══════════════════════════════════════════
@@ -4766,6 +4772,34 @@ async function guardarStockMinimo(){
     document.getElementById('min-valor').value='';
     await loadStockMinimos();
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
+}
+
+// Chequeo global: corre al abrir la app (esté donde esté) y muestra el banner rojo si hace falta
+async function chequearAlertaStockMinimoGlobal(){
+  try{
+    const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}});
+    stockMinimos = rows || [];
+  }catch(e){ return; } // si la tabla no existe todavía, no rompemos nada
+
+  const banner = document.getElementById('minimo-banner');
+  if(!banner || !stockMinimos.length){ if(banner) banner.style.display='none'; return; }
+
+  const bajoMinimo = stockMinimos.filter(m => getDisponibleTotal(m.material) <= parseFloat(m.minimo));
+  if(!bajoMinimo.length){ banner.style.display='none'; return; }
+
+  const nombres = bajoMinimo.map(m => MAT_LABELS[m.material]||m.material).join(', ');
+  document.getElementById('minimo-banner-txt').textContent = `⚠️ Stock mínimo alcanzado: ${nombres}`;
+  banner.style.display = 'flex';
+}
+
+function irAStockMinimo(){
+  document.getElementById('minimo-banner').style.display='none';
+  showSec('adm', document.querySelector('.nb.nadm'));
+  // Si ya se pasó el PIN, el panel de Admin ya está visible — activamos directamente la pestaña
+  setTimeout(()=>{
+    const tabBtn = [...document.querySelectorAll('.admtab')].find(b=>b.textContent.includes('Stock Mínimo'));
+    if(tabBtn) tabBtn.click();
+  }, 150);
 }
 
 async function loadStockMinimos(){
