@@ -934,6 +934,26 @@ async function initFromSupabase() {
 // AVISOS DE CARGA (Sistema María — vencen a las 24hs)
 // ═══════════════════════════════════════════
 const AVISO_GUESTS = ['javis.spinelli@gmail.com','alav.pico@gmail.com','admi.alavpico02@gmail.com'];
+
+// Pegá acá la URL que te dio Google al "Implementar" el Apps Script como aplicación web
+// (termina en /exec). Mientras diga 'PEGAR_URL_ACA', los botones de mail abren Gmail como antes.
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9Y6QhYtKEHEUIYw0z5BY4uaQvQfeUjU_Oy4sWizNlvERQil8mSy42KLrp8n1lDvw/exec';
+
+// Intenta mandar el mail DIRECTO vía el Apps Script (sin abrir Gmail).
+// Si no está configurado, o si algo falla, cae de respaldo a abrir Gmail web.
+async function enviarMailDirectoOFallback(to, asuntoTexto, cuerpoTexto){
+  if(APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'PEGAR_URL_ACA'){
+    try{
+      const url = `${APPS_SCRIPT_URL}?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(asuntoTexto)}&body=${encodeURIComponent(cuerpoTexto)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if(data.ok){ showToast('✓ Mail enviado directo a '+to); return; }
+      console.error('Apps Script devolvió error:', data.error);
+    }catch(e){ console.error('Error llamando al Apps Script:', e); }
+  }
+  // Respaldo: abrir Gmail web con todo precargado
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(asuntoTexto)}&body=${encodeURIComponent(cuerpoTexto)}`, '_blank');
+}
 let avisosCarga = [];
 let avisosNotificados = {}; // para no repetir el toast de "venció" una y otra vez
 
@@ -3660,13 +3680,11 @@ function enviarMailVencimientoET19(id){
   if(!o) return;
   const venc = vencimientoET19Orden(o);
   if(!venc){ alert('Esta ET19 no tiene fecha de oficialización cargada.'); return; }
-  const asunto = encodeURIComponent(`Vencimiento ET19 ${o.et19} — Orden ${o.numero}`);
-  const cuerpo = encodeURIComponent(
-    `La ET19 ${o.et19} (de la orden de compra ${o.numero} — ${o.proveedor}) vence el ${venc.toLocaleDateString('es-AR',{timeZone:'UTC'})}.\n`+
-    `Debe reimportarse como ZFI6 antes de esa fecha.\n\n— ALAV SRL, Z.F. General Pico`
-  );
+  const asunto = `Vencimiento ET19 ${o.et19} — Orden ${o.numero}`;
+  const cuerpo = `La ET19 ${o.et19} (de la orden de compra ${o.numero} — ${o.proveedor}) vence el ${venc.toLocaleDateString('es-AR',{timeZone:'UTC'})}.\n`+
+    `Debe reimportarse como ZFI6 antes de esa fecha.\n\n— ALAV SRL, Z.F. General Pico`;
   const to = AVISO_GUESTS.join(',');
-  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
+  enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
 async function confirmarCantidadOrden(id){
@@ -3737,18 +3755,16 @@ function enviarOrdenPorMail(id){
   if(!o) return;
   let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
 
-  const asunto = encodeURIComponent(`Orden de Compra ${o.numero} — ${o.proveedor}`);
-  const cuerpo = encodeURIComponent(
-    `Orden de Compra ${o.numero}\n`+
+  const asunto = `Orden de Compra ${o.numero} — ${o.proveedor}`;
+  const cuerpo = `Orden de Compra ${o.numero}\n`+
     `Proveedor: ${o.proveedor}\n`+
     `Fecha de emisión: ${o.fecha_emision}\n\n`+
     `Ítems:\n`+
     items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}${it.nota?' ('+it.nota+')':''}`).join('\n')+
     (o.nota?`\n\nNota: ${o.nota}`:'')+
-    `\n\n— ALAV SRL, Z.F. General Pico`
-  );
+    `\n\n— ALAV SRL, Z.F. General Pico`;
   const to = AVISO_GUESTS.join(',');
-  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
+  enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
 function agregarOrdenACalendar(id){
@@ -4854,15 +4870,13 @@ function enviarAlertaStockMinimo(mat){
   const disponible = getDisponibleTotal(mat);
   const label = MAT_LABELS[mat]||mat;
   const cu = CANCEL_UNIT[mat]||'';
-  const asunto = encodeURIComponent(`⚠️ URGENTE — Stock mínimo alcanzado: ${label}`);
-  const cuerpo = encodeURIComponent(
-    `El insumo "${label}" llegó al stock mínimo establecido.\n\n`+
+  const asunto = `⚠️ URGENTE — Stock mínimo alcanzado: ${label}`;
+  const cuerpo = `El insumo "${label}" llegó al stock mínimo establecido.\n\n`+
     `Disponible actual: ${fmt(disponible)} ${cu}\n`+
     `Mínimo configurado: ${fmt(m.minimo)} ${cu}\n\n`+
-    `Hay que gestionar el pedido de este insumo a China/Pakistán de forma urgente.\n\n— ALAV SRL, Z.F. General Pico`
-  );
+    `Hay que gestionar el pedido de este insumo a China/Pakistán de forma urgente.\n\n— ALAV SRL, Z.F. General Pico`;
   const to = 'comex@alavsrl.com';
-  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
+  enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
 async function loadAjustesStock(){
