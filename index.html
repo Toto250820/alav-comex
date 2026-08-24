@@ -4828,12 +4828,7 @@ function enviarAlertaStockMinimo(mat){
     `Hay que gestionar el pedido de este insumo a China/Pakistán de forma urgente.\n\n— ALAV SRL, Z.F. General Pico`
   );
   const to = 'comex@alavsrl.com';
-  const mailtoUrl = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
-  const abierto = window.open(mailtoUrl, '_blank');
-  if(!abierto){
-    // Si el navegador bloqueó window.open, probamos con location.href como respaldo
-    window.location.href = mailtoUrl;
-  }
+  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
 }
 
 async function loadAjustesStock(){
