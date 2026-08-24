@@ -540,6 +540,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="admtab active" onclick="showAdmTab('adm-stock',this)">Cargar stock</button>
       <button class="admtab" onclick="showAdmTab('adm-avisos',this)">🔔 Avisos de Carga</button>
       <button class="admtab" onclick="showAdmTab('adm-ajuste',this)">🔧 Corrección de Stock</button>
+      <button class="admtab" onclick="showAdmTab('adm-minimos',this)">⚠️ Stock Mínimo</button>
       <button class="admtab" onclick="showAdmTab('adm-pin',this)">Cambiar PIN</button>
     </div>
     <div id="adm-stock" class="admpanel active">
@@ -678,6 +679,32 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="card">
         <div class="ct">Últimos ajustes registrados</div>
         <div id="ajs-lista"><div class="empty">Ninguno todavía.</div></div>
+      </div>
+    </div>
+    <div id="adm-minimos" class="admpanel">
+      <div class="card" style="max-width:560px">
+        <div class="ct">Configurar stock mínimo por insumo</div>
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cuando el disponible de un insumo cae a este número o menos, aparece acá abajo para avisar por mail que hay que hacer el pedido urgente.</div>
+        <div class="fr">
+          <div class="ff" style="max-width:220px"><label>Insumo</label>
+            <select id="min-mat-sel"></select>
+          </div>
+          <div class="ff" style="max-width:150px"><label>Stock mínimo</label>
+            <input id="min-valor" type="number" step="0.01"/>
+          </div>
+        </div>
+        <button class="btn btnp" onclick="guardarStockMinimo()">✓ Guardar mínimo</button>
+        <div id="min-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+      </div>
+
+      <div class="card" style="border-color:var(--rd)">
+        <div class="ct" style="color:var(--rd)">⚠ Insumos por debajo del mínimo — ahora mismo</div>
+        <div id="min-alertas"><div class="empty">Revisando...</div></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Mínimos configurados</div>
+        <div id="min-lista"><div class="empty">Cargando...</div></div>
       </div>
     </div>
     <div id="adm-pin" class="admpanel">
@@ -1386,6 +1413,7 @@ function showAdmTab(id,btn){
     }
   }
   if(id==='adm-ajuste'){ loadAjustesStock(); }
+  if(id==='adm-minimos'){ poblarSelectorMinimo(); loadStockMinimos(); }
 }
 
 // ── CALCULADORA ───────────────────────────────────────────────────────────────
@@ -4124,7 +4152,8 @@ async function guardarRemito(){
   try{
     await sbFetch('remitos_carga', {
       method:'POST', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({id, numero, fecha, fecha_entrega:fechaEntrega||null, empresa, chofer, items:JSON.stringify(items), nota, creado_por:who})
+      body: JSON.stringify({id, numero, fecha, fecha_entrega:fechaEntrega||null, empresa, chofer,
+        items:JSON.stringify(items), nota, creado_por:who})
     });
     // Descontar del depósito correspondiente, ítem por ítem
     for(const it of items){
@@ -4701,6 +4730,105 @@ async function aplicarAjusteStock(){
   }catch(e){
     msg.style.color='var(--rd)'; msg.textContent='⚠ Error aplicando la corrección: '+e.message;
   }
+}
+
+// ═══════════════════════════════════════════
+// STOCK MÍNIMO — alerta de compra urgente
+// ═══════════════════════════════════════════
+let stockMinimos = [];
+
+function poblarSelectorMinimo(){
+  const sel = document.getElementById('min-mat-sel');
+  if(!sel) return;
+  const opciones = Object.entries(MAT_LABELS).sort((a,b)=>a[1].localeCompare(b[1]));
+  sel.innerHTML = '<option value="">Seleccionar...</option>' +
+    opciones.map(([k,label])=>`<option value="${k}">${label}</option>`).join('');
+}
+
+function getDisponibleTotal(mat){
+  const filas = [...(STOCK_BASE[mat]||[]), ...(stockExtra[mat]||[])];
+  return filas.reduce((s,r)=>s+((r.cantidad||0)-(r.cancel_qty||0)),0);
+}
+
+async function guardarStockMinimo(){
+  const mat = document.getElementById('min-mat-sel').value;
+  const minimo = parseFloat(document.getElementById('min-valor').value);
+  const msg = document.getElementById('min-msg');
+  msg.style.display = 'block';
+  if(!mat || isNaN(minimo)){ msg.style.color='var(--rd)'; msg.textContent='Elegí el insumo y poné el mínimo.'; return; }
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+  try{
+    await sbFetch('stock_minimos', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({material:mat, minimo, actualizado_por:who, actualizado_en:new Date().toISOString()})
+    });
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Mínimo de ${MAT_LABELS[mat]||mat} guardado: ${fmt(minimo)}.`;
+    document.getElementById('min-valor').value='';
+    await loadStockMinimos();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
+}
+
+async function loadStockMinimos(){
+  try{
+    const rows = await sbFetch('stock_minimos?select=*&order=material.asc', {method:'GET', headers:{'Prefer':''}});
+    stockMinimos = rows || [];
+    renderStockMinimos();
+  }catch(e){
+    const el = document.getElementById('min-lista');
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de mínimos (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderStockMinimos(){
+  const elLista = document.getElementById('min-lista');
+  const elAlertas = document.getElementById('min-alertas');
+  if(!elLista) return;
+
+  if(!stockMinimos.length){
+    elLista.innerHTML = '<div class="empty">Ningún mínimo configurado todavía.</div>';
+    if(elAlertas) elAlertas.innerHTML = '<div class="empty">No hay mínimos configurados para revisar.</div>';
+    return;
+  }
+
+  const conDisponible = stockMinimos.map(m=>({
+    ...m, disponible: getDisponibleTotal(m.material), label: MAT_LABELS[m.material]||m.material,
+    cu: CANCEL_UNIT[m.material]||''
+  }));
+
+  elLista.innerHTML = conDisponible.map(m=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid var(--bd);font-size:12px">
+      <div><strong>${m.label}</strong> — mínimo: ${fmt(m.minimo)} ${m.cu} · disponible actual: <strong style="color:${m.disponible<=m.minimo?'var(--rd)':'var(--gr)'}">${fmt(m.disponible)} ${m.cu}</strong></div>
+    </div>`).join('');
+
+  const bajoMinimo = conDisponible.filter(m=>m.disponible<=m.minimo);
+  if(elAlertas){
+    if(!bajoMinimo.length){
+      elAlertas.innerHTML = '<div class="empty">Ningún insumo por debajo del mínimo ahora mismo. 👍</div>';
+    } else {
+      elAlertas.innerHTML = bajoMinimo.map(m=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;gap:8px">
+          <div><strong style="color:var(--rd)">${m.label}</strong> — disponible: <strong>${fmt(m.disponible)} ${m.cu}</strong> (mínimo: ${fmt(m.minimo)} ${m.cu})</div>
+          <button class="btn btnd" onclick="enviarAlertaStockMinimo('${m.material}')">📧 Avisar a Compras</button>
+        </div>`).join('');
+    }
+  }
+}
+
+function enviarAlertaStockMinimo(mat){
+  const m = stockMinimos.find(x=>x.material===mat);
+  if(!m) return;
+  const disponible = getDisponibleTotal(mat);
+  const label = MAT_LABELS[mat]||mat;
+  const cu = CANCEL_UNIT[mat]||'';
+  const asunto = encodeURIComponent(`⚠️ URGENTE — Stock mínimo alcanzado: ${label}`);
+  const cuerpo = encodeURIComponent(
+    `El insumo "${label}" llegó al stock mínimo establecido.\n\n`+
+    `Disponible actual: ${fmt(disponible)} ${cu}\n`+
+    `Mínimo configurado: ${fmt(m.minimo)} ${cu}\n\n`+
+    `Hay que gestionar el pedido de este insumo a China/Pakistán de forma urgente.\n\n— ALAV SRL, Z.F. General Pico`
+  );
+  const to = 'comex@alavsrl.com';
+  window.location.href = `mailto:${to}?subject=${asunto}&body=${cuerpo}`;
 }
 
 async function loadAjustesStock(){
