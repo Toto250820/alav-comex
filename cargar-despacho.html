@@ -180,6 +180,12 @@ input.narrow{width:80px}
         <tbody id="zfe3-tbody"></tbody>
       </table>
     </div>
+    <div class="fr" style="margin-top:10px">
+      <div class="ff" style="max-width:220px"><label>Número de salida (opcional)</label>
+        <input id="zfe3-numero-salida" placeholder="ej: 172A, o el que uses vos"/>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:4px">Si esta salida no se armó en la pestaña "Salidas" de la app, ponele acá un número igual — así después lo podés usar para vincular remitos de mercadería a esta salida.</div>
     <div class="actions">
       <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
       <button class="btn btng" id="btn-confirm-zfe3" onclick="confirmarZFE3()" disabled>✓ Confirmar y descontar stock</button>
@@ -559,7 +565,7 @@ async function confirmarZFE3(){
     await sbFetch('zfe3_procesados', {
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({despacho:p.despacho, fecha:p.fecha, procesado_por: localStorage.getItem('ga_user_label')||'alguien', items_afectados: ok})
+      body: JSON.stringify({despacho:p.despacho, fecha:p.fecha, procesado_por: localStorage.getItem('ga_user_label')||'alguien', items_afectados: ok, numero_salida: document.getElementById('zfe3-numero-salida').value.trim()||null})
     });
   }catch(e){ /* si la tabla no existe, no bloqueamos el resto */ }
 

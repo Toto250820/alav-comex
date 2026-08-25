@@ -542,6 +542,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="ff" style="max-width:150px"><label>Fecha de carga</label><input id="rem-fecha" type="date"/></div>
       <div class="ff" style="max-width:150px"><label>Fecha de entrega</label><input id="rem-fecha-entrega" type="date"/></div>
     </div>
+    <datalist id="salidas-conocidas-datalist"></datalist>
     <div id="rem-items-lista"></div>
     <button class="btn" style="margin-top:6px" onclick="agregarLineaRemito()">+ Agregar ítem</button>
     <div class="fr" style="margin-top:10px"><div class="ff"><label>Nota (opcional)</label><input id="rem-nota" placeholder="ej: viaje a depósito cliente X"/></div></div>
@@ -1450,7 +1451,7 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); loadPIs(); }
-  if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); }
+  if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); loadSalidasSueltasZFE3().then(poblarDatalistSalidas); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
   if(typeof heartbeatPresence==='function') heartbeatPresence();
@@ -4166,11 +4167,18 @@ async function agregarStockMercaderia(){
 let remItemIndices = [];
 let remNextIdx = 0;
 let remitosCarga = [];
+let salidasSueltasZFE3 = []; // números de salida cargados desde un ZFE3 "suelto", sin pasar por Salidas
+
+async function loadSalidasSueltasZFE3(){
+  try{
+    const rows = await sbFetch('zfe3_procesados?select=numero_salida,despacho,fecha&numero_salida=not.is.null', {method:'GET', headers:{'Prefer':''}});
+    salidasSueltasZFE3 = rows || [];
+  }catch(e){ salidasSueltasZFE3 = []; }
+}
 
 function agregarLineaRemito(){
   const idx = remNextIdx++;
   remItemIndices.push(idx);
-  const opcionesSalidas = salidaHistorial.map(s=>`<option value="${s.nro}">${s.nro}${s.desc?' — '+s.desc:''}</option>`).join('');
   const div = document.createElement('div');
   div.id = 'rem-item-'+idx;
   div.innerHTML = `
@@ -4195,13 +4203,10 @@ function agregarLineaRemito(){
       <button class="btn btnd" onclick="quitarLineaRemito(${idx})" style="margin-bottom:1px">✕</button>
     </div>
     <div class="fr" style="align-items:flex-end;margin-top:4px">
-      <div class="ff" style="max-width:220px"><label>Viene de la Salida (opcional)</label>
-        <select id="rem-salida-${idx}" onchange="actualizarLineasSalidaRemito(${idx})">
-          <option value="">No corresponde a ninguna salida</option>
-          ${opcionesSalidas}
-        </select>
+      <div class="ff" style="max-width:220px"><label>Nº de salida (opcional, escribilo)</label>
+        <input id="rem-salida-${idx}" list="salidas-conocidas-datalist" placeholder="ej: 172A" oninput="actualizarLineasSalidaRemito(${idx})"/>
       </div>
-      <div class="ff" style="max-width:280px"><label>Línea de esa salida</label>
+      <div class="ff" style="max-width:280px"><label>Línea de esa salida (si coincide con una armada)</label>
         <select id="rem-salida-linea-${idx}" onchange="actualizarInfoLineaSalidaRemito(${idx})"><option value="">—</option></select>
       </div>
     </div>
@@ -4222,19 +4227,43 @@ function unidadesYaDespachadasDeSalida(salidaNro, itemNum){
   return total;
 }
 
+function poblarDatalistSalidas(){
+  const dl = document.getElementById('salidas-conocidas-datalist');
+  if(!dl) return;
+  const nrosReales = salidaHistorial.map(s=>s.nro);
+  const nrosSueltos = salidasSueltasZFE3.map(z=>z.numero_salida);
+  const todos = [...new Set([...nrosReales, ...nrosSueltos])].sort();
+  dl.innerHTML = todos.map(n=>`<option value="${n}"></option>`).join('');
+}
+
 function actualizarLineasSalidaRemito(idx){
-  const nroSel = document.getElementById('rem-salida-'+idx).value;
+  const nroSel = document.getElementById('rem-salida-'+idx).value.trim();
   const lineaSel = document.getElementById('rem-salida-linea-'+idx);
   const info = document.getElementById('rem-salida-info-'+idx);
   if(!nroSel){ lineaSel.innerHTML='<option value="">—</option>'; info.textContent=''; return; }
+
   const sal = salidaHistorial.find(s=>s.nro===nroSel);
-  if(!sal){ lineaSel.innerHTML='<option value="">—</option>'; return; }
-  lineaSel.innerHTML = (sal.lineas||[]).map(l=>{
-    const yaDespachado = unidadesYaDespachadasDeSalida(nroSel, l.itemNum);
-    const pct = l.qty>0 ? Math.round((yaDespachado/l.qty)*100) : 0;
-    return `<option value="${l.itemNum}">${l.n} ${l.med} — ${l.qty}u (${pct}% ya despachado)</option>`;
-  }).join('');
-  actualizarInfoLineaSalidaRemito(idx);
+  if(sal){
+    // Coincide con una Salida armada de verdad — mostramos sus líneas con % ya despachado
+    lineaSel.innerHTML = '<option value="">— (opcional, elegí la línea si corresponde)</option>' + (sal.lineas||[]).map(l=>{
+      const yaDespachado = unidadesYaDespachadasDeSalida(nroSel, l.itemNum);
+      const pct = l.qty>0 ? Math.round((yaDespachado/l.qty)*100) : 0;
+      return `<option value="${l.itemNum}">${l.n} ${l.med} — ${l.qty}u (${pct}% ya despachado)</option>`;
+    }).join('');
+    info.textContent = `✓ Coincide con una salida armada en el sistema (${sal.lineas?.length||0} línea(s)).`;
+    info.style.color = 'var(--gr)';
+    return;
+  }
+
+  const suelta = salidasSueltasZFE3.find(z=>z.numero_salida===nroSel);
+  lineaSel.innerHTML = '<option value="">—</option>';
+  if(suelta){
+    info.textContent = `ℹ Coincide con un ZFE3 cargado como "suelto" (despacho ${suelta.despacho}, ${suelta.fecha}) — no tiene líneas detalladas, se usa solo como referencia.`;
+    info.style.color = 'var(--yw)';
+  } else {
+    info.textContent = 'No coincide con ninguna salida ni ZFE3 conocido — se va a guardar igual, como referencia libre.';
+    info.style.color = 'var(--tx3)';
+  }
 }
 
 function actualizarInfoLineaSalidaRemito(idx){
