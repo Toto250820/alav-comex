@@ -495,6 +495,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <select id="merc-ubicacion"><option value="zona">Zona (fábrica)</option><option value="externo">Galpón Externo</option></select>
       </div>
       <div class="ff" style="max-width:130px"><label>Cantidad</label><input id="merc-cantidad" type="number" step="1"/></div>
+      <div class="ff" style="max-width:170px"><label>Alertar si Externo baja de (opcional)</label><input id="merc-minimo" type="number" step="1" placeholder="ej: 500"/></div>
     </div>
     <button class="btn btnp" onclick="agregarStockMercaderia()">+ Sumar al stock</button>
     <div id="merc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
@@ -502,6 +503,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
   <div class="stit" style="margin-top:22px">Stock actual por depósito</div>
   <div id="merc-lista"><div class="empty">Cargando...</div></div>
+
+  <div class="stit" style="margin-top:22px">⚠️ Alertas de Galpón Externo</div>
+  <div id="merc-alertas"><div class="empty">Revisando...</div></div>
 
   <div class="stit" style="margin-top:22px">Nuevo remito de carga/viaje</div>
   <div class="card">
@@ -4027,6 +4031,7 @@ async function loadStockMercaderia(){
     const rows = await sbFetch('stock_mercaderia?select=*&order=articulo.asc', {method:'GET', headers:{'Prefer':''}});
     stockMercaderia = rows || [];
     renderStockMercaderia();
+    renderAlertasStockMercaderia();
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de stock de mercadería (¿corriste el SQL en Supabase?).</div>';
   }
@@ -4058,12 +4063,52 @@ function renderStockMercaderia(){
   </tbody></table></div>`;
 }
 
+const MERC_ALERTA_GUESTS = ['alavsrl.gerencia.pico@gmail.com','alav.pico@gmail.com','admi.alavpico02@gmail.com']; // Fernando, Marina, Carina
+
+function renderAlertasStockMercaderia(){
+  const el = document.getElementById('merc-alertas');
+  if(!el) return;
+  const conMinimo = stockMercaderia.filter(r=>r.ubicacion==='externo' && r.minimo!=null);
+  const bajoMinimo = conMinimo.filter(r=>(r.cantidad||0) <= r.minimo);
+  if(!bajoMinimo.length){ el.innerHTML = '<div class="empty">Ningún artículo del Galpón Externo por debajo de su mínimo ahora mismo. 👍</div>'; return; }
+
+  el.innerHTML = bajoMinimo.map(r=>{
+    const avisado = !!r.ultimo_aviso;
+    const color = avisado ? 'var(--yw)' : 'var(--rd)';
+    const fechaAviso = avisado ? new Date(r.ultimo_aviso).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;gap:8px">
+      <div><strong style="color:${color}">${r.articulo}</strong> — disponible en Externo: <strong>${fmt(r.cantidad||0)}</strong> (mínimo: ${fmt(r.minimo)})
+        ${avisado?` <span class="bdg by">Avisado: ${fechaAviso}</span>`:''}</div>
+      <button class="btn ${avisado?'':'btnd'}" onclick="enviarAlertaStockMercaderia('${r.id}')">📧 ${avisado?'Avisar de nuevo':'Avisar'}</button>
+    </div>`;
+  }).join('');
+}
+
+async function enviarAlertaStockMercaderia(id){
+  const r = stockMercaderia.find(x=>x.id===id);
+  if(!r) return;
+  const asunto = `⚠️ Stock bajo en Galpón Externo: ${r.articulo}`;
+  const cuerpo = `El artículo "${r.articulo}" en el Galpón Externo llegó a su mínimo establecido.\n\n`+
+    `Disponible actual: ${fmt(r.cantidad||0)}\n`+
+    `Mínimo configurado: ${fmt(r.minimo)}\n\n— ALAV SRL, Z.F. General Pico`;
+  const to = MERC_ALERTA_GUESTS.join(',');
+  enviarMailDirectoOFallback(to, asunto, cuerpo);
+  try{
+    await sbFetch('stock_mercaderia?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({ultimo_aviso: new Date().toISOString()})
+    });
+  }catch(e){ console.error(e); }
+  await loadStockMercaderia();
+}
+
 async function agregarStockMercaderia(){
   const nombreBase = document.getElementById('merc-nombre').value.trim();
   const med = document.getElementById('merc-medida').value;
   const articulo = med ? `${nombreBase} ${med}` : nombreBase;
   const ubicacion = document.getElementById('merc-ubicacion').value;
   const cantidad = parseFloat(document.getElementById('merc-cantidad').value);
+  const minimoInp = parseFloat(document.getElementById('merc-minimo').value);
   const msg = document.getElementById('merc-msg');
   msg.style.display = 'block';
   if(!nombreBase || isNaN(cantidad)){ msg.style.color='var(--rd)'; msg.textContent='Completá el nombre del artículo y la cantidad.'; return; }
@@ -4072,15 +4117,18 @@ async function agregarStockMercaderia(){
   const existente = stockMercaderia.find(r=>r.id===id);
   const nuevaCantidad = (existente?existente.cantidad:0) + cantidad;
   const who = localStorage.getItem('ga_user_label')||'alguien';
+  const body = {id, articulo, ubicacion, cantidad:nuevaCantidad, actualizado_por:who, actualizado_en:new Date().toISOString()};
+  if(!isNaN(minimoInp)) body.minimo = minimoInp;
+  else if(existente && existente.minimo!=null) body.minimo = existente.minimo; // conservar el mínimo si ya tenía uno
 
   try{
     await sbFetch('stock_mercaderia', {
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({id, articulo, ubicacion, cantidad:nuevaCantidad, actualizado_por:who, actualizado_en:new Date().toISOString()})
+      body: JSON.stringify(body)
     });
     msg.style.color='var(--gr)';
     msg.textContent = `✓ ${articulo} (${ubicacion==='zona'?'Zona':'Externo'}): ahora ${fmt(nuevaCantidad)} en total en ese depósito.`;
-    document.getElementById('merc-nombre').value=''; document.getElementById('merc-medida').value=''; document.getElementById('merc-cantidad').value='';
+    document.getElementById('merc-nombre').value=''; document.getElementById('merc-medida').value=''; document.getElementById('merc-cantidad').value=''; document.getElementById('merc-minimo').value='';
     await loadStockMercaderia();
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
 }
