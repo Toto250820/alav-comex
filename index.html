@@ -507,6 +507,32 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="stit" style="margin-top:22px">⚠️ Alertas de Galpón Externo</div>
   <div id="merc-alertas"><div class="empty">Revisando...</div></div>
 
+  <div class="stit" style="margin-top:22px">Historial de Stock Mercadería</div>
+  <div class="card">
+    <div class="fr">
+      <div class="ff" style="max-width:180px"><label>Depósito</label>
+        <select id="hist-merc-ubicacion">
+          <option value="todos">Todos</option>
+          <option value="zona">Zona (fábrica)</option>
+          <option value="externo">Galpón Externo</option>
+        </select>
+      </div>
+      <div class="ff" style="max-width:180px"><label>Movimiento</label>
+        <select id="hist-merc-tipo">
+          <option value="todos">Todos</option>
+          <option value="carga">Solo cargas</option>
+          <option value="salida">Solo salidas</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btnp" onclick="cargarHistorialMercaderia()">🔍 Ver historial</button>
+    <div id="hist-merc-acciones" style="display:none;margin-top:8px">
+      <button class="btn" onclick="imprimirHistorialMercaderia()">🖨 Imprimir / Descargar PDF</button>
+      <button class="btn" onclick="enviarHistorialMercaderiaPorMail()">📧 Enviar por mail</button>
+    </div>
+  </div>
+  <div id="hist-merc-lista"></div>
+
   <div class="stit" style="margin-top:22px">Nuevo remito de carga/viaje</div>
   <div class="card">
     <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cada ítem del remito indica de qué depósito sale — podés combinar Zona y Externo en el mismo viaje.</div>
@@ -4126,6 +4152,7 @@ async function agregarStockMercaderia(){
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
       body: JSON.stringify(body)
     });
+    registrarMovimientoMercaderia(articulo, ubicacion, 'carga', cantidad, nuevaCantidad, who, null).catch(e=>console.error(e));
     msg.style.color='var(--gr)';
     msg.textContent = `✓ ${articulo} (${ubicacion==='zona'?'Zona':'Externo'}): ahora ${fmt(nuevaCantidad)} en total en ese depósito.`;
     document.getElementById('merc-nombre').value=''; document.getElementById('merc-medida').value=''; document.getElementById('merc-cantidad').value=''; document.getElementById('merc-minimo').value='';
@@ -4143,37 +4170,102 @@ let remitosCarga = [];
 function agregarLineaRemito(){
   const idx = remNextIdx++;
   remItemIndices.push(idx);
+  const opcionesSalidas = salidaHistorial.map(s=>`<option value="${s.nro}">${s.nro}${s.desc?' — '+s.desc:''}</option>`).join('');
   const div = document.createElement('div');
   div.id = 'rem-item-'+idx;
-  div.className = 'fr';
-  div.style.alignItems = 'flex-end';
   div.innerHTML = `
-    <div class="ff" style="max-width:190px"><label>Artículo</label>
-      <input id="rem-nombre-${idx}" list="merc-articulos-usados" placeholder="ej: 3041 - Rabbit"/>
+    <div class="fr" style="align-items:flex-end">
+      <div class="ff" style="max-width:190px"><label>Artículo</label>
+        <input id="rem-nombre-${idx}" list="merc-articulos-usados" placeholder="ej: 3041 - Rabbit"/>
+      </div>
+      <div class="ff" style="max-width:90px"><label>Medida</label>
+        <select id="rem-medida-${idx}">
+          <option value="">Sin medida</option>
+          <option value="/1">/1</option>
+          <option value="/3">/3</option>
+          <option value="/4">/4</option>
+          <option value="/5">/5</option>
+        </select>
+      </div>
+      <div class="ff" style="max-width:90px"><label>Bultos</label><input id="rem-bultos-${idx}" type="number" step="1"/></div>
+      <div class="ff" style="max-width:100px"><label>Unidades</label><input id="rem-unidades-${idx}" type="number" step="1"/></div>
+      <div class="ff" style="max-width:140px"><label>Sale de</label>
+        <select id="rem-ubicacion-${idx}"><option value="zona">Zona</option><option value="externo">Externo</option></select>
+      </div>
+      <button class="btn btnd" onclick="quitarLineaRemito(${idx})" style="margin-bottom:1px">✕</button>
     </div>
-    <div class="ff" style="max-width:90px"><label>Medida</label>
-      <select id="rem-medida-${idx}">
-        <option value="">Sin medida</option>
-        <option value="/1">/1</option>
-        <option value="/3">/3</option>
-        <option value="/4">/4</option>
-        <option value="/5">/5</option>
-      </select>
+    <div class="fr" style="align-items:flex-end;margin-top:4px">
+      <div class="ff" style="max-width:220px"><label>Viene de la Salida (opcional)</label>
+        <select id="rem-salida-${idx}" onchange="actualizarLineasSalidaRemito(${idx})">
+          <option value="">No corresponde a ninguna salida</option>
+          ${opcionesSalidas}
+        </select>
+      </div>
+      <div class="ff" style="max-width:280px"><label>Línea de esa salida</label>
+        <select id="rem-salida-linea-${idx}" onchange="actualizarInfoLineaSalidaRemito(${idx})"><option value="">—</option></select>
+      </div>
     </div>
-    <div class="ff" style="max-width:90px"><label>Bultos</label><input id="rem-bultos-${idx}" type="number" step="1"/></div>
-    <div class="ff" style="max-width:100px"><label>Unidades</label><input id="rem-unidades-${idx}" type="number" step="1"/></div>
-    <div class="ff" style="max-width:140px"><label>Sale de</label>
-      <select id="rem-ubicacion-${idx}"><option value="zona">Zona</option><option value="externo">Externo</option></select>
-    </div>
-    <button class="btn btnd" onclick="quitarLineaRemito(${idx})" style="margin-bottom:1px">✕</button>
+    <div id="rem-salida-info-${idx}" style="font-size:11px;color:var(--tx3);margin:2px 0 8px"></div>
   `;
   document.getElementById('rem-items-lista').appendChild(div);
+}
+
+// Cuánto de una línea puntual de una Salida (nro + itemNum) ya se despachó en remitos anteriores
+function unidadesYaDespachadasDeSalida(salidaNro, itemNum){
+  let total = 0;
+  remitosCarga.forEach(r=>{
+    let items=[]; try{ items = JSON.parse(r.items||'[]'); }catch(e){}
+    items.forEach(it=>{
+      if(it.salida_nro===salidaNro && it.salida_item_num===itemNum) total += it.unidades;
+    });
+  });
+  return total;
+}
+
+function actualizarLineasSalidaRemito(idx){
+  const nroSel = document.getElementById('rem-salida-'+idx).value;
+  const lineaSel = document.getElementById('rem-salida-linea-'+idx);
+  const info = document.getElementById('rem-salida-info-'+idx);
+  if(!nroSel){ lineaSel.innerHTML='<option value="">—</option>'; info.textContent=''; return; }
+  const sal = salidaHistorial.find(s=>s.nro===nroSel);
+  if(!sal){ lineaSel.innerHTML='<option value="">—</option>'; return; }
+  lineaSel.innerHTML = (sal.lineas||[]).map(l=>{
+    const yaDespachado = unidadesYaDespachadasDeSalida(nroSel, l.itemNum);
+    const pct = l.qty>0 ? Math.round((yaDespachado/l.qty)*100) : 0;
+    return `<option value="${l.itemNum}">${l.n} ${l.med} — ${l.qty}u (${pct}% ya despachado)</option>`;
+  }).join('');
+  actualizarInfoLineaSalidaRemito(idx);
+}
+
+function actualizarInfoLineaSalidaRemito(idx){
+  const nroSel = document.getElementById('rem-salida-'+idx).value;
+  const itemNumSel = document.getElementById('rem-salida-linea-'+idx).value;
+  const info = document.getElementById('rem-salida-info-'+idx);
+  if(!nroSel || !itemNumSel){ info.textContent=''; return; }
+  const sal = salidaHistorial.find(s=>s.nro===nroSel);
+  const l = sal?.lineas?.find(x=>String(x.itemNum)===String(itemNumSel));
+  if(!l){ info.textContent=''; return; }
+  const yaDespachado = unidadesYaDespachadasDeSalida(nroSel, l.itemNum);
+  const restante = l.qty - yaDespachado;
+  info.textContent = `Esa línea tenía ${l.qty}u en total — ya se despachó ${fmt(yaDespachado)}u, quedan ${fmt(restante)}u sin despachar.`;
 }
 
 function quitarLineaRemito(idx){
   const el = document.getElementById('rem-item-'+idx);
   if(el) el.remove();
   remItemIndices = remItemIndices.filter(i=>i!==idx);
+}
+
+async function registrarMovimientoMercaderia(articulo, ubicacion, tipo, cantidadMovimiento, saldoResultante, usuario, referencia){
+  const id = 'mh_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  await sbFetch('stock_mercaderia_historial', {
+    method:'POST', headers:{'Prefer':'return=minimal'},
+    body: JSON.stringify({
+      id, articulo, ubicacion, tipo_movimiento:tipo,
+      cantidad_movimiento: cantidadMovimiento, saldo_resultante: saldoResultante,
+      usuario, referencia: referencia||null
+    })
+  });
 }
 
 async function guardarRemito(){
@@ -4194,11 +4286,13 @@ async function guardarRemito(){
     const bultos = parseFloat(document.getElementById('rem-bultos-'+idx).value)||0;
     const unidades = parseFloat(document.getElementById('rem-unidades-'+idx).value);
     const ubicacion = document.getElementById('rem-ubicacion-'+idx).value;
+    const salidaNro = document.getElementById('rem-salida-'+idx)?.value || null;
+    const salidaItemNum = document.getElementById('rem-salida-linea-'+idx)?.value || null;
     if(!articulo || isNaN(unidades)){
       msg.style.color='var(--rd)'; msg.textContent='Cada ítem necesita artículo y cantidad de unidades.';
       return;
     }
-    items.push({articulo, bultos, unidades, ubicacion});
+    items.push({articulo, bultos, unidades, ubicacion, salida_nro: salidaNro||null, salida_item_num: salidaItemNum||null});
   }
 
   // Verificar que haya stock suficiente en cada depósito ANTES de descontar nada
@@ -4234,6 +4328,7 @@ async function guardarRemito(){
         method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
         body: JSON.stringify({id:idMerc, articulo:it.articulo, ubicacion:it.ubicacion, cantidad:nuevaCantidad, actualizado_por:who, actualizado_en:new Date().toISOString()})
       });
+      registrarMovimientoMercaderia(it.articulo, it.ubicacion, 'salida', it.unidades, nuevaCantidad, who, numero).catch(e=>console.error(e));
     }
     msg.style.color='var(--gr)'; msg.textContent=`✓ Remito ${numero} guardado y stock descontado.`;
     document.getElementById('rem-items-lista').innerHTML=''; remItemIndices=[]; agregarLineaRemito();
@@ -4268,13 +4363,98 @@ function renderRemitos(){
         </div>
         <div style="font-size:11px;color:var(--tx3)">Carga: ${r.fecha}${r.fecha_entrega?` · Entrega: ${r.fecha_entrega}`:''}${r.empresa?` · ${r.empresa}`:''}${r.chofer?` · Chofer: ${r.chofer}`:''} · por ${r.creado_por||'?'}</div>
       </div>
-      <table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito</th></tr></thead><tbody>
-        ${items.map(it=>`<tr><td>${it.articulo}</td><td class="mono">${fmt(it.bultos)}</td><td class="mono">${fmt(it.unidades)}</td><td>${it.ubicacion==='zona'?'Zona':'Externo'}</td></tr>`).join('')}
+      <table><thead><tr><th>Artículo</th><th>Bultos</th><th>Unidades</th><th>Depósito</th><th>Salida de origen</th></tr></thead><tbody>
+        ${items.map(it=>`<tr><td>${it.articulo}</td><td class="mono">${fmt(it.bultos)}</td><td class="mono">${fmt(it.unidades)}</td><td>${it.ubicacion==='zona'?'Zona':'Externo'}</td><td>${it.salida_nro?`<span class="mono">${it.salida_nro}</span>`:'—'}</td></tr>`).join('')}
       </tbody></table>
       ${r.nota?`<div class="nbox">${r.nota}</div>`:''}
       <div style="padding:8px 12px"><button class="btn" onclick="imprimirRemito('${r.id}')">🖨 Imprimir / PDF</button></div>
     </div>`;
   }).join('');
+}
+
+// ═══════════════════════════════════════════
+// HISTORIAL DE STOCK MERCADERÍA (imprimible / PDF / mail)
+// ═══════════════════════════════════════════
+let historialMercActual = [];
+
+async function cargarHistorialMercaderia(){
+  const ubicacion = document.getElementById('hist-merc-ubicacion').value;
+  const tipo = document.getElementById('hist-merc-tipo').value;
+  const el = document.getElementById('hist-merc-lista');
+  el.innerHTML = '<div class="empty">Cargando...</div>';
+  try{
+    let query = 'stock_mercaderia_historial?select=*&order=fecha.desc&limit=300';
+    if(ubicacion!=='todos') query += '&ubicacion=eq.'+ubicacion;
+    if(tipo!=='todos') query += '&tipo_movimiento=eq.'+tipo;
+    const rows = await sbFetch(query, {method:'GET', headers:{'Prefer':''}});
+    historialMercActual = rows || [];
+    renderHistorialMercaderia();
+  }catch(e){
+    el.innerHTML = '<div class="empty">Todavía no se pudo conectar con el historial (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderHistorialMercaderia(){
+  const el = document.getElementById('hist-merc-lista');
+  const acciones = document.getElementById('hist-merc-acciones');
+  if(!historialMercActual.length){
+    el.innerHTML = '<div class="empty">Sin movimientos para ese filtro.</div>';
+    acciones.style.display = 'none';
+    return;
+  }
+  acciones.style.display = 'block';
+  el.innerHTML = `<div class="tw"><table><thead><tr>
+      <th>Fecha</th><th>Artículo</th><th>Depósito</th><th>Movimiento</th><th>Cantidad</th><th>Saldo resultante</th><th>Ref.</th><th>Usuario</th>
+    </tr></thead><tbody>
+    ${historialMercActual.map(h=>`<tr>
+      <td>${new Date(h.fecha).toLocaleString('es-AR')}</td>
+      <td>${h.articulo}</td>
+      <td>${h.ubicacion==='zona'?'Zona':'Externo'}</td>
+      <td style="color:${h.tipo_movimiento==='carga'?'var(--gr)':'var(--rd)'}">${h.tipo_movimiento==='carga'?'▲ Carga':'▼ Salida'}</td>
+      <td class="mono">${fmt(h.cantidad_movimiento)}</td>
+      <td class="mono">${fmt(h.saldo_resultante)}</td>
+      <td>${h.referencia||'—'}</td>
+      <td>${h.usuario||'—'}</td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function imprimirHistorialMercaderia(){
+  if(!historialMercActual.length) return;
+  const ubicacion = document.getElementById('hist-merc-ubicacion').value;
+  const tituloUbic = ubicacion==='todos'?'Todos los depósitos':(ubicacion==='zona'?'Zona (fábrica)':'Galpón Externo');
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Historial Stock Mercadería</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:18px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:14px}'
+    +'h1{font-size:16px}table{width:100%;border-collapse:collapse}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:5px 7px;text-align:left;font-size:10px}'
+    +'td{border:1px solid #ccc;padding:5px 7px;font-size:10px}'
+    +'@media print{@page{size:A4 landscape;margin:12mm}}</style></head><body>';
+
+  p+='<div class="hdr"><div><h1>Historial de Stock Mercadería — '+tituloUbic+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Emitido: '+new Date().toLocaleDateString('es-AR')+'</div></div>';
+
+  p+='<table><thead><tr><th>Fecha</th><th>Artículo</th><th>Depósito</th><th>Movimiento</th><th>Cantidad</th><th>Saldo resultante</th><th>Ref.</th><th>Usuario</th></tr></thead><tbody>'
+    + historialMercActual.map(h=>'<tr><td>'+new Date(h.fecha).toLocaleString('es-AR')+'</td><td>'+h.articulo+'</td><td>'+(h.ubicacion==='zona'?'Zona':'Externo')+'</td><td>'+(h.tipo_movimiento==='carga'?'Carga':'Salida')+'</td><td>'+h.cantidad_movimiento+'</td><td>'+h.saldo_resultante+'</td><td>'+(h.referencia||'—')+'</td><td>'+(h.usuario||'—')+'</td></tr>').join('')
+    + '</tbody></table></body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+}
+
+function enviarHistorialMercaderiaPorMail(){
+  if(!historialMercActual.length) return;
+  const ubicacion = document.getElementById('hist-merc-ubicacion').value;
+  const tituloUbic = ubicacion==='todos'?'Todos los depósitos':(ubicacion==='zona'?'Zona':'Externo');
+  const asunto = `Historial de Stock Mercadería — ${tituloUbic}`;
+  const cuerpo = `Historial de Stock Mercadería — ${tituloUbic}\nEmitido: ${new Date().toLocaleDateString('es-AR')}\n\n`+
+    historialMercActual.map(h=>`${new Date(h.fecha).toLocaleString('es-AR')} · ${h.articulo} · ${h.ubicacion==='zona'?'Zona':'Externo'} · ${h.tipo_movimiento==='carga'?'Carga':'Salida'}: ${h.cantidad_movimiento} · Saldo: ${h.saldo_resultante}${h.referencia?' · Ref: '+h.referencia:''}`).join('\n')+
+    `\n\n— ALAV SRL, Z.F. General Pico`;
+  const to = AVISO_GUESTS.join(',');
+  enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
 function imprimirRemito(id){
