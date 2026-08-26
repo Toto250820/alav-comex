@@ -229,6 +229,20 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="prov-modal-msg" style="display:none;margin-top:8px;font-size:11px;color:var(--rd)"></div>
   </div>
 </div>
+<div id="malla-factura-modal" style="display:none;position:fixed;inset:0;background:rgba(23,33,44,.75);z-index:998;align-items:center;justify-content:center">
+  <div class="pincard" style="width:340px">
+    <div class="pintit">📥 DESCARGA PARA MARÍA</div>
+    <div class="pinsub">Confirmá (o completá) el número de factura antes de generar el archivo</div>
+    <div style="text-align:left;margin-top:10px">
+      <label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Número de factura</label>
+      <input id="malla-factura-inp" placeholder="ej: A-0001-00001234" style="width:100%;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:13px;padding:7px 9px;outline:none;box-sizing:border-box"/>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn btnp" style="flex:1" onclick="confirmarDescargaMalla()">Generar archivo</button>
+      <button class="btn" onclick="document.getElementById('malla-factura-modal').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <button id="chat-fab" onclick="toggleChat()" title="Chat interno">
@@ -348,6 +362,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           </div>
           <div class="ff" style="max-width:150px"><label>Fecha</label>
             <input id="sal-zfe-fecha" type="date"/>
+          </div>
+          <div class="ff" style="max-width:200px"><label>Nº de factura (opcional)</label>
+            <input id="sal-factura-nro" placeholder="ej: A-0001-00001234"/>
           </div>
         </div>
         <div style="margin-bottom:10px">
@@ -858,7 +875,8 @@ async function loadSalidasFromSupabase() {
         salidaHistorial.push({
           nro: r.nro, desc: r.descripcion,
           lineas: r.lineas, zfeNro: r.zfe_nro,
-          zfeFecha: r.zfe_fecha, cancelaciones: r.cancelaciones, ts: r.ts
+          zfeFecha: r.zfe_fecha, cancelaciones: r.cancelaciones, ts: r.ts,
+          facturaNro: r.factura_nro
         });
       }
     });
@@ -900,7 +918,8 @@ async function saveSalidaToSupabase(salida) {
       body: JSON.stringify({
         nro: salida.nro, descripcion: salida.desc,
         lineas: salida.lineas, zfe_nro: salida.zfeNro,
-        zfe_fecha: salida.zfeFecha, cancelaciones: salida.cancelaciones, ts: salida.ts
+        zfe_fecha: salida.zfeFecha, cancelaciones: salida.cancelaciones, ts: salida.ts,
+        factura_nro: salida.facturaNro||null
       })
     });
   } catch(e) { console.error('Error guardando salida:', e); }
@@ -1752,6 +1771,7 @@ function abrirBorrador(id){
     document.getElementById('sal-titulo').textContent=salidaActiva.nro+(salidaActiva.desc?' — '+salidaActiva.desc:'');
     document.getElementById('sal-zfe-nro').value='';
     document.getElementById('sal-zfe-fecha').value='';
+    document.getElementById('sal-factura-nro').value='';
     document.getElementById('sal-zfe3-texto').value='';
     document.getElementById('sal-pdf-status').textContent='';
     document.getElementById('sal-cancelaciones-wrap').style.display='none';
@@ -2544,10 +2564,11 @@ function confirmarSalida(){
     });
   });
 
+  const facturaNro = document.getElementById('sal-factura-nro').value.trim();
   salidaHistorial.unshift({
     nro:salidaActiva.nro, desc:salidaActiva.desc,
     lineas:[...salidaActiva.lineas],
-    zfeNro, zfeFecha,
+    zfeNro, zfeFecha, facturaNro: facturaNro||null,
     cancelaciones:[...salidaCancelaciones],
     ts:new Date().toLocaleDateString('es-AR')
   });
@@ -2666,6 +2687,41 @@ function toggleDetalleSalida(si){
 // (flete/seguro de la salida en sí, cotización, nro de factura, CUIT del comprador, etc.)
 // quedan marcados como "A_CONFIRMAR" — esto es un borrador para probar, no para subir
 // a un despacho real sin que lo revise el despachante.
+// Mismo cálculo que usa el Packing List (kg neto/bruto, bultos, valor) — reusado acá
+// para que la malla tenga los mismos números de valor/flete/seguro que ya ves ahí.
+function calcularKgYValorLinea(l){
+  const tipo = l.tipo||'triples';
+  const med = l.med;
+  const qty = l.qty;
+  const art = getArt(tipo);
+  const precioUnit = (PRECIOS_USD[tipo]||PRECIOS_USD['triples'])[med]||0;
+  const valorTotal = parseFloat((qty*precioUnit).toFixed(2));
+  const bultosXcaja = art.b[med]||1;
+  const bultos = Math.ceil(qty/bultosXcaja);
+
+  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
+  let kgCTZF=0;
+  if(l.zfis){
+    Object.entries(l.zfis).forEach(([k,sels])=>{
+      if(!matKg.includes(k)) return;
+      const cu=CANCEL_UNIT[k];
+      if(k==='micro90'||k==='micro100'||k==='micro140'||k==='tnt'){
+        if(sels.length) kgCTZF+=getNeeded(k,l.med,l.qty,l.tipo);
+      } else if(cu==='kg'){
+        sels.forEach(s=>kgCTZF+=s.taken||0);
+      }
+    });
+  }
+  const pesoPVC = (tipo==='micromicro') ? 0.47 : (med==='/4'||med==='/5')?0.57:0.47;
+  const kgPVC = art.pesoBulto?0:parseFloat((pesoPVC*qty).toFixed(2));
+  const pesoBultoUnit = art.pesoBulto?(art.pesoBulto[med]||0):0.26;
+  const kgBultos = parseFloat((pesoBultoUnit*bultos).toFixed(2));
+  const kgNeto = parseFloat((kgCTZF+kgPVC+kgBultos).toFixed(2));
+  const kgBruto = parseFloat((kgNeto*1.1).toFixed(2));
+
+  return {qty, precioUnit, valorTotal, bultos, kgNeto, kgBruto};
+}
+
 function xmlEsc_(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -2674,19 +2730,17 @@ function pad2_(n){ return String(n).padStart(2,'0'); }
 function generarCaratulaMallaSalida(sal){
   const hoy = new Date();
   const fechaDDMMYYYY = hoy.toLocaleDateString('es-AR');
-  const totalFOB = (sal.lineas||[]).reduce((s,l)=>{
-    const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
-    return s + precio*l.qty;
-  },0);
-  // Bultos y kg brutos totales (misma cuenta que usa el Packing List)
-  let totalBultos=0, totalKgBruto=0;
+  let totalFOB=0, totalBultos=0, totalKgBruto=0;
   (sal.lineas||[]).forEach(l=>{
-    const art = getArt(l.tipo||'triples');
-    const bxu = art.b?.[l.med] || 1;
-    const bultos = Math.ceil(l.qty/bxu);
-    totalBultos += bultos;
-    // no tenemos el peso unitario del artículo terminado acá — se completa a mano si hace falta
+    const c = calcularKgYValorLinea(l);
+    totalFOB += c.valorTotal;
+    totalBultos += c.bultos;
+    totalKgBruto += c.kgBruto;
   });
+  totalFOB = parseFloat(totalFOB.toFixed(2));
+  totalKgBruto = parseFloat(totalKgBruto.toFixed(2));
+  const flete = parseFloat((totalFOB*0.02).toFixed(2));   // mismo % que usa el Packing List
+  const seguro = parseFloat((totalFOB*0.006).toFixed(2));
   const despachoNro = sal.zfeNro || 'A_CONFIRMAR_'+sal.nro;
 
   let x = '<DESPACHO_CARATULA><CARATULA';
@@ -2698,24 +2752,23 @@ function generarCaratulaMallaSalida(sal){
   x += ' TIPO_IMPO_EXPO="I"';                          // así figura en el ejemplo real, aunque sea una salida
   x += ' NRO_REG_MANIFIESTO="0"';
   x += ' COMPRADOR_VENDEDOR="ALAV SRL - '+xmlEsc_(sal.nro)+'"';
-  x += ' CUIT_IMPO_EXPO="A_CONFIRMAR"';                // CUIT del comprador/cliente — la app no lo tiene
-  x += ' NOMBRE_IMPO_EXPO="A_CONFIRMAR"';
+  x += ' CUIT_IMPO_EXPO="30711936811"';                // ALAV SRL
+  x += ' NOMBRE_IMPO_EXPO="ALAV SRL"';
   x += ' DIVISA_SEGURO="DOL" DIVISA_FLETE="DOL" DIVISA_FOB="DOL"';
-  x += ' PESO_BRUTO_BULTOS="A_CONFIRMAR"';
+  x += ' PESO_BRUTO_BULTOS="'+totalKgBruto.toFixed(2)+'"';
   x += ' CANTIDAD_BULTOS="'+totalBultos+'"';
-  x += ' MONTO_SEGURO="0.00" MONTO_FLETE="0.00"';      // la app no calcula flete/seguro de venta
+  x += ' MONTO_SEGURO="'+seguro.toFixed(2)+'" MONTO_FLETE="'+flete.toFixed(2)+'"';
   x += ' MONTO_FOB="'+totalFOB.toFixed(2)+'"';
-  x += ' BASE_IMPONIBLE="A_CONFIRMAR"';
+  x += ' BASE_IMPONIBLE="A_CONFIRMAR"';                // depende de derechos/liquidación — se completa en María
   x += ' MEDIO_TRANSPORTE="4"';
-  x += ' MARCA_BULTOS="A_CONFIRMAR"';
+  x += ' MARCA_BULTOS="CACHAREL"';
   x += ' PAIS_MEDIO_TRANSPORTE="200"';
   x += ' MATRICULA_MEDIO_TRANSPORTE="INDETERMINADO"';
   x += ' CONDICION_VENTA="FCA"';
   x += ' CODIGO_DEPOSITO="012"';
   x += ' FECHA_OFICIALIZACION="'+xmlEsc_(sal.zfeFecha||fechaDDMMYYYY)+'"';
   x += ' INSCRIPTO_EN_IVA="S"';
-  x += ' COTIZACION_PAGOS="A_CONFIRMAR"';
-  x += ' PESO_GUIA="0.00">';
+  x += ' PESO_GUIA="0.00">';                            // cotización la calcula María sola, no hace falta acá
 
   // Info complementaria — datos fijos de ALAV SRL (los mismos en todos los despachos)
   const cpls = [
@@ -2737,32 +2790,40 @@ function generarCaratulaMallaSalida(sal){
   x += '</INFORMACION_COMPLEMENTARIAS>';
 
   x += '<BULTOS><BULTO NRO_LINEA="1" CODIGO_EMBALAJE="99" TIPO_EMBALAJE="N" NRO_BULTOS="'+totalBultos+'" CANTIDAD_BULTOS_DECLARADOS="'+totalBultos+'" CANTIDAD_UNIDAD_MEDIDA="A_CONFIRMAR" UNIDAD_MEDIDA="61" CANTIDAD_DECLARADA="'+totalBultos+'" CANTIDAD_DISPONIBLE="0"/></BULTOS>';
-  x += '<DOCUMENTOS><DOCUMENTO NRO_LINEA="1" CODIGO="FACTURACOMERCIAL" PRESENCIA="S" REFERENCIA="A_CONFIRMAR"/></DOCUMENTOS>';
+  x += '<DOCUMENTOS><DOCUMENTO NRO_LINEA="1" CODIGO="FACTURACOMERCIAL" PRESENCIA="S" REFERENCIA="'+xmlEsc_(sal.facturaNro||'A_CONFIRMAR')+'"/></DOCUMENTOS>';
   x += '<INGRESOS_BRUTOS_GENERAL EXENTO="E" INSCRIP_CONVENIO="N" NUMERO_INSCRIP="901-302000-1"/>';
   x += '</CARATULA></DESPACHO_CARATULA>';
   return x;
 }
 
 function generarItemsMallaSalida(sal){
+  // Total FOB de la salida, para prorratear flete/seguro por ítem igual que hace el resto del sistema
+  const totalFOBSalida = (sal.lineas||[]).reduce((s,l)=>s+calcularKgYValorLinea(l).valorTotal, 0);
+  const fleteTotalSalida = parseFloat((totalFOBSalida*0.02).toFixed(2));
+  const seguroTotalSalida = parseFloat((totalFOBSalida*0.006).toFixed(2));
+
   let x = '<DESPACHO_ITEMS>';
   (sal.lineas||[]).forEach((l,i)=>{
     const art = getArt(l.tipo||'triples');
     const ncm = getNCMArticulo(l.tipo||'triples', l.med);
-    const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
-    const fobItem = precio * l.qty;
+    const c = calcularKgYValorLinea(l);
+    const fobItem = c.valorTotal;
+    const proporcion = totalFOBSalida>0 ? fobItem/totalFOBSalida : 0;
+    const fleteItem = parseFloat((fleteTotalSalida*proporcion).toFixed(2));
+    const seguroItem = parseFloat((seguroTotalSalida*proporcion).toFixed(2));
     const itemNum = String(l.itemNum||(i+1)).padStart(4,'0');
     const codigoProducto = (art.n||'').replace(/[^A-Z0-9]/gi,'').slice(0,10) || 'SINCOD';
 
     x += '<ARTICULOS NRO_ITEM="'+itemNum+'" TIPO_ITEM="N" POSICION_ARANCELARIA="'+xmlEsc_(ncm)+'"';
     x += ' FECHA_IMPONIBLE="'+xmlEsc_(sal.zfeFecha||new Date().toLocaleDateString('es-AR'))+'"';
-    x += ' EXISTENCIA_SUBITEM="N" ESTADO_MERCADERIA="1" PESO_NETO_KGR="A_CONFIRMAR"';
+    x += ' EXISTENCIA_SUBITEM="N" ESTADO_MERCADERIA="1" PESO_NETO_KGR="'+c.kgNeto.toFixed(2)+'"';
     x += ' PAIS_ORIGEN="258" PAIS_PROCEDENCIA="258" UNIDAD_DECLARADA="07"';
-    x += ' CANTIDAD_DECLARADA="'+l.qty.toFixed(2)+'" UNIDAD_ESTADISTICA="01" CANTIDAD_ESTADISTICA="A_CONFIRMAR"';
+    x += ' CANTIDAD_DECLARADA="'+l.qty.toFixed(2)+'" UNIDAD_ESTADISTICA="01" CANTIDAD_ESTADISTICA="'+c.kgNeto.toFixed(2)+'"';
     x += ' CANTIDAD_ESPECIFICA="0.00" VALOR_DERECHO_ESPECIFICO="0.00"';
     x += ' MONTO_FOB_DIV="'+fobItem.toFixed(2)+'" MONTO_FOB_DOL="'+fobItem.toFixed(2)+'"';
-    x += ' MONTO_SEGURO="0.00" MONTO_FLETE="0.00" AJUSTE_A_DEDUCIR="0.00" AJUSTE_A-INCLUIR="0.00"';
+    x += ' MONTO_SEGURO="'+seguroItem.toFixed(2)+'" MONTO_FLETE="'+fleteItem.toFixed(2)+'" AJUSTE_A_DEDUCIR="0.00" AJUSTE_A-INCLUIR="0.00"';
     x += ' BASE_IMPONIBLE_DIV="A_CONFIRMAR" BASE_IMPONIBLE_DOL="A_CONFIRMAR"';
-    x += ' PRECIO_UNITARIO="'+(l.qty>0?(fobItem/l.qty).toFixed(4):'0.0000')+'"';
+    x += ' PRECIO_UNITARIO="'+c.precioUnit.toFixed(4)+'"';
     x += ' COEFICIENTE_DERECHO_INC="0.000000" INSUMOS_IMPORTADOS_TEMPORARIOS="0.00" INSUMOS_IMPORTADOS_A_CONSUMO="0.00"';
     x += ' CALIDAD_DISTINTA_STANDAR="N" AUTOLIQUIDACION="M" PAGO_REGALIAS="N" PRECIO_OFICIAL_DOL="0.0000">';
 
@@ -2814,11 +2875,32 @@ function descargarBlob_(texto, nombreArchivo){
   URL.revokeObjectURL(url);
 }
 
+let salidaParaMallaActual = null;
+
 function descargarMallaSalida(sal){
-  if(!confirm('⚠️ Este es un borrador armado a partir de archivos reales de ejemplo, pero varios campos que la app no tiene (flete/seguro de venta, cotización, CUIT del comprador, nº de factura) quedan marcados "A_CONFIRMAR". No lo subas a un despacho real sin completarlos y que lo revise el despachante.\n\n¿Generar igual para hacer la prueba?')) return;
+  salidaParaMallaActual = sal;
+  document.getElementById('malla-factura-inp').value = sal.facturaNro || '';
+  document.getElementById('malla-factura-modal').style.display = 'flex';
+}
+
+async function confirmarDescargaMalla(){
+  const sal = salidaParaMallaActual;
+  if(!sal) return;
+  const facturaNro = document.getElementById('malla-factura-inp').value.trim();
+  sal.facturaNro = facturaNro || null;
+
+  // Guardar el número de factura en la salida, para la próxima vez
+  try{
+    await sbFetch('salidas?nro=eq.'+encodeURIComponent(sal.nro), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({factura_nro: sal.facturaNro})
+    });
+  }catch(e){ console.error('No se pudo guardar la factura:', e); }
+
+  document.getElementById('malla-factura-modal').style.display = 'none';
   const nroLimpio = (sal.zfeNro||sal.nro).replace(/[^A-Za-z0-9]/g,'');
-  descargarBlob_(generarCaratulaMallaSalida(sal), 'C'+nroLimpio+'.txt');
-  descargarBlob_(generarItemsMallaSalida(sal), 'I'+nroLimpio+'.txt');
+  const contenido = generarCaratulaMallaSalida(sal) + '\n' + generarItemsMallaSalida(sal);
+  descargarBlob_(contenido, nroLimpio+'.txt');
 }
 
 function eliminarSalida(i){
