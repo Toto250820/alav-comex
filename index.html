@@ -130,6 +130,15 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 .admpanel{display:none}.admpanel.active{display:block}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg3)}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--ac)}
 @media(max-width:600px){.wrap{padding:10px}.hdr{padding:0 10px}.presence-roster{gap:4px}.p-user{padding:3px 8px;font-size:10px}}
+@media(min-width:901px){
+  body{padding-left:210px}
+  .hdr{position:fixed;top:0;left:0;bottom:0;width:210px;height:100vh;flex-direction:column;align-items:stretch;padding:18px 12px;gap:14px;overflow-y:auto;border-bottom:none;border-right:2px solid var(--ac);box-shadow:4px 0 16px rgba(0,0,0,.3)}
+  .hdr .logo{text-align:center;width:100%;margin-bottom:4px}
+  .hdr .nav{flex-direction:column;flex:none;overflow:visible;gap:3px;width:100%}
+  .hdr .nb{text-align:left;width:100%;padding:9px 12px}
+  .hdr #presence-badge.presence-roster{flex-direction:column;align-items:flex-start;gap:6px;margin-top:auto;width:100%;padding-top:14px;border-top:1px solid rgba(255,255,255,.12)}
+  #update-banner,#minimo-banner{top:0}
+}
 /* Colaboración: presencia, banner de novedades, toast, modal de nombre */
 .presence-roster{display:flex;gap:8px;font-family:var(--mn);font-size:11px}
 .p-user{padding:4px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.2);color:#8a93a5;background:rgba(255,255,255,.04);transition:all .2s;white-space:nowrap}
@@ -2591,6 +2600,7 @@ function renderSalidaHist(){
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--ac);border-color:var(--ac);color:#fff" onclick='imprimirSalida(salidaHistorial[${si}])'>🖨 Salida</button>
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--gr);border-color:var(--gr);color:#fff" onclick='imprimirPackingList(salidaHistorial[${si}])'>📦 Packing</button>
           <button class="btn btnpu" style="padding:4px 10px;font-size:11px" onclick='generarLiqDesdeSalida(salidaHistorial[${si}])'>$ Liquidación</button>
+          <button class="btn" style="padding:4px 10px;font-size:11px;background:#555;border-color:#555;color:#fff" onclick='descargarMallaSalida(salidaHistorial[${si}])'>📥 Descarga para María (.txt)</button>
           <button class="btn btnd" onclick="eliminarSalida(${si})">✕</button>
         </div>
       </div>
@@ -2649,6 +2659,102 @@ function toggleDetalleSalida(si){
   const el=document.getElementById('det-sal-'+si);
   if(!el) return;
   el.style.display=el.style.display==='none'?'block':'none';
+}
+
+// ⚠️ Formato reconstruido a partir de UN solo archivo de ejemplo (malla tipo SIM/María),
+// sin documentación oficial de ARCA. Es un PRIMER BORRADOR para probar — varios campos
+// están marcados como "a confirmar". No usar para un despacho real sin que lo revise
+// el despachante primero.
+function generarMallaSalida(sal){
+  const hoy = new Date();
+  const fechaDDMMYYYY = hoy.toLocaleDateString('es-AR');
+  const totalFOB = (sal.lineas||[]).reduce((s,l)=>{
+    const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
+    return s + precio*l.qty;
+  },0);
+
+  let txt = '';
+  txt += '[DDT]\n';
+  txt += 'NDDTIMMIOE=\n';                          // TODO: lo asigna el Sistema María al oficializar
+  txt += 'CDDTAGR=30711936811\n';                    // CUIT ALAV SRL (despachante)
+  txt += 'ISTA=IC04\n';                              // TODO a confirmar con el despachante
+  txt += 'CDDTBUR=001\n';                            // TODO a confirmar (código de aduana)
+  txt += 'CDDTDEVFOB=DOL\n';
+  txt += 'MDDTFOB='+totalFOB.toFixed(2)+'\n';
+  txt += 'CDDTDEVFLE=DOL\n';
+  txt += 'MDDTFLE=0.00\n';                           // TODO: no aplica flete externo en salida interna
+  txt += 'CDDTDEVASS=DOL\n';
+  txt += 'MDDTASS=0.00\n';
+  txt += 'CDDTIVA=S\n';
+  txt += 'CDDTINCOTE=FOB\n';
+  txt += 'CDDTPRD=N\n';
+  txt += 'LDDTNOMFOD=ALAV SRL / '+sal.nro+'\n';
+  txt += 'CDDTIMPEXP=E\n';                           // E=Egreso (la salida sale de la Zona Franca)
+  txt += 'IEXT='+sal.nro+'\n';
+  txt += '\n';
+
+  const cpls = [
+    ['DOMICIL.ESTABLEC', 'RUTA NAC. 35 KM 603, GENERAL PICO, LA PAMPA'], // TODO confirmar domicilio exacto
+    ['LOCALIDAD/PROVIN', 'GENERAL PICO / LA PAMPA'],
+    ['FEMB-ORIGEN', fechaDDMMYYYY],
+    ['NRO.REF.INTERNA', sal.nro]
+  ];
+  cpls.forEach(([campo,valor])=>{
+    txt += '[CPL]\n';
+    txt += 'ICPLDIF=D\n';
+    txt += 'CCPL='+campo+'\n';
+    txt += 'MCPL='+valor+'\n';
+    txt += 'NART=0000\n\n';
+  });
+
+  (sal.lineas||[]).forEach((l,i)=>{
+    const art = getArt(l.tipo||'triples');
+    const ncm = getNCMArticulo(l.tipo||'triples', l.med);
+    const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
+    const fobItem = precio * l.qty;
+    const itemNum = String(i+1).padStart(4,'0');
+    const codigoProducto = (art.n||'').replace(/[^A-Z0-9]/gi,'').slice(0,10) || 'SINCOD';
+
+    txt += '[ART]\n';
+    txt += 'CARTUNTDCL=07\n';                        // TODO a confirmar (código de unidad)
+    txt += 'QARTUNTDCL='+l.qty.toFixed(2)+'\n';
+    txt += 'QARTUNTEST='+l.qty.toFixed(2)+'\n';
+    txt += 'QARTKGRNET=0.00\n';                       // TODO: no tenemos el peso del artículo terminado
+    txt += 'MARTFOB='+fobItem.toFixed(2)+'\n';
+    txt += 'MARTASS=0.00\n';
+    txt += 'MARTFLE=0.00\n';
+    txt += 'CARTSBITEM=N\n';
+    txt += 'IESPNCE='+ncm+'\n';
+    txt += 'NARTEXT='+itemNum+'\n';
+    txt += 'CARTTYP=N\n';
+    txt += 'CARTUSO=2\n';
+    txt += 'CARTPAYORI=310\n';
+    txt += 'CARTPAYPRC=310\n';
+    txt += 'CARTPAGREG=N\n';
+    txt += 'CARTCALDST=N\n\n';
+
+    txt += '[SBT]\n';
+    txt += 'CSBTSVL=AA(SIN MARCA)-AI('+codigoProducto+')-SA00-\n';
+    txt += 'NART='+itemNum+'\n';
+    txt += 'ISBT=0000\n';
+    txt += 'IEXT='+codigoProducto+'\n\n';
+  });
+
+  return txt;
+}
+
+function descargarMallaSalida(sal){
+  if(!confirm('⚠️ Este es un PRIMER BORRADOR de la malla, armado sin la documentación oficial de ARCA/María — varios campos quedan marcados "a confirmar". No lo subas a un despacho real sin que lo revise tu despachante primero.\n\n¿Generar igual para hacer la prueba?')) return;
+  const txt = generarMallaSalida(sal);
+  const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'malla_'+sal.nro.replace(/[^A-Za-z0-9]/g,'')+'.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function eliminarSalida(i){
