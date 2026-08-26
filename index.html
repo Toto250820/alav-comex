@@ -2661,100 +2661,164 @@ function toggleDetalleSalida(si){
   el.style.display=el.style.display==='none'?'block':'none';
 }
 
-// ⚠️ Formato reconstruido a partir de UN solo archivo de ejemplo (malla tipo SIM/María),
-// sin documentación oficial de ARCA. Es un PRIMER BORRADOR para probar — varios campos
-// están marcados como "a confirmar". No usar para un despacho real sin que lo revise
-// el despachante primero.
-function generarMallaSalida(sal){
+// ⚠️ Formato reconstruido a partir de archivos .RET reales que me pasó Javi (carátula + ítems
+// de un ZFE3 ya oficializado). Los campos que dependen de datos que la app no tiene
+// (flete/seguro de la salida en sí, cotización, nro de factura, CUIT del comprador, etc.)
+// quedan marcados como "A_CONFIRMAR" — esto es un borrador para probar, no para subir
+// a un despacho real sin que lo revise el despachante.
+function xmlEsc_(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function pad2_(n){ return String(n).padStart(2,'0'); }
+
+function generarCaratulaMallaSalida(sal){
   const hoy = new Date();
   const fechaDDMMYYYY = hoy.toLocaleDateString('es-AR');
   const totalFOB = (sal.lineas||[]).reduce((s,l)=>{
     const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
     return s + precio*l.qty;
   },0);
-
-  let txt = '';
-  txt += '[DDT]\n';
-  txt += 'NDDTIMMIOE=\n';                          // TODO: lo asigna el Sistema María al oficializar
-  txt += 'CDDTAGR=30711936811\n';                    // CUIT ALAV SRL (despachante)
-  txt += 'ISTA=IC04\n';                              // TODO a confirmar con el despachante
-  txt += 'CDDTBUR=001\n';                            // TODO a confirmar (código de aduana)
-  txt += 'CDDTDEVFOB=DOL\n';
-  txt += 'MDDTFOB='+totalFOB.toFixed(2)+'\n';
-  txt += 'CDDTDEVFLE=DOL\n';
-  txt += 'MDDTFLE=0.00\n';                           // TODO: no aplica flete externo en salida interna
-  txt += 'CDDTDEVASS=DOL\n';
-  txt += 'MDDTASS=0.00\n';
-  txt += 'CDDTIVA=S\n';
-  txt += 'CDDTINCOTE=FOB\n';
-  txt += 'CDDTPRD=N\n';
-  txt += 'LDDTNOMFOD=ALAV SRL / '+sal.nro+'\n';
-  txt += 'CDDTIMPEXP=E\n';                           // E=Egreso (la salida sale de la Zona Franca)
-  txt += 'IEXT='+sal.nro+'\n';
-  txt += '\n';
-
-  const cpls = [
-    ['DOMICIL.ESTABLEC', 'RUTA NAC. 35 KM 603, GENERAL PICO, LA PAMPA'], // TODO confirmar domicilio exacto
-    ['LOCALIDAD/PROVIN', 'GENERAL PICO / LA PAMPA'],
-    ['FEMB-ORIGEN', fechaDDMMYYYY],
-    ['NRO.REF.INTERNA', sal.nro]
-  ];
-  cpls.forEach(([campo,valor])=>{
-    txt += '[CPL]\n';
-    txt += 'ICPLDIF=D\n';
-    txt += 'CCPL='+campo+'\n';
-    txt += 'MCPL='+valor+'\n';
-    txt += 'NART=0000\n\n';
+  // Bultos y kg brutos totales (misma cuenta que usa el Packing List)
+  let totalBultos=0, totalKgBruto=0;
+  (sal.lineas||[]).forEach(l=>{
+    const art = getArt(l.tipo||'triples');
+    const bxu = art.b?.[l.med] || 1;
+    const bultos = Math.ceil(l.qty/bxu);
+    totalBultos += bultos;
+    // no tenemos el peso unitario del artículo terminado acá — se completa a mano si hace falta
   });
+  const despachoNro = sal.zfeNro || 'A_CONFIRMAR_'+sal.nro;
 
+  let x = '<DESPACHO_CARATULA><CARATULA';
+  x += ' DESPACHO="'+xmlEsc_(despachoNro)+'"';
+  x += ' DESTINACION="ZFE3"';
+  x += ' COD_ADUANA="258"';
+  x += ' CUIT_DESPACHANTE="30711936811"';
+  x += ' ESTADO_DECLARACION="A_CONFIRMAR"';           // OFIC recién cuando lo oficialice María
+  x += ' TIPO_IMPO_EXPO="I"';                          // así figura en el ejemplo real, aunque sea una salida
+  x += ' NRO_REG_MANIFIESTO="0"';
+  x += ' COMPRADOR_VENDEDOR="ALAV SRL - '+xmlEsc_(sal.nro)+'"';
+  x += ' CUIT_IMPO_EXPO="A_CONFIRMAR"';                // CUIT del comprador/cliente — la app no lo tiene
+  x += ' NOMBRE_IMPO_EXPO="A_CONFIRMAR"';
+  x += ' DIVISA_SEGURO="DOL" DIVISA_FLETE="DOL" DIVISA_FOB="DOL"';
+  x += ' PESO_BRUTO_BULTOS="A_CONFIRMAR"';
+  x += ' CANTIDAD_BULTOS="'+totalBultos+'"';
+  x += ' MONTO_SEGURO="0.00" MONTO_FLETE="0.00"';      // la app no calcula flete/seguro de venta
+  x += ' MONTO_FOB="'+totalFOB.toFixed(2)+'"';
+  x += ' BASE_IMPONIBLE="A_CONFIRMAR"';
+  x += ' MEDIO_TRANSPORTE="4"';
+  x += ' MARCA_BULTOS="A_CONFIRMAR"';
+  x += ' PAIS_MEDIO_TRANSPORTE="200"';
+  x += ' MATRICULA_MEDIO_TRANSPORTE="INDETERMINADO"';
+  x += ' CONDICION_VENTA="FCA"';
+  x += ' CODIGO_DEPOSITO="012"';
+  x += ' FECHA_OFICIALIZACION="'+xmlEsc_(sal.zfeFecha||fechaDDMMYYYY)+'"';
+  x += ' INSCRIPTO_EN_IVA="S"';
+  x += ' COTIZACION_PAGOS="A_CONFIRMAR"';
+  x += ' PESO_GUIA="0.00">';
+
+  // Info complementaria — datos fijos de ALAV SRL (los mismos en todos los despachos)
+  const cpls = [
+    ['ARDIG-CUIT-PSAD','S','PSAD01'], ['ARDIG-SETI-OPC','S','PSAD'],
+    ['DOMICIL.ESTABLEC','D','JOSE VISCARDIS 978'],
+    ['FECHA INIC.ACTIV','D','01/07/2011'],
+    ['FECHAEMISIONFACT','D',fechaDDMMYYYY],
+    ['FEMB-ORIGEN','D',fechaDDMMYYYY],
+    ['IDTRIB-PROVEEDOR','D','30711936811'],
+    ['LOCALIDAD/PROVIN','D','GENERAL PICO - LA PAMPA'],
+    ['NOTACREDITO-TXT','S','NO'], ['NOTADEBITO-TXT','S','NO'],
+    ['R19/02-ZFE-TXT','S','NO'], ['SENASA19/02OPC','S','SINMAD'],
+    ['TRANSFERTEX','S','NO'], ['VARIOSVENDEDORES','S','NO'], ['ZONAFRANCATEX1','S','NO']
+  ];
+  x += '<INFORMACION_COMPLEMENTARIAS>';
+  cpls.forEach(([cod,suf,val],i)=>{
+    x += '<INFORMACION_COMPLEMENTARIA NRO_LINEA="'+(i+1)+'" CODIGO="'+xmlEsc_(cod)+'" SUFIJO_DATO_COMP="'+suf+'" VALOR="'+xmlEsc_(val)+'"/>';
+  });
+  x += '</INFORMACION_COMPLEMENTARIAS>';
+
+  x += '<BULTOS><BULTO NRO_LINEA="1" CODIGO_EMBALAJE="99" TIPO_EMBALAJE="N" NRO_BULTOS="'+totalBultos+'" CANTIDAD_BULTOS_DECLARADOS="'+totalBultos+'" CANTIDAD_UNIDAD_MEDIDA="A_CONFIRMAR" UNIDAD_MEDIDA="61" CANTIDAD_DECLARADA="'+totalBultos+'" CANTIDAD_DISPONIBLE="0"/></BULTOS>';
+  x += '<DOCUMENTOS><DOCUMENTO NRO_LINEA="1" CODIGO="FACTURACOMERCIAL" PRESENCIA="S" REFERENCIA="A_CONFIRMAR"/></DOCUMENTOS>';
+  x += '<INGRESOS_BRUTOS_GENERAL EXENTO="E" INSCRIP_CONVENIO="N" NUMERO_INSCRIP="901-302000-1"/>';
+  x += '</CARATULA></DESPACHO_CARATULA>';
+  return x;
+}
+
+function generarItemsMallaSalida(sal){
+  let x = '<DESPACHO_ITEMS>';
   (sal.lineas||[]).forEach((l,i)=>{
     const art = getArt(l.tipo||'triples');
     const ncm = getNCMArticulo(l.tipo||'triples', l.med);
     const precio = (PRECIOS_USD[l.tipo||'triples']||{})[l.med] || 0;
     const fobItem = precio * l.qty;
-    const itemNum = String(i+1).padStart(4,'0');
+    const itemNum = String(l.itemNum||(i+1)).padStart(4,'0');
     const codigoProducto = (art.n||'').replace(/[^A-Z0-9]/gi,'').slice(0,10) || 'SINCOD';
 
-    txt += '[ART]\n';
-    txt += 'CARTUNTDCL=07\n';                        // TODO a confirmar (código de unidad)
-    txt += 'QARTUNTDCL='+l.qty.toFixed(2)+'\n';
-    txt += 'QARTUNTEST='+l.qty.toFixed(2)+'\n';
-    txt += 'QARTKGRNET=0.00\n';                       // TODO: no tenemos el peso del artículo terminado
-    txt += 'MARTFOB='+fobItem.toFixed(2)+'\n';
-    txt += 'MARTASS=0.00\n';
-    txt += 'MARTFLE=0.00\n';
-    txt += 'CARTSBITEM=N\n';
-    txt += 'IESPNCE='+ncm+'\n';
-    txt += 'NARTEXT='+itemNum+'\n';
-    txt += 'CARTTYP=N\n';
-    txt += 'CARTUSO=2\n';
-    txt += 'CARTPAYORI=310\n';
-    txt += 'CARTPAYPRC=310\n';
-    txt += 'CARTPAGREG=N\n';
-    txt += 'CARTCALDST=N\n\n';
+    x += '<ARTICULOS NRO_ITEM="'+itemNum+'" TIPO_ITEM="N" POSICION_ARANCELARIA="'+xmlEsc_(ncm)+'"';
+    x += ' FECHA_IMPONIBLE="'+xmlEsc_(sal.zfeFecha||new Date().toLocaleDateString('es-AR'))+'"';
+    x += ' EXISTENCIA_SUBITEM="N" ESTADO_MERCADERIA="1" PESO_NETO_KGR="A_CONFIRMAR"';
+    x += ' PAIS_ORIGEN="258" PAIS_PROCEDENCIA="258" UNIDAD_DECLARADA="07"';
+    x += ' CANTIDAD_DECLARADA="'+l.qty.toFixed(2)+'" UNIDAD_ESTADISTICA="01" CANTIDAD_ESTADISTICA="A_CONFIRMAR"';
+    x += ' CANTIDAD_ESPECIFICA="0.00" VALOR_DERECHO_ESPECIFICO="0.00"';
+    x += ' MONTO_FOB_DIV="'+fobItem.toFixed(2)+'" MONTO_FOB_DOL="'+fobItem.toFixed(2)+'"';
+    x += ' MONTO_SEGURO="0.00" MONTO_FLETE="0.00" AJUSTE_A_DEDUCIR="0.00" AJUSTE_A-INCLUIR="0.00"';
+    x += ' BASE_IMPONIBLE_DIV="A_CONFIRMAR" BASE_IMPONIBLE_DOL="A_CONFIRMAR"';
+    x += ' PRECIO_UNITARIO="'+(l.qty>0?(fobItem/l.qty).toFixed(4):'0.0000')+'"';
+    x += ' COEFICIENTE_DERECHO_INC="0.000000" INSUMOS_IMPORTADOS_TEMPORARIOS="0.00" INSUMOS_IMPORTADOS_A_CONSUMO="0.00"';
+    x += ' CALIDAD_DISTINTA_STANDAR="N" AUTOLIQUIDACION="M" PAGO_REGALIAS="N" PRECIO_OFICIAL_DOL="0.0000">';
 
-    txt += '[SBT]\n';
-    txt += 'CSBTSVL=AA(SIN MARCA)-AI('+codigoProducto+')-SA00-\n';
-    txt += 'NART='+itemNum+'\n';
-    txt += 'ISBT=0000\n';
-    txt += 'IEXT='+codigoProducto+'\n\n';
+    x += '<SUBITEMS><SUBITEM NRO_SUBITEM="0000" SUFIJOS_DE_VALOR="AA(SIN MARCA)-AB('+xmlEsc_(codigoProducto+l.med)+')-"/></SUBITEMS>';
+    x += '<VENTAJAS><LINEAS_VENTAJAS NRO_LINEA="1" CODIGO="AUTOLIQLIBREIMP"/></VENTAJAS>';
+
+    x += '<INFORMACION_COMPLEMENTARIAS>';
+    const infosItem = [
+      ['DSE.PAIS.OPC','S','258'], ['GANANCIASOP3','S','COMERC'], ['IVAADICIONAL1','S','NO_VALIDA'],
+      ['LEY26184ART6','S','NO'], ['LIQMANIMPNOCONT','S','LML-00'], ['PAISEMIT-FACTCOM','S','SI'],
+      ['RES451-19ANEXOI','S','NO'], ['TERRITORIOTEX-1','S','NO'], ['TRAMITE-SITA','D','NO CORRESPONDE']
+    ];
+    infosItem.forEach(([cod,suf,val],j)=>{
+      x += '<INFORMACION_COMPLEMENTARIA NRO_LINEA="'+(j+1)+'" CODIGO="'+xmlEsc_(cod)+'" SUFIJO_DATO_COMP="'+suf+'" VALOR="'+xmlEsc_(val)+'"/>';
+    });
+    x += '</INFORMACION_COMPLEMENTARIAS>';
+
+    // CANCELACIONES — acá sí usamos datos REALES: cada despacho de materia prima
+    // que efectivamente se descontó para esta línea, con su NCM.
+    x += '<CANCELACIONES>';
+    let nroLinea = 1;
+    const matKeys = getMatKeys(l.tipo||'triples');
+    matKeys.forEach(k=>{
+      const m = MAT[k]; if(!m) return;
+      const sels = (l.zfis||{})[k]||[];
+      sels.forEach(({row})=>{
+        x += '<LINEA_CANCELACION NRO_LINEA="'+nroLinea+'" DESPACHO="'+xmlEsc_(row.despacho)+'" NRO_ITEM="'+row.item+'" NRO_SUBITEM="'+row.subitem+'" POSICION_ARANCELARIA="'+xmlEsc_(m.ncm)+'" NUMERO_ORDEN="0"/>';
+        nroLinea++;
+      });
+    });
+    x += '</CANCELACIONES>';
+
+    x += '<DOCUMENTOS><DOCUMENTO NRO_LINEA="1" CODIGO="CERT-TIPIFIC-ZF" PRESENCIA="S" REFERENCIA="A_CONFIRMAR"/></DOCUMENTOS>';
+    x += '</ARTICULOS>';
   });
-
-  return txt;
+  x += '</DESPACHO_ITEMS>';
+  return x;
 }
 
-function descargarMallaSalida(sal){
-  if(!confirm('⚠️ Este es un PRIMER BORRADOR de la malla, armado sin la documentación oficial de ARCA/María — varios campos quedan marcados "a confirmar". No lo subas a un despacho real sin que lo revise tu despachante primero.\n\n¿Generar igual para hacer la prueba?')) return;
-  const txt = generarMallaSalida(sal);
-  const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+function descargarBlob_(texto, nombreArchivo){
+  const blob = new Blob([texto], {type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'malla_'+sal.nro.replace(/[^A-Za-z0-9]/g,'')+'.txt';
+  a.download = nombreArchivo;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function descargarMallaSalida(sal){
+  if(!confirm('⚠️ Este es un borrador armado a partir de archivos reales de ejemplo, pero varios campos que la app no tiene (flete/seguro de venta, cotización, CUIT del comprador, nº de factura) quedan marcados "A_CONFIRMAR". No lo subas a un despacho real sin completarlos y que lo revise el despachante.\n\n¿Generar igual para hacer la prueba?')) return;
+  const nroLimpio = (sal.zfeNro||sal.nro).replace(/[^A-Za-z0-9]/g,'');
+  descargarBlob_(generarCaratulaMallaSalida(sal), 'C'+nroLimpio+'.txt');
+  descargarBlob_(generarItemsMallaSalida(sal), 'I'+nroLimpio+'.txt');
 }
 
 function eliminarSalida(i){
