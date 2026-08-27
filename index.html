@@ -2899,7 +2899,7 @@ async function confirmarDescargaMalla(){
 
   document.getElementById('malla-factura-modal').style.display = 'none';
   const nroLimpio = (sal.zfeNro||sal.nro).replace(/[^A-Za-z0-9]/g,'');
-  const contenido = generarCaratulaMallaSalida(sal) + '\n' + generarItemsMallaSalida(sal);
+  const contenido = generarCaratulaMallaSalida(sal) + '\r\n' + generarItemsMallaSalida(sal) + '\r\n';
   descargarBlob_(contenido, nroLimpio+'.txt');
 }
 
