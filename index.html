@@ -2741,7 +2741,7 @@ function generarCaratulaMallaSalida(sal){
   totalKgBruto = parseFloat(totalKgBruto.toFixed(2));
   const flete = parseFloat((totalFOB*0.02).toFixed(2));   // mismo % que usa el Packing List
   const seguro = parseFloat((totalFOB*0.006).toFixed(2));
-  const despachoNro = sal.zfeNro || 'A_CONFIRMAR_'+sal.nro;
+  const despachoNro = ''; // vacío: lo asigna María al oficializar, no se manda pre-cargado
 
   let x = '<DESPACHO_CARATULA><CARATULA';
   x += ' DESPACHO="'+xmlEsc_(despachoNro)+'"';
@@ -2898,7 +2898,7 @@ async function confirmarDescargaMalla(){
   }catch(e){ console.error('No se pudo guardar la factura:', e); }
 
   document.getElementById('malla-factura-modal').style.display = 'none';
-  const nroLimpio = (sal.zfeNro||sal.nro).replace(/[^A-Za-z0-9]/g,'');
+  const nroLimpio = sal.nro.replace(/[^A-Za-z0-9]/g,'');
   const contenido = generarCaratulaMallaSalida(sal) + '\r\n' + generarItemsMallaSalida(sal) + '\r\n';
   descargarBlob_(contenido, nroLimpio+'.txt');
 }
