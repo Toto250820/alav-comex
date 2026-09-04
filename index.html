@@ -349,6 +349,23 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div id="sal-lineas-empty" class="empty" style="padding:16px">Sin líneas. Andá a la Calculadora y usá "+ Agregar a Salida".</div>
       <div id="sal-lineas"></div>
 
+      <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--bd2)">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">🛏️ Agregar línea de Sábana (CTZF)</div>
+        <div class="fr">
+          <div class="ff" style="max-width:180px"><label>Tu código de referencia</label><input id="sab-linea-codigo" placeholder="ej: 1070/1F"/></div>
+          <div class="ff" style="max-width:260px"><label>Buscar receta (RIP)</label>
+            <input id="sab-linea-buscar" list="sab-lineas-datalist" placeholder="ej: 1060/1A, Manta, Ajustable Queen" oninput="seleccionarRecetaLinea()"/>
+            <datalist id="sab-lineas-datalist"></datalist>
+          </div>
+          <div class="ff" style="max-width:120px"><label>Cantidad</label><input id="sab-linea-cantidad" type="number" step="1" oninput="calcularInsumosLineaSabana()"/></div>
+        </div>
+        <div id="sab-linea-info" style="font-size:11px;color:var(--tx3);margin:4px 0"></div>
+        <div id="sab-linea-insumos"></div>
+        <button class="btn btnp" style="margin-top:8px" onclick="agregarLineaSabanaASalida()">+ Agregar esta línea a la salida</button>
+      </div>
+
+      <div id="sal-sabanas-lista" style="margin-top:10px"></div>
+
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" style="background:var(--ac);border-color:var(--ac);color:#fff" onclick="imprimirSalida()">🖨 Imprimir salida para María</button>
         <button class="btn btnpu" onclick="generarLiqDesdeSalida()">$ Generar liquidación</button>
@@ -603,6 +620,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="admtab" onclick="showAdmTab('adm-avisos',this)">🔔 Avisos de Carga</button>
       <button class="admtab" onclick="showAdmTab('adm-ajuste',this)">🔧 Corrección de Stock</button>
       <button class="admtab" onclick="showAdmTab('adm-minimos',this)">⚠️ Stock Mínimo</button>
+      <button class="admtab" onclick="showAdmTab('adm-sabanas',this)">🛏️ CTZF Sábanas</button>
       <button class="admtab" onclick="showAdmTab('adm-pin',this)">Cambiar PIN</button>
     </div>
     <div id="adm-stock" class="admpanel active">
@@ -769,6 +787,35 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div id="min-lista"><div class="empty">Cargando...</div></div>
       </div>
     </div>
+    <div id="adm-sabanas" class="admpanel">
+      <div class="card" style="max-width:640px">
+        <div class="ct">Nueva receta de Sábana (CTZF)</div>
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">El mismo artículo puede tener más de una receta cargada (distinto RIP) — al armar la salida vas a poder elegir cuál usar.</div>
+        <div class="fr">
+          <div class="ff" style="max-width:130px"><label>Código artículo</label><input id="sab-codigo" placeholder="ej: 1070/1F"/></div>
+          <div class="ff" style="max-width:220px"><label>Nombre</label><input id="sab-nombre" placeholder="ej: Sábana Poliester Twin"/></div>
+          <div class="ff" style="max-width:130px"><label>NCM del artículo</label><input id="sab-ncm" placeholder="ej: 6302.22.00.120Y"/></div>
+        </div>
+        <div class="fr">
+          <div class="ff" style="max-width:100px"><label>RIP</label><input id="sab-rip" placeholder="ej: #2"/></div>
+          <div class="ff" style="max-width:150px"><label>Nº CTZF</label><input id="sab-ctzf" placeholder="ej: 00153/2023"/></div>
+          <div class="ff" style="max-width:150px"><label>Cantidad base (unidades)</label><input id="sab-cantbase" type="number" step="1" placeholder="ej: 900"/></div>
+        </div>
+
+        <div style="margin:14px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Insumos de la receta (para la cantidad base de arriba)</label></div>
+        <div id="sab-insumos-lista"></div>
+        <button class="btn" style="margin-top:6px" onclick="agregarInsumoSabana()">+ Agregar insumo</button>
+
+        <div style="margin-top:14px"><button class="btn btnp" onclick="guardarRecetaSabana()">✓ Guardar receta</button></div>
+        <div id="sab-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Recetas cargadas</div>
+        <input id="sab-buscar" placeholder="Buscar por código o nombre..." oninput="renderRecetasSabana()" style="width:100%;max-width:320px;margin-bottom:10px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:13px;padding:7px 9px;box-sizing:border-box"/>
+        <div id="sab-lista"><div class="empty">Cargando...</div></div>
+      </div>
+    </div>
     <div id="adm-pin" class="admpanel">
       <div class="card" style="max-width:360px">
         <div class="ct">Cambiar PIN</div>
@@ -874,7 +921,7 @@ async function loadSalidasFromSupabase() {
       if (!nrosHard.has(r.nro)) {
         salidaHistorial.push({
           nro: r.nro, desc: r.descripcion,
-          lineas: r.lineas, zfeNro: r.zfe_nro,
+          lineas: r.lineas, sabanas: r.sabanas||[], zfeNro: r.zfe_nro,
           zfeFecha: r.zfe_fecha, cancelaciones: r.cancelaciones, ts: r.ts,
           facturaNro: r.factura_nro
         });
@@ -917,7 +964,7 @@ async function saveSalidaToSupabase(salida) {
       headers: {'Prefer': 'resolution=merge-duplicates,return=minimal'},
       body: JSON.stringify({
         nro: salida.nro, descripcion: salida.desc,
-        lineas: salida.lineas, zfe_nro: salida.zfeNro,
+        lineas: salida.lineas, sabanas: salida.sabanas||[], zfe_nro: salida.zfeNro,
         zfe_fecha: salida.zfeFecha, cancelaciones: salida.cancelaciones, ts: salida.ts,
         factura_nro: salida.facturaNro||null
       })
@@ -1499,6 +1546,7 @@ function showAdmTab(id,btn){
   }
   if(id==='adm-ajuste'){ loadAjustesStock(); }
   if(id==='adm-minimos'){ poblarSelectorMinimo(); loadStockMinimos(); }
+  if(id==='adm-sabanas'){ if(!sabInsumoIndices.length) agregarInsumoSabana(); loadRecetasSabana(); }
 }
 
 // ── CALCULADORA ───────────────────────────────────────────────────────────────
@@ -1691,7 +1739,7 @@ function crearSalida(){
   const nro=document.getElementById('sal-nro').value.trim();
   if(!nro){alert('Ingresá el número de salida.');return;}
   const desc=document.getElementById('sal-desc').value.trim();
-  salidaActiva={id:Date.now(),nro,desc,lineas:[]};
+  salidaActiva={id:Date.now(),nro,desc,lineas:[],sabanas:[]};
   salidaBorradores.push(salidaActiva);
   salidaCancelaciones=[];
   document.getElementById('sal-titulo').textContent=`Salida ${nro}${desc?' — '+desc:''}`;
@@ -1847,6 +1895,109 @@ function addToSalida(){
   document.getElementById('sal-activa-wrap').style.display='block';
   document.getElementById('sal-nueva-wrap').style.display='none';
   renderSalidaLineas();
+}
+
+// ═══════════════════════════════════════════
+// LÍNEAS DE SÁBANA dentro de una Salida (CTZF) — insumos calculados,
+// despacho anotado a mano (todavía no hay stock de estos insumos en el sistema)
+// ═══════════════════════════════════════════
+let recetaSabanaLineaSel = null;
+
+function poblarDatalistRecetasLinea(){
+  const dl = document.getElementById('sab-lineas-datalist');
+  if(!dl) return;
+  dl.innerHTML = recetasSabana.map(r=>`<option value="${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})"></option>`).join('');
+}
+
+function seleccionarRecetaLinea(){
+  const texto = document.getElementById('sab-linea-buscar').value.trim();
+  recetaSabanaLineaSel = recetasSabana.find(r => `${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})` === texto) || null;
+  calcularInsumosLineaSabana();
+}
+
+function calcularInsumosLineaSabana(){
+  const info = document.getElementById('sab-linea-info');
+  const cont = document.getElementById('sab-linea-insumos');
+  const cantidad = parseFloat(document.getElementById('sab-linea-cantidad').value);
+
+  if(!recetaSabanaLineaSel){ info.textContent=''; cont.innerHTML=''; return; }
+  if(isNaN(cantidad) || cantidad<=0){ info.textContent='Falta poner la cantidad.'; cont.innerHTML=''; return; }
+
+  let mats=[]; try{ mats = JSON.parse(recetaSabanaLineaSel.materiales||'[]'); }catch(e){}
+  const factor = cantidad / (recetaSabanaLineaSel.cantidad_base||1);
+  info.textContent = `Receta: ${recetaSabanaLineaSel.articulo_codigo} — ${recetaSabanaLineaSel.articulo_nombre} (RIP ${recetaSabanaLineaSel.rip}, CTZF ${recetaSabanaLineaSel.ctzf_numero||'—'})`;
+
+  cont.innerHTML = `<table><thead><tr><th>Insumo</th><th>NCM</th><th>Necesario</th><th>Despacho / ítem / subítem</th></tr></thead><tbody>
+    ${mats.map((m,i)=>{
+      const necesario = parseFloat((m.cantidad*factor).toFixed(4));
+      return `<tr>
+        <td>${m.nombre}</td>
+        <td class="mono">${m.ncm||'—'}</td>
+        <td class="mono">${fmt(necesario)} ${m.unidad}</td>
+        <td><input id="sab-linea-desp-${i}" placeholder="ej: 26258ZFI8000020J ít.3 sub.0" style="width:100%;font-family:var(--mn);font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+function agregarLineaSabanaASalida(){
+  if(!salidaActiva){ alert('Primero armá o abrí una salida.'); return; }
+  const codigo = document.getElementById('sab-linea-codigo').value.trim();
+  const cantidad = parseFloat(document.getElementById('sab-linea-cantidad').value);
+  if(!codigo){ alert('Escribí tu código de referencia (ej: 1070/1F).'); return; }
+  if(!recetaSabanaLineaSel){ alert('Elegí una receta de la lista.'); return; }
+  if(isNaN(cantidad) || cantidad<=0){ alert('Poné la cantidad.'); return; }
+
+  let mats=[]; try{ mats = JSON.parse(recetaSabanaLineaSel.materiales||'[]'); }catch(e){}
+  const factor = cantidad / (recetaSabanaLineaSel.cantidad_base||1);
+  const materialesUsados = mats.map((m,i)=>({
+    nombre: m.nombre, ncm: m.ncm, unidad: m.unidad,
+    necesario: parseFloat((m.cantidad*factor).toFixed(4)),
+    despacho_anotado: (document.getElementById('sab-linea-desp-'+i)?.value||'').trim()
+  }));
+
+  if(!salidaActiva.sabanas) salidaActiva.sabanas = [];
+  salidaActiva.sabanas.push({
+    codigo, cantidad,
+    receta_codigo: recetaSabanaLineaSel.articulo_codigo,
+    receta_nombre: recetaSabanaLineaSel.articulo_nombre,
+    rip: recetaSabanaLineaSel.rip, ctzf_numero: recetaSabanaLineaSel.ctzf_numero,
+    materiales: materialesUsados
+  });
+
+  document.getElementById('sab-linea-codigo').value='';
+  document.getElementById('sab-linea-buscar').value='';
+  document.getElementById('sab-linea-cantidad').value='';
+  document.getElementById('sab-linea-info').textContent='';
+  document.getElementById('sab-linea-insumos').innerHTML='';
+  recetaSabanaLineaSel = null;
+  renderSalidaSabanas();
+  save();
+}
+
+function quitarLineaSabanaDeSalida(i){
+  if(!confirm('¿Quitar esta línea de sábana de la salida?')) return;
+  salidaActiva.sabanas.splice(i,1);
+  renderSalidaSabanas();
+  save();
+}
+
+function renderSalidaSabanas(){
+  const el = document.getElementById('sal-sabanas-lista');
+  if(!el || !salidaActiva) return;
+  const lista = salidaActiva.sabanas||[];
+  if(!lista.length){ el.innerHTML=''; return; }
+
+  el.innerHTML = `<div class="stit" style="margin-top:14px">Líneas de Sábana agregadas</div>` + lista.map((l,i)=>`
+    <div class="mb">
+      <div class="mh">
+        <div><strong>${l.codigo}</strong> — ${l.receta_nombre} (${l.receta_codigo}, RIP ${l.rip}) · ${fmt(l.cantidad)} u</div>
+        <button class="btn btnd" style="padding:2px 8px;font-size:10px" onclick="quitarLineaSabanaDeSalida(${i})">✕</button>
+      </div>
+      <table><thead><tr><th>Insumo</th><th>Necesario</th><th>Despacho anotado</th></tr></thead><tbody>
+        ${l.materiales.map(m=>`<tr><td>${m.nombre}</td><td class="mono">${fmt(m.necesario)} ${m.unidad}</td><td>${m.despacho_anotado||'—'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`).join('');
 }
 
 function renderSalidaLineas(){
@@ -2568,6 +2719,7 @@ function confirmarSalida(){
   salidaHistorial.unshift({
     nro:salidaActiva.nro, desc:salidaActiva.desc,
     lineas:[...salidaActiva.lineas],
+    sabanas:[...(salidaActiva.sabanas||[])],
     zfeNro, zfeFecha, facturaNro: facturaNro||null,
     cancelaciones:[...salidaCancelaciones],
     ts:new Date().toLocaleDateString('es-AR')
@@ -2601,12 +2753,24 @@ function renderSalidaHist(){
     document.getElementById('sal-activa-wrap').style.display='block';
     document.getElementById('sal-nueva-wrap').style.display='none';
     renderSalidaLineas();
+    renderSalidaSabanas();
+    if(!recetasSabana.length) loadRecetasSabana().then(poblarDatalistRecetasLinea);
+    else poblarDatalistRecetasLinea();
   }
   if(!salidaHistorial.length){el.innerHTML='<div class="empty">Sin salidas confirmadas.</div>';return;}
   try{
-  // Se muestra con la más reciente arriba (por fecha de confirmación), sin reordenar el array real
+  // Se muestra con la más reciente arriba. OJO: "ts" se guarda como texto DD/MM/AAAA
+  // (formato argentino), y new Date() de JS NO lo interpreta bien tal cual —
+  // por eso se parsea a mano acá antes de comparar.
+  function parseFechaAR_(str){
+    if(!str) return new Date(0);
+    const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+    const d = new Date(str);
+    return isNaN(d) ? new Date(0) : d;
+  }
   const conIndice = salidaHistorial.map((s,si)=>({s,si}));
-  conIndice.sort((a,b)=> new Date(b.s.ts) - new Date(a.s.ts));
+  conIndice.sort((a,b)=> parseFechaAR_(b.s.ts) - parseFechaAR_(a.s.ts));
   el.innerHTML=conIndice.map(({s,si})=>`
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
@@ -2621,7 +2785,6 @@ function renderSalidaHist(){
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--ac);border-color:var(--ac);color:#fff" onclick='imprimirSalida(salidaHistorial[${si}])'>🖨 Salida</button>
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--gr);border-color:var(--gr);color:#fff" onclick='imprimirPackingList(salidaHistorial[${si}])'>📦 Packing</button>
           <button class="btn btnpu" style="padding:4px 10px;font-size:11px" onclick='generarLiqDesdeSalida(salidaHistorial[${si}])'>$ Liquidación</button>
-          <button class="btn" style="padding:4px 10px;font-size:11px;background:#555;border-color:#555;color:#fff" onclick='descargarMallaSalida(salidaHistorial[${si}])'>📥 Descarga para María (.txt)</button>
           <button class="btn btnd" onclick="eliminarSalida(${si})">✕</button>
         </div>
       </div>
@@ -2650,6 +2813,17 @@ function renderSalidaHist(){
             </tr>`).join('')}
           </tbody>
         </table>
+
+        ${(s.sabanas&&s.sabanas.length) ? `
+        <div style="font-size:11px;font-weight:600;margin:12px 0 8px;color:var(--ac)">🛏️ LÍNEAS DE SÁBANA (CTZF)</div>
+        ${s.sabanas.map(l=>`<div style="font-size:11px;margin-bottom:8px">
+          <strong>${l.codigo}</strong> — ${l.receta_nombre} (${l.receta_codigo}, RIP ${l.rip}) · ${l.cantidad.toLocaleString('es-AR')} u
+          <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
+            <thead><tr style="background:var(--bg3)"><th style="padding:3px 6px;text-align:left">Insumo</th><th style="padding:3px 6px;text-align:right">Necesario</th><th style="padding:3px 6px;text-align:left">Despacho anotado</th></tr></thead>
+            <tbody>${l.materiales.map(m=>`<tr><td style="padding:2px 6px">${m.nombre}</td><td style="padding:2px 6px;text-align:right">${m.necesario.toLocaleString('es-AR')} ${m.unidad}</td><td style="padding:2px 6px">${m.despacho_anotado||'—'}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>`).join('')}
+        ` : ''}
 
         <div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--ac)">📦 DESPACHOS CANCELADOS (ZFE3: ${s.zfeNro})</div>
         <table style="width:100%;border-collapse:collapse;font-size:11px">
@@ -5463,6 +5637,140 @@ async function desmarcarPedidoRealizado(mat){
       body: JSON.stringify({pedido_realizado_fecha: null})
     });
     await loadStockMinimos();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+// ═══════════════════════════════════════════
+// CTZF SÁBANAS — recetas de materia prima por artículo, con RIP alternativos
+// ═══════════════════════════════════════════
+let sabInsumoIndices = [];
+let sabInsumoNextIdx = 0;
+let recetasSabana = [];
+
+function agregarInsumoSabana(){
+  const idx = sabInsumoNextIdx++;
+  sabInsumoIndices.push(idx);
+  const div = document.createElement('div');
+  div.id = 'sab-insumo-'+idx;
+  div.className = 'fr';
+  div.style.alignItems = 'flex-end';
+  div.innerHTML = `
+    <div class="ff" style="max-width:180px"><label>Insumo</label><input id="sab-ins-nombre-${idx}" placeholder="ej: HOLO"/></div>
+    <div class="ff" style="max-width:130px"><label>NCM</label><input id="sab-ins-ncm-${idx}" placeholder="ej: 4911.91.00"/></div>
+    <div class="ff" style="max-width:110px"><label>Cantidad</label><input id="sab-ins-cant-${idx}" type="number" step="0.0001"/></div>
+    <div class="ff" style="max-width:90px"><label>Unidad</label>
+      <select id="sab-ins-unidad-${idx}"><option value="U">U</option><option value="M">M</option><option value="KG">KG</option></select>
+    </div>
+    <button class="btn btnd" onclick="quitarInsumoSabana(${idx})" style="margin-bottom:1px">✕</button>
+  `;
+  document.getElementById('sab-insumos-lista').appendChild(div);
+}
+
+function quitarInsumoSabana(idx){
+  const el = document.getElementById('sab-insumo-'+idx);
+  if(el) el.remove();
+  sabInsumoIndices = sabInsumoIndices.filter(i=>i!==idx);
+}
+
+async function guardarRecetaSabana(){
+  const codigo = document.getElementById('sab-codigo').value.trim();
+  const nombre = document.getElementById('sab-nombre').value.trim();
+  const ncm = document.getElementById('sab-ncm').value.trim();
+  const rip = document.getElementById('sab-rip').value.trim();
+  const ctzf = document.getElementById('sab-ctzf').value.trim();
+  const cantBase = parseFloat(document.getElementById('sab-cantbase').value);
+  const msg = document.getElementById('sab-msg');
+  msg.style.display = 'block';
+
+  if(!codigo || !nombre || !rip || isNaN(cantBase) || !sabInsumoIndices.length){
+    msg.style.color='var(--rd)'; msg.textContent='Completá código, nombre, RIP, cantidad base y al menos un insumo.';
+    return;
+  }
+
+  const materiales = [];
+  for(const idx of sabInsumoIndices){
+    const insNombre = document.getElementById('sab-ins-nombre-'+idx).value.trim();
+    const insNcm = document.getElementById('sab-ins-ncm-'+idx).value.trim();
+    const insCant = parseFloat(document.getElementById('sab-ins-cant-'+idx).value);
+    const insUnidad = document.getElementById('sab-ins-unidad-'+idx).value;
+    if(!insNombre || isNaN(insCant)){
+      msg.style.color='var(--rd)'; msg.textContent='Cada insumo necesita nombre y cantidad.';
+      return;
+    }
+    materiales.push({nombre:insNombre, ncm:insNcm, cantidad:insCant, unidad:insUnidad});
+  }
+
+  const id = 'sab_'+slugify(codigo)+'_'+slugify(rip)+'_'+Date.now();
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('ctzf_sabanas', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({
+        id, articulo_codigo:codigo, articulo_nombre:nombre, ncm, rip, ctzf_numero:ctzf,
+        cantidad_base:cantBase, materiales:JSON.stringify(materiales), creado_por:who
+      })
+    });
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Receta ${codigo} (${rip}) guardada.`;
+    document.getElementById('sab-codigo').value=''; document.getElementById('sab-nombre').value='';
+    document.getElementById('sab-ncm').value=''; document.getElementById('sab-rip').value='';
+    document.getElementById('sab-ctzf').value=''; document.getElementById('sab-cantbase').value='';
+    document.getElementById('sab-insumos-lista').innerHTML=''; sabInsumoIndices=[]; agregarInsumoSabana();
+    await loadRecetasSabana();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
+}
+
+async function loadRecetasSabana(){
+  const el = document.getElementById('sab-lista');
+  try{
+    const rows = await sbFetch('ctzf_sabanas?select=*&order=articulo_codigo.asc', {method:'GET', headers:{'Prefer':''}});
+    recetasSabana = rows || [];
+    renderRecetasSabana();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de recetas (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderRecetasSabana(){
+  const el = document.getElementById('sab-lista');
+  if(!el) return;
+  if(!recetasSabana.length){ el.innerHTML='<div class="empty">Ninguna receta cargada todavía.</div>'; return; }
+
+  const buscar = (document.getElementById('sab-buscar')?.value||'').trim().toLowerCase();
+  const filtradas = buscar
+    ? recetasSabana.filter(r => r.articulo_codigo.toLowerCase().includes(buscar) || (r.articulo_nombre||'').toLowerCase().includes(buscar))
+    : recetasSabana;
+
+  if(!filtradas.length){ el.innerHTML='<div class="empty">Sin resultados para esa búsqueda.</div>'; return; }
+
+  const porArticulo = {};
+  filtradas.forEach(r=>{
+    if(!porArticulo[r.articulo_codigo]) porArticulo[r.articulo_codigo] = [];
+    porArticulo[r.articulo_codigo].push(r);
+  });
+
+  el.innerHTML = Object.entries(porArticulo).map(([codigo, recetas])=>`
+    <div class="mb">
+      <div class="mh"><div><strong>${codigo}</strong> — ${recetas[0].articulo_nombre}</div></div>
+      ${recetas.map(r=>{
+        let mats=[]; try{ mats = JSON.parse(r.materiales||'[]'); }catch(e){}
+        return `<div style="padding:8px 12px;border-top:1px dashed var(--bd2)">
+          <div style="font-size:12px;margin-bottom:4px"><span class="bdg bb">RIP ${r.rip}</span> CTZF ${r.ctzf_numero||'—'} — base: ${fmt(r.cantidad_base)} u
+            <button class="btn btnd" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="borrarRecetaSabana('${r.id}')">✕ Borrar</button>
+          </div>
+          <table><thead><tr><th>Insumo</th><th>NCM</th><th>Cantidad (c/ ${fmt(r.cantidad_base)}u)</th></tr></thead><tbody>
+            ${mats.map(m=>`<tr><td>${m.nombre}</td><td class="mono">${m.ncm||'—'}</td><td class="mono">${fmt(m.cantidad)} ${m.unidad}</td></tr>`).join('')}
+          </tbody></table>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+async function borrarRecetaSabana(id){
+  if(!confirm('¿Borrar esta receta?')) return;
+  try{
+    await sbFetch('ctzf_sabanas?id=eq.'+encodeURIComponent(id), {method:'DELETE', headers:{'Prefer':'return=minimal'}});
+    await loadRecetasSabana();
   }catch(e){ alert('Error: '+e.message); }
 }
 
