@@ -184,8 +184,8 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
     <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">📦 Stock ▾</button>
     <div id="stock-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-stock')">⬆ Cargar</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-ajuste')">🔧 Actualizar</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-stock')">⬆ Cargar</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-ajuste')">🔧 Actualizar</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('stock',document.querySelector('.nb.nstockreal'))">📈 Real</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('merc',document.querySelector('.nb.nmerc'))">🏭 Mercadería</button>
     </div>
@@ -252,6 +252,18 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="btn" onclick="document.getElementById('proveedor-modal').style.display='none'">Cancelar</button>
     </div>
     <div id="prov-modal-msg" style="display:none;margin-top:8px;font-size:11px;color:var(--rd)"></div>
+  </div>
+</div>
+<div id="pin-gate-modal" style="display:none;position:fixed;inset:0;background:rgba(23,33,44,.75);z-index:998;align-items:center;justify-content:center">
+  <div class="pincard">
+    <div class="pintit">⚙ ADMINISTRACIÓN</div>
+    <div class="pinsub">PIN de acceso</div>
+    <input class="pininp" id="pin-gate-inp" type="password" maxlength="6" placeholder="· · · · · ·" onkeyup="if(event.key==='Enter')checkPinModal()"/>
+    <div id="pin-gate-err" style="font-size:11px;color:var(--rd);margin-top:7px;display:none">PIN incorrecto</div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
+      <button class="btn btny" onclick="checkPinModal()">Acceder</button>
+      <button class="btn" onclick="document.getElementById('pin-gate-modal').style.display='none'">Cancelar</button>
+    </div>
   </div>
 </div>
 <div id="malla-factura-modal" style="display:none;position:fixed;inset:0;background:rgba(23,33,44,.75);z-index:998;align-items:center;justify-content:center">
@@ -624,21 +636,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
 <!-- ADMIN -->
 <div id="sec-adm" class="sec">
-  <div id="adm-pin">
-    <div class="pinscrn">
-      <div class="pincard">
-        <div class="pintit">⚙ ADMINISTRACIÓN</div>
-        <div class="pinsub">PIN de acceso</div>
-        <input class="pininp" id="pin-inp" type="password" maxlength="6" placeholder="· · · · · ·" onkeyup="if(event.key==='Enter')checkPin()"/>
-        <div id="pin-err" style="font-size:11px;color:var(--rd);margin-top:7px;display:none">PIN incorrecto</div>
-        <div style="margin-top:12px"><button class="btn btny" onclick="checkPin()">Acceder</button></div>
-      </div>
-    </div>
-  </div>
-  <div id="adm-body" style="display:none">
+  <div id="adm-body">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div class="stit" style="margin-bottom:0">Panel de administración</div>
-      <button class="btn btnd" onclick="lockAdm()">Cerrar sesión</button>
     </div>
     <div class="admtabs" style="display:none">
       <button class="admtab active" onclick="showAdmTab('adm-stock',this)">Cargar stock</button>
@@ -646,7 +646,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="admtab" onclick="showAdmTab('adm-ajuste',this)">🔧 Corrección de Stock</button>
       <button class="admtab" onclick="showAdmTab('adm-minimos',this)">⚠️ Stock Mínimo</button>
       <button class="admtab" onclick="showAdmTab('adm-sabanas',this)">🛏️ CTZF Sábanas</button>
-      <button class="admtab" onclick="showAdmTab('adm-pin',this)">Cambiar PIN</button>
+      <button class="admtab" onclick="showAdmTab('adm-cambiarpin',this)">Cambiar PIN</button>
     </div>
     <div id="adm-stock" class="admpanel active">
       <div class="card">
@@ -841,7 +841,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div id="sab-lista"><div class="empty">Cargando...</div></div>
       </div>
     </div>
-    <div id="adm-pin" class="admpanel">
+    <div id="adm-cambiarpin" class="admpanel">
       <div class="card" style="max-width:360px">
         <div class="ct">Cambiar PIN</div>
         <div class="fr"><div class="ff"><label>PIN actual</label><input id="pa" type="password"/></div></div>
@@ -1593,6 +1593,7 @@ function showAdmTab(id,btn){
   if(id==='adm-ajuste'){ loadAjustesStock(); }
   if(id==='adm-minimos'){ poblarSelectorMinimo(); loadStockMinimos(); }
   if(id==='adm-sabanas'){ if(!sabInsumoIndices.length) agregarInsumoSabana(); loadRecetasSabana(); }
+  if(id==='adm-stock'){ if(!document.getElementById('adm-fecha').value) document.getElementById('adm-fecha').value=new Date().toISOString().split('T')[0]; renderAdmStock(); }
 }
 
 // ── CALCULADORA ───────────────────────────────────────────────────────────────
@@ -5178,25 +5179,29 @@ function imprimirHistorialArticulo(){
 }
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
-function checkPin(){
-  const v=document.getElementById('pin-inp').value;
-  if(v===currentPin){
-    adminOk=true;
-    document.getElementById('adm-pin').style.display='none';
-    document.getElementById('adm-body').style.display='block';
-    document.getElementById('pin-inp').value='';
-    document.getElementById('pin-err').style.display='none';
-    document.getElementById('adm-fecha').value=new Date().toISOString().split('T')[0];
-    renderAdmStock();
-  } else {
-    document.getElementById('pin-err').style.display='block';
-    document.getElementById('pin-inp').value='';
-  }
+let pinPendienteTab = null;
+
+function solicitarPinYAbrir(tabId){
+  if(adminOk){ irAAdminTab(tabId); return; }
+  pinPendienteTab = tabId;
+  cerrarSubmenusNav();
+  document.getElementById('pin-gate-modal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('pin-gate-inp').focus(), 50);
 }
-function lockAdm(){
-  adminOk=false;
-  document.getElementById('adm-pin').style.display='block';
-  document.getElementById('adm-body').style.display='none';
+
+function checkPinModal(){
+  const v = document.getElementById('pin-gate-inp').value;
+  if(v===currentPin){
+    adminOk = true;
+    document.getElementById('pin-gate-modal').style.display = 'none';
+    document.getElementById('pin-gate-inp').value = '';
+    document.getElementById('pin-gate-err').style.display = 'none';
+    const tab = pinPendienteTab; pinPendienteTab = null;
+    if(tab) irAAdminTab(tab);
+  } else {
+    document.getElementById('pin-gate-err').style.display = 'block';
+    document.getElementById('pin-gate-inp').value = '';
+  }
 }
 function cambiarPin(){
   const pa=document.getElementById('pa').value;
