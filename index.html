@@ -174,15 +174,40 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <div class="hdr">
   <div class="logo">ALAV<span>//</span>COMEX</div>
   <div class="nav">
-    <button class="nb active" onclick="showSec('calc',this)">Calculadora</button>
-    <button class="nb nsal" onclick="showSec('sal',this)">📋 Salidas</button>
-    <button class="nb nliq" onclick="showSec('liq',this)">$ Liquidación</button>
-    <button class="nb" onclick="showSec('stock',this)">Stock</button>
+    <button class="nb nproy" onclick="toggleNavMenu('proy-submenu')">📋 Proyección ▾</button>
+    <div id="proy-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb nsal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">➕ Salidas</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">📊 Stock General</button>
+      <button class="nb nliq" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">$ Liquidación</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-sabanas')">🛏️ CTZF Sábanas</button>
+    </div>
+
+    <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">📦 Stock ▾</button>
+    <div id="stock-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-stock')">⬆ Cargar</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-ajuste')">🔧 Actualizar</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('stock',document.querySelector('.nb.nstockreal'))">📈 Real</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('merc',document.querySelector('.nb.nmerc'))">🏭 Mercadería</button>
+    </div>
+
+    <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">🛒 Compras ▾</button>
+    <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">✓ Compra Realizada</button>
+    </div>
+
+    <button class="nb nadm" onclick="toggleNavMenu('admin-submenu')">⚙ Admin ▾</button>
+    <div id="admin-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-minimos')">⚠️ Stock Mínimo</button>
+      <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr);font-size:12px;opacity:.9">📄 Carga Despacho</a>
+    </div>
+
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
-    <button class="nb" onclick="showSec('compras',this)">🛒 Compras</button>
-    <button class="nb" onclick="showSec('merc',this)">📦 Stock Mercadería</button>
-    <button class="nb nadm" onclick="showSec('adm',this)">⚙ Admin</button>
-    <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr)">📄 Cargar despacho (PDF)</a>
+
+    <button class="nb ncalc" style="display:none" onclick="showSec('calc',this)"></button>
+    <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
+    <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -264,7 +289,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
 <!-- CALCULADORA -->
 <div id="sec-calc" class="sec active">
-  <div class="stit">Calculadora de consumo</div>
+  <div class="stit">Stock General — Calculadora de consumo</div>
   <div class="card">
     <div class="fr">
       <div class="ff" style="max-width:200px"><label>Tipo</label>
@@ -346,7 +371,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         </div>
       </div>
 
-      <div id="sal-lineas-empty" class="empty" style="padding:16px">Sin líneas. Andá a la Calculadora y usá "+ Agregar a Salida".</div>
+      <div id="sal-lineas-empty" class="empty" style="padding:16px">Sin líneas. Andá a Stock General y usá "+ Agregar a Salida".</div>
       <div id="sal-lineas"></div>
 
       <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--bd2)">
@@ -1518,6 +1543,27 @@ function getArt(tipo){
 }
 
 // ── NAV ───────────────────────────────────────────────────────────────────────
+function toggleNavMenu(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const abierto = el.style.display === 'flex';
+  cerrarSubmenusNav();
+  el.style.display = abierto ? 'none' : 'flex';
+}
+
+function cerrarSubmenusNav(){
+  document.querySelectorAll('.nav-submenu').forEach(el=>el.style.display='none');
+}
+
+function irAAdminTab(tabId){
+  cerrarSubmenusNav();
+  showSec('adm', document.querySelector('.nb.nadm'));
+  setTimeout(()=>{
+    const tabBtn = [...document.querySelectorAll('.admtab')].find(b=>b.getAttribute('onclick')?.includes(tabId));
+    if(tabBtn) tabBtn.click();
+  }, 150);
+}
+
 function showSec(id,btn){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
@@ -5493,12 +5539,7 @@ async function chequearAlertaStockMinimoGlobal(){
 
 function irAStockMinimo(){
   document.getElementById('minimo-banner').style.display='none';
-  showSec('adm', document.querySelector('.nb.nadm'));
-  // Si ya se pasó el PIN, el panel de Admin ya está visible — activamos directamente la pestaña
-  setTimeout(()=>{
-    const tabBtn = [...document.querySelectorAll('.admtab')].find(b=>b.textContent.includes('Stock Mínimo'));
-    if(tabBtn) tabBtn.click();
-  }, 150);
+  irAAdminTab('adm-minimos');
 }
 
 async function loadStockMinimos(){
@@ -5969,7 +6010,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Calculadora', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;
