@@ -194,6 +194,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
       <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">✓ Compra Realizada</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
     </div>
 
     <button class="nb nadm" onclick="toggleNavMenu('admin-submenu')">⚙ Admin ▾</button>
@@ -219,11 +220,6 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <span>🔄 Hay novedades cargadas por otra persona</span>
   <button onclick="location.reload()">Actualizar ahora</button>
   <button onclick="dismissUpdateBanner()" style="background:none;border-color:var(--tx3);color:var(--tx3)">Después</button>
-</div>
-<div id="minimo-banner" class="update-banner" style="background:var(--rbg);border-bottom-color:rgba(173,49,49,.3);color:var(--rd)">
-  <span id="minimo-banner-txt">⚠️ Insumos en stock mínimo</span>
-  <button onclick="irAStockMinimo()" style="border-color:var(--rd);background:var(--rd)">Ver y avisar a Compras</button>
-  <button onclick="document.getElementById('minimo-banner').style.display='none'" style="background:none;border-color:var(--tx3);color:var(--tx3)">Después</button>
 </div>
 <div id="name-modal">
   <div class="pincard">
@@ -550,6 +546,25 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 
   <div class="stit" style="margin-top:22px">Órdenes registradas</div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
+</div>
+
+<!-- SOLICITUD DE INSUMOS IMPORTADOS -->
+<div id="sec-solimp" class="sec">
+  <div class="stit">Nueva solicitud de insumos importados</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Sin proveedor — solo para dejar registrado qué insumos importados están faltando. Podés poner uno solo o varios juntos en la misma solicitud.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:150px"><label>Fecha</label><input id="solimp-fecha" type="date"/></div>
+    </div>
+    <div id="solimp-items-lista"></div>
+    <button class="btn" style="margin-top:6px" onclick="agregarLineaSolImp()">+ Agregar insumo</button>
+    <div class="fr" style="margin-top:10px"><div class="ff"><label>Nota (opcional)</label><input id="solimp-nota" placeholder="ej: para reponer antes de fin de mes"/></div></div>
+    <button class="btn btnp" style="margin-top:10px" onclick="guardarSolicitudImportados()">✓ Guardar solicitud</button>
+    <div id="solimp-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+
+  <div class="stit" style="margin-top:22px">Solicitudes registradas</div>
+  <div id="solimp-lista"><div class="empty">Cargando...</div></div>
 </div>
 
 <!-- STOCK MERCADERÍA -->
@@ -1057,14 +1072,15 @@ async function initFromSupabase() {
   await loadCustomCategoriasFromSupabase();
   const stockOk = await loadStockFromSupabase();
   await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
+  try{ const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}}); stockMinimos = rows || []; }catch(e){}
   if(stockOk) { renderStock(); renderSalidaHist(); }
-  await chequearAlertaStockMinimoGlobal();
 }
 
 // ═══════════════════════════════════════════
 // AVISOS DE CARGA (Sistema María — vencen a las 24hs)
 // ═══════════════════════════════════════════
 const AVISO_GUESTS = ['javis.spinelli@gmail.com','alav.pico@gmail.com','admi.alavpico02@gmail.com'];
+const COMPRAS_GUESTS = [...AVISO_GUESTS, 'alavsrl.gerencia.pico@gmail.com', 'comex@alavsrl.com']; // + Fernando + Sarita
 
 // Pegá acá la URL que te dio Google al "Implementar" el Apps Script como aplicación web
 // (termina en /exec). Mientras diga 'PEGAR_URL_ACA', los botones de mail abren Gmail como antes.
@@ -1588,6 +1604,7 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); loadPIs(); }
+  if(id==='solimp'){ if(!solImpItemIndices.length) agregarLineaSolImp(); if(!document.getElementById('solimp-fecha').value) document.getElementById('solimp-fecha').value = new Date().toISOString().slice(0,10); loadSolicitudesImportados(); }
   if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); loadSalidasSueltasZFE3().then(poblarDatalistSalidas); }
   if(id==='sal')   renderSalidaHist();
   currentSectionId = id;
@@ -3687,9 +3704,12 @@ function renderStock(){
         </tr>`).join('')}</tbody></table></div>`;
     };
 
+    const minCfg = stockMinimos.find(m=>m.material===k);
+    const bajoMinimo = minCfg && total <= parseFloat(minCfg.minimo);
+
     html+=`<div class="mb"><div class="mh">
-      <span class="mn2">${label}</span>
-      <span style="font-size:12px">Total: <strong>${fmt(total)} ${cu}</strong> — ${rows.length} despacho(s)</span>
+      <span class="mn2">${label}${bajoMinimo?' <span class="bdg" style="background:var(--rbg);color:var(--rd);border:1px solid rgba(173,49,49,.3)">⚠ EN MÍNIMO</span>':''}</span>
+      <span style="font-size:12px">Total: <strong style="${bajoMinimo?'color:var(--rd)':''}">${fmt(total)} ${cu}</strong>${minCfg?` <span class="t2" style="font-size:11px">(mín: ${fmt(minCfg.minimo)} ${cu})</span>`:''} — ${rows.length} despacho(s)</span>
     </div>
     ${nacN.length?tbl(nacN,'rnac','▲ Nacional','snac'):''}
     ${impN.length?tbl(impN,'',nacN.length?'Importados':'','sl'):''}
@@ -4006,7 +4026,7 @@ async function guardarOrdenCompra(){
     if(!ordenRelacionada){
       const itemsTxt = items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n');
       enviarMailDirectoOFallback(
-        AVISO_GUESTS.join(','),
+        COMPRAS_GUESTS.join(','),
         `Nueva Orden de Compra: ${numero} — ${proveedor}`,
         `Se cargó una nueva orden de compra.\n\nOrden: ${numero}\nProveedor: ${proveedor}\nFecha de emisión: ${fechaEmision}\n\nÍtems:\n${itemsTxt}${nota?'\n\nNota: '+nota:''}\n\n— ALAV SRL, Z.F. General Pico`
       );
@@ -4217,7 +4237,7 @@ function enviarMailVencimientoET19(id){
   const asunto = `Vencimiento ET19 ${o.et19} — Orden ${o.numero}`;
   const cuerpo = `La ET19 ${o.et19} (de la orden de compra ${o.numero} — ${o.proveedor}) vence el ${venc.toLocaleDateString('es-AR',{timeZone:'UTC'})}.\n`+
     `Debe reimportarse como ZFI6 antes de esa fecha.\n\n— ALAV SRL, Z.F. General Pico`;
-  const to = AVISO_GUESTS.join(',');
+  const to = COMPRAS_GUESTS.join(',');
   enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
@@ -4297,7 +4317,7 @@ function enviarOrdenPorMail(id){
     items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}${it.nota?' ('+it.nota+')':''}`).join('\n')+
     (o.nota?`\n\nNota: ${o.nota}`:'')+
     `\n\n— ALAV SRL, Z.F. General Pico`;
-  const to = AVISO_GUESTS.join(',');
+  const to = COMPRAS_GUESTS.join(',');
   enviarMailDirectoOFallback(to, asunto, cuerpo);
 }
 
@@ -4316,7 +4336,7 @@ function agregarOrdenACalendar(id){
     `Se realizó el pedido a ${o.proveedor} el ${o.fecha_emision}.\n\n`+
     `Ítems:\n`+items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n')
   );
-  const add = encodeURIComponent(AVISO_GUESTS.join(','));
+  const add = encodeURIComponent(COMPRAS_GUESTS.join(','));
   const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&add=${add}`;
   window.open(url, '_blank');
 }
@@ -4554,6 +4574,153 @@ function imprimirOrdenCompra(id){
 // STOCK MERCADERÍA (producto terminado, por depósito)
 // ═══════════════════════════════════════════
 let stockMercaderia = [];
+
+// ═══════════════════════════════════════════
+// SOLICITUD DE INSUMOS IMPORTADOS (sin proveedor)
+// ═══════════════════════════════════════════
+let solImpItemIndices = [];
+let solImpNextIdx = 0;
+let solicitudesImportados = [];
+
+function agregarLineaSolImp(){
+  const idx = solImpNextIdx++;
+  solImpItemIndices.push(idx);
+  const div = document.createElement('div');
+  div.id = 'solimp-item-'+idx;
+  div.className = 'fr';
+  div.style.alignItems = 'flex-end';
+  div.innerHTML = `
+    <div class="ff" style="max-width:220px"><label>Insumo</label><input id="solimp-nombre-${idx}" placeholder="ej: Guata"/></div>
+    <div class="ff" style="max-width:110px"><label>Cantidad</label><input id="solimp-cant-${idx}" type="number" step="0.01"/></div>
+    <div class="ff" style="max-width:110px"><label>Unidad</label>
+      <select id="solimp-unidad-${idx}"><option value="kg">kg</option><option value="m">m</option><option value="u">u</option></select>
+    </div>
+    <div class="ff"><label>Nota</label><input id="solimp-item-nota-${idx}" placeholder="opcional"/></div>
+    <button class="btn btnd" onclick="quitarLineaSolImp(${idx})" style="margin-bottom:1px">✕</button>
+  `;
+  document.getElementById('solimp-items-lista').appendChild(div);
+}
+
+function quitarLineaSolImp(idx){
+  const el = document.getElementById('solimp-item-'+idx);
+  if(el) el.remove();
+  solImpItemIndices = solImpItemIndices.filter(i=>i!==idx);
+}
+
+async function guardarSolicitudImportados(){
+  const fecha = document.getElementById('solimp-fecha').value;
+  const nota = document.getElementById('solimp-nota').value.trim();
+  const msg = document.getElementById('solimp-msg');
+  msg.style.display = 'block';
+
+  if(!fecha || !solImpItemIndices.length){
+    msg.style.color='var(--rd)'; msg.textContent='Completá la fecha y al menos un insumo.';
+    return;
+  }
+
+  const items = [];
+  for(const idx of solImpItemIndices){
+    const insumo = document.getElementById('solimp-nombre-'+idx).value.trim();
+    const cantidad = parseFloat(document.getElementById('solimp-cant-'+idx).value);
+    const unidad = document.getElementById('solimp-unidad-'+idx).value;
+    const itemNota = document.getElementById('solimp-item-nota-'+idx).value.trim();
+    if(!insumo){
+      msg.style.color='var(--rd)'; msg.textContent='Cada línea necesita el nombre del insumo.';
+      return;
+    }
+    items.push({insumo, cantidad: isNaN(cantidad)?null:cantidad, unidad, nota: itemNota});
+  }
+
+  const numero = 'SI-' + (solicitudesImportados.length+1).toString().padStart(4,'0');
+  const id = 'solimp_'+Date.now();
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+
+  try{
+    await sbFetch('solicitudes_importados', {
+      method:'POST', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({id, numero, fecha, items:JSON.stringify(items), nota, creado_por:who})
+    });
+    msg.style.color='var(--gr)'; msg.textContent=`✓ Solicitud ${numero} guardada con ${items.length} insumo(s).`;
+    document.getElementById('solimp-items-lista').innerHTML=''; solImpItemIndices=[]; agregarLineaSolImp();
+    document.getElementById('solimp-nota').value='';
+    await loadSolicitudesImportados();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando la solicitud: '+e.message; }
+}
+
+async function loadSolicitudesImportados(){
+  const el = document.getElementById('solimp-lista');
+  try{
+    const rows = await sbFetch('solicitudes_importados?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
+    solicitudesImportados = rows || [];
+    renderSolicitudesImportados();
+  }catch(e){
+    if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla (¿corriste el SQL en Supabase?).</div>';
+  }
+}
+
+function renderSolicitudesImportados(){
+  const el = document.getElementById('solimp-lista');
+  if(!el) return;
+  if(!solicitudesImportados.length){ el.innerHTML='<div class="empty">Sin solicitudes registradas todavía.</div>'; return; }
+  el.innerHTML = solicitudesImportados.map(s=>{
+    let items=[]; try{ items = JSON.parse(s.items||'[]'); }catch(e){}
+    return `<div class="mb">
+      <div class="mh">
+        <div><span class="mono" style="font-weight:600">${s.numero}</span> — ${items.length} insumo(s)</div>
+        <div style="font-size:11px;color:var(--tx3)">Fecha: ${s.fecha} · por ${s.creado_por||'?'}</div>
+      </div>
+      <table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>
+        ${items.map(it=>`<tr><td>${it.insumo}</td><td class="mono">${it.cantidad!=null?fmt(it.cantidad)+' '+it.unidad:'—'}</td><td>${it.nota||''}</td></tr>`).join('')}
+      </tbody></table>
+      ${s.nota?`<div class="nbox">${s.nota}</div>`:''}
+      <div style="padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" onclick="imprimirSolicitudImportados('${s.id}')">🖨 Imprimir / PDF</button>
+        <button class="btn" onclick="enviarSolicitudImportadosPorMail('${s.id}')">📧 Enviar por mail</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function imprimirSolicitudImportados(id){
+  const s = solicitudesImportados.find(x=>x.id===id);
+  if(!s) return;
+  let items=[]; try{ items = JSON.parse(s.items||'[]'); }catch(e){}
+
+  let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Solicitud '+s.numero+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}'
+    +'h1{font-size:18px}table{width:100%;border-collapse:collapse;margin:10px 0}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:6px 8px;text-align:left}'
+    +'td{border:1px solid #ccc;padding:6px 8px}'
+    +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
+
+  p+='<div class="hdr"><div><h1>SOLICITUD DE INSUMOS IMPORTADOS '+s.numero+'</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Fecha: '+s.fecha+'</div></div>';
+
+  p+='<table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>'
+    + items.map(it=>'<tr><td>'+it.insumo+'</td><td>'+(it.cantidad!=null?it.cantidad.toLocaleString('es-AR')+' '+it.unidad:'—')+'</td><td>'+(it.nota||'')+'</td></tr>').join('')
+    + '</tbody></table>';
+
+  if(s.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+s.nota+'</div>';
+  p+='</body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+}
+
+function enviarSolicitudImportadosPorMail(id){
+  const s = solicitudesImportados.find(x=>x.id===id);
+  if(!s) return;
+  let items=[]; try{ items = JSON.parse(s.items||'[]'); }catch(e){}
+  const asunto = `Solicitud de Insumos Importados ${s.numero}`;
+  const cuerpo = `Solicitud de Insumos Importados ${s.numero}\nFecha: ${s.fecha}\n\n`+
+    `Insumos:\n`+items.map(it=>`- ${it.insumo}${it.cantidad!=null?': '+it.cantidad+' '+it.unidad:''}${it.nota?' ('+it.nota+')':''}`).join('\n')+
+    (s.nota?`\n\nNota: ${s.nota}`:'')+
+    `\n\n— ALAV SRL, Z.F. General Pico`;
+  enviarMailDirectoOFallback(COMPRAS_GUESTS.join(','), asunto, cuerpo);
+}
 
 async function loadStockMercaderia(){
   const el = document.getElementById('merc-lista');
@@ -5554,29 +5721,6 @@ async function guardarStockMinimo(){
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
 }
 
-// Chequeo global: corre al abrir la app (esté donde esté) y muestra el banner rojo si hace falta
-async function chequearAlertaStockMinimoGlobal(){
-  try{
-    const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}});
-    stockMinimos = rows || [];
-  }catch(e){ return; } // si la tabla no existe todavía, no rompemos nada
-
-  const banner = document.getElementById('minimo-banner');
-  if(!banner || !stockMinimos.length){ if(banner) banner.style.display='none'; return; }
-
-  const bajoMinimo = stockMinimos.filter(m => getDisponibleTotal(m.material) <= parseFloat(m.minimo) && !m.ultimo_aviso);
-  if(!bajoMinimo.length){ banner.style.display='none'; return; }
-
-  const nombres = bajoMinimo.map(m => MAT_LABELS[m.material]||m.material).join(', ');
-  document.getElementById('minimo-banner-txt').textContent = `⚠️ Stock mínimo alcanzado: ${nombres}`;
-  banner.style.display = 'flex';
-}
-
-function irAStockMinimo(){
-  document.getElementById('minimo-banner').style.display='none';
-  irAAdminTab('adm-minimos');
-}
-
 async function loadStockMinimos(){
   try{
     const rows = await sbFetch('stock_minimos?select=*&order=material.asc', {method:'GET', headers:{'Prefer':''}});
@@ -5628,92 +5772,12 @@ function renderStockMinimos(){
     if(!bajoMinimo.length){
       elAlertas.innerHTML = '<div class="empty">Ningún insumo por debajo del mínimo ahora mismo. 👍</div>';
     } else {
-      elAlertas.innerHTML = bajoMinimo.map(m=>{
-        const avisado = !!m.ultimo_aviso;
-        const pedidoHecho = !!m.pedido_realizado_fecha;
-        const color = pedidoHecho ? 'var(--pu)' : (avisado ? 'var(--yw)' : 'var(--rd)');
-        const fechaAviso = avisado ? new Date(m.ultimo_aviso).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-        return `<div style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-            <div><strong style="color:${color}">${m.label}</strong> — disponible: <strong>${fmt(m.disponible)} ${m.cu}</strong> (mínimo: ${fmt(m.minimo)} ${m.cu})
-              ${avisado?` <span class="bdg by">Avisado: ${fechaAviso}</span>`:''}
-              ${pedidoHecho?` <span class="bdg" style="background:var(--pubg);color:var(--pu);border:1px solid rgba(93,74,138,.3)">Pedido realizado: ${new Date(m.pedido_realizado_fecha+'T00:00:00').toLocaleDateString('es-AR')}</span>`:''}
-            </div>
-            <button class="btn ${avisado?'':'btnd'}" onclick="enviarAlertaStockMinimo('${m.material}')">📧 ${avisado?'Avisar de nuevo':'Avisar a Compras'}</button>
-          </div>
-          ${avisado && !pedidoHecho ? `<div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px">
-            <div><label style="font-size:9px;color:var(--tx3);display:block">Fecha en que se hizo el pedido</label>
-              <input id="min-pedido-fecha-${m.material}" type="date" value="${new Date().toISOString().slice(0,10)}" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
-            <button class="btn btnp" style="padding:5px 10px;font-size:11px" onclick="marcarPedidoRealizado('${m.material}')">✓ Marcar pedido realizado</button>
-          </div>` : ''}
-          ${pedidoHecho ? `<div style="margin-top:6px"><a href="#" onclick="desmarcarPedidoRealizado('${m.material}');return false;" style="font-size:11px;color:var(--tx3)">Deshacer</a></div>` : ''}
-        </div>`;
-      }).join('');
+      elAlertas.innerHTML = bajoMinimo.map(m=>`
+        <div style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px">
+          <strong style="color:var(--rd)">${m.label}</strong> — disponible: <strong>${fmt(m.disponible)} ${m.cu}</strong> (mínimo: ${fmt(m.minimo)} ${m.cu})
+        </div>`).join('');
     }
   }
-}
-
-async function enviarAlertaStockMinimo(mat){
-  const m = stockMinimos.find(x=>x.material===mat);
-  if(!m){ alert('⚠ No se encontró el mínimo configurado para "'+mat+'" — probá recargar la página (F5) y volver a intentar.'); return; }
-  const disponible = getDisponibleTotal(mat);
-  const label = MAT_LABELS[mat]||mat;
-  const cu = CANCEL_UNIT[mat]||'';
-  const asunto = `⚠️ URGENTE — Stock mínimo alcanzado: ${label}`;
-  const cuerpo = `El insumo "${label}" llegó al stock mínimo establecido.\n\n`+
-    `Disponible actual: ${fmt(disponible)} ${cu}\n`+
-    `Mínimo configurado: ${fmt(m.minimo)} ${cu}\n\n`+
-    `Hay que gestionar el pedido de este insumo a China/Pakistán de forma urgente.\n\n— ALAV SRL, Z.F. General Pico`;
-  const to = [...AVISO_GUESTS, 'comex@alavsrl.com', 'alavsrl.gerencia.pico@gmail.com'].join(',');
-  enviarMailDirectoOFallback(to, asunto, cuerpo);
-  const ahora = new Date().toISOString();
-  try{
-    await sbFetch('stock_minimos?material=eq.'+encodeURIComponent(mat), {
-      method:'PATCH', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({ultimo_aviso: ahora})
-    });
-  }catch(e){ console.error('No se pudo guardar la fecha de aviso:', e); }
-
-  // Recordatorio en Google Calendar a la semana, para hacer seguimiento del pedido
-  const hoy = new Date();
-  const seguimiento = new Date(hoy); seguimiento.setDate(seguimiento.getDate()+7);
-  const finSeguimiento = new Date(seguimiento); finSeguimiento.setDate(finSeguimiento.getDate()+1);
-  const startCal = seguimiento.toISOString().slice(0,10).replace(/-/g,'');
-  const endCal = finSeguimiento.toISOString().slice(0,10).replace(/-/g,'');
-  const textoCal = encodeURIComponent(`Seguimiento pedido — ${label}`);
-  const detalleCal = encodeURIComponent(`Se avisó a Compras el ${hoy.toLocaleDateString('es-AR')} sobre el stock mínimo de "${label}". Verificar si ya se hizo el pedido o si sigue pendiente.`);
-  const addCal = encodeURIComponent([...AVISO_GUESTS, 'comex@alavsrl.com', 'alavsrl.gerencia.pico@gmail.com'].join(','));
-  const urlCal = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${textoCal}&dates=${startCal}/${endCal}&details=${detalleCal}&add=${addCal}`;
-  window.open(urlCal, '_blank');
-
-  // Recargamos todo de nuevo desde Supabase (en vez de solo actualizar a mano en memoria),
-  // así la pantalla nunca puede quedar desincronizada con lo que realmente se guardó.
-  await loadStockMinimos();
-  await chequearAlertaStockMinimoGlobal();
-}
-
-async function marcarPedidoRealizado(mat){
-  const fecha = document.getElementById('min-pedido-fecha-'+mat).value;
-  if(!fecha){ alert('Elegí la fecha en que se hizo el pedido.'); return; }
-  try{
-    await sbFetch('stock_minimos?material=eq.'+encodeURIComponent(mat), {
-      method:'PATCH', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({pedido_realizado_fecha: fecha})
-    });
-    await loadStockMinimos();
-    showToast('✓ Pedido marcado como realizado.');
-  }catch(e){ alert('Error: '+e.message); }
-}
-
-async function desmarcarPedidoRealizado(mat){
-  if(!confirm('¿Deshacer la marca de "pedido realizado"?')) return;
-  try{
-    await sbFetch('stock_minimos?material=eq.'+encodeURIComponent(mat), {
-      method:'PATCH', headers:{'Prefer':'return=minimal'},
-      body: JSON.stringify({pedido_realizado_fecha: null})
-    });
-    await loadStockMinimos();
-  }catch(e){ alert('Error: '+e.message); }
 }
 
 // ═══════════════════════════════════════════
