@@ -1251,6 +1251,7 @@ async function loadChatFromSupabase(){
       if(!chatAbierto && nuevosDeOtros.length){
         const ultimo = nuevosDeOtros[nuevosDeOtros.length-1];
         showToast(`💬 ${ultimo.autor}: ${ultimo.mensaje.slice(0,80)}`, 7000);
+        dispararNotificacionChat(ultimo);
       }
     }
   }catch(e){ /* si la tabla no existe todavía, no rompemos nada */ }
@@ -1301,6 +1302,20 @@ async function enviarMensajeChat(){
   }
 }
 
+function pedirPermisoNotificaciones(){
+  if('Notification' in window && Notification.permission === 'default'){
+    Notification.requestPermission();
+  }
+}
+
+function dispararNotificacionChat(msg){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  try{
+    const n = new Notification('💬 '+msg.autor, {body: msg.mensaje.slice(0,120), icon:'./icon-192.png'});
+    n.onclick = () => { window.focus(); toggleChat(); n.close(); };
+  }catch(e){ console.error('Error mostrando notificación:', e); }
+}
+
 function toggleChat(){
   const drawer = document.getElementById('chat-drawer');
   chatAbierto = !drawer.classList.contains('open');
@@ -1309,6 +1324,7 @@ function toggleChat(){
     setChatUltimoLeido(new Date().toISOString());
     renderChat();
     document.getElementById('chat-inp').focus();
+    pedirPermisoNotificaciones();
   }
 }
 
@@ -3905,8 +3921,8 @@ function agregarLineaOC(){
     <div class="ff" style="max-width:200px"><label>Insumo</label>
       <select id="oc-insumo-${idx}"><option value="">Otro (escribir abajo)</option>${opciones}</select>
     </div>
-    <div class="ff" style="max-width:170px"><label>Nombre (si elegiste "Otro")</label>
-      <input id="oc-insumo-nombre-${idx}" placeholder="nombre libre"/>
+    <div class="ff" style="max-width:170px"><label>Detalle (ej: Nro. 1) / o nombre si elegiste "Otro"</label>
+      <input id="oc-insumo-nombre-${idx}" placeholder="opcional"/>
     </div>
     <div class="ff" style="max-width:110px"><label>Cantidad</label>
       <input id="oc-cant-${idx}" type="number" step="0.01"/>
@@ -3944,7 +3960,11 @@ async function guardarOrdenCompra(){
   for(const idx of ocItemIndices){
     const matKey = document.getElementById('oc-insumo-'+idx).value;
     const nombreLibre = document.getElementById('oc-insumo-nombre-'+idx).value.trim();
-    const insumo = matKey ? MAT_LABELS[matKey] : nombreLibre;
+    // Si eligió del desplegable Y además escribió un detalle al lado (ej: "Nro. 1"),
+    // se combinan los dos — antes el texto libre se perdía en silencio si había desplegable.
+    const insumo = matKey
+      ? (nombreLibre ? `${MAT_LABELS[matKey]} ${nombreLibre}` : MAT_LABELS[matKey])
+      : nombreLibre;
     const cantidad = parseFloat(document.getElementById('oc-cant-'+idx).value);
     const unidad = document.getElementById('oc-unidad-'+idx).value;
     const itemNota = document.getElementById('oc-nota-'+idx).value.trim();
@@ -3981,6 +4001,16 @@ async function guardarOrdenCompra(){
     document.getElementById('oc-complementaria-aviso').style.display='none';
     await loadOrdenesCompra();
     agregarOrdenACalendar(id);
+    // Mail directo además del Calendar — así el aviso llega seguro, sin depender
+    // de que alguien confirme a mano el popup de Google Calendar.
+    if(!ordenRelacionada){
+      const itemsTxt = items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n');
+      enviarMailDirectoOFallback(
+        AVISO_GUESTS.join(','),
+        `Nueva Orden de Compra: ${numero} — ${proveedor}`,
+        `Se cargó una nueva orden de compra.\n\nOrden: ${numero}\nProveedor: ${proveedor}\nFecha de emisión: ${fechaEmision}\n\nÍtems:\n${itemsTxt}${nota?'\n\nNota: '+nota:''}\n\n— ALAV SRL, Z.F. General Pico`
+      );
+    }
   }catch(e){
     msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando la orden: '+e.message;
   }
