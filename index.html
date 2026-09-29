@@ -395,6 +395,15 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
           <div class="ff" style="max-width:120px"><label>Cantidad</label><input id="sab-linea-cantidad" type="number" step="1" oninput="calcularInsumosLineaSabana()"/></div>
         </div>
         <div id="sab-linea-info" style="font-size:11px;color:var(--tx3);margin:4px 0"></div>
+
+        <div style="margin:10px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Packing (manual)</label></div>
+        <div class="fr">
+          <div class="ff" style="max-width:110px"><label>Bultos</label><input id="sab-linea-bultos" type="number" step="1"/></div>
+          <div class="ff" style="max-width:130px"><label>Peso neto (kg)</label><input id="sab-linea-peso-neto" type="number" step="0.01"/></div>
+          <div class="ff" style="max-width:130px"><label>Peso bruto (kg)</label><input id="sab-linea-peso-bruto" type="number" step="0.01"/></div>
+        </div>
+        <div id="sab-linea-memoria-aviso" style="font-size:11px;color:var(--yw);margin:2px 0 4px;display:none">↻ Se precargó el packing que usaste la última vez para esta receta — cambialo si corresponde.</div>
+
         <div id="sab-linea-insumos"></div>
         <button class="btn btnp" style="margin-top:8px" onclick="agregarLineaSabanaASalida()">+ Agregar esta línea a la salida</button>
       </div>
@@ -2011,6 +2020,15 @@ function addToSalida(){
 // despacho anotado a mano (todavía no hay stock de estos insumos en el sistema)
 // ═══════════════════════════════════════════
 let recetaSabanaLineaSel = null;
+let sabanasPackingMemoria = {}; // receta_codigo (id de la receta) -> {bultos, peso_neto_kg, peso_bruto_kg}
+
+async function loadSabanasPackingMemoria(){
+  try{
+    const rows = await sbFetch('sabanas_packing_memoria?select=*', {method:'GET', headers:{'Prefer':''}});
+    sabanasPackingMemoria = {};
+    (rows||[]).forEach(r=>{ sabanasPackingMemoria[r.receta_codigo] = r; });
+  }catch(e){ /* si la tabla no existe todavía, no rompemos nada */ }
+}
 
 function poblarDatalistRecetasLinea(){
   const dl = document.getElementById('sab-lineas-datalist');
@@ -2021,6 +2039,17 @@ function poblarDatalistRecetasLinea(){
 function seleccionarRecetaLinea(){
   const texto = document.getElementById('sab-linea-buscar').value.trim();
   recetaSabanaLineaSel = recetasSabana.find(r => `${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})` === texto) || null;
+
+  const aviso = document.getElementById('sab-linea-memoria-aviso');
+  const memo = recetaSabanaLineaSel ? sabanasPackingMemoria[recetaSabanaLineaSel.id] : null;
+  if(memo){
+    document.getElementById('sab-linea-bultos').value = memo.bultos ?? '';
+    document.getElementById('sab-linea-peso-neto').value = memo.peso_neto_kg ?? '';
+    document.getElementById('sab-linea-peso-bruto').value = memo.peso_bruto_kg ?? '';
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
   calcularInsumosLineaSabana();
 }
 
@@ -2049,13 +2078,17 @@ function calcularInsumosLineaSabana(){
   </tbody></table>`;
 }
 
-function agregarLineaSabanaASalida(){
+async function agregarLineaSabanaASalida(){
   if(!salidaActiva){ alert('Primero armá o abrí una salida.'); return; }
   const codigo = document.getElementById('sab-linea-codigo').value.trim();
   const cantidad = parseFloat(document.getElementById('sab-linea-cantidad').value);
   if(!codigo){ alert('Escribí tu código de referencia (ej: 1070/1F).'); return; }
   if(!recetaSabanaLineaSel){ alert('Elegí una receta de la lista.'); return; }
   if(isNaN(cantidad) || cantidad<=0){ alert('Poné la cantidad.'); return; }
+
+  const bultos = parseFloat(document.getElementById('sab-linea-bultos').value);
+  const pesoNeto = parseFloat(document.getElementById('sab-linea-peso-neto').value);
+  const pesoBruto = parseFloat(document.getElementById('sab-linea-peso-bruto').value);
 
   let mats=[]; try{ mats = JSON.parse(recetaSabanaLineaSel.materiales||'[]'); }catch(e){}
   const factor = cantidad / (recetaSabanaLineaSel.cantidad_base||1);
@@ -2071,12 +2104,31 @@ function agregarLineaSabanaASalida(){
     receta_codigo: recetaSabanaLineaSel.articulo_codigo,
     receta_nombre: recetaSabanaLineaSel.articulo_nombre,
     rip: recetaSabanaLineaSel.rip, ctzf_numero: recetaSabanaLineaSel.ctzf_numero,
+    bultos: isNaN(bultos)?null:bultos, peso_neto_kg: isNaN(pesoNeto)?null:pesoNeto, peso_bruto_kg: isNaN(pesoBruto)?null:pesoBruto,
     materiales: materialesUsados
   });
+
+  // Guardamos este packing como "el último usado" para esta receta, para la próxima vez
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+  try{
+    await sbFetch('sabanas_packing_memoria', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({
+        receta_codigo: recetaSabanaLineaSel.id,
+        bultos: isNaN(bultos)?null:bultos, peso_neto_kg: isNaN(pesoNeto)?null:pesoNeto, peso_bruto_kg: isNaN(pesoBruto)?null:pesoBruto,
+        actualizado_por: who, actualizado_en: new Date().toISOString()
+      })
+    });
+    sabanasPackingMemoria[recetaSabanaLineaSel.id] = {bultos, peso_neto_kg:pesoNeto, peso_bruto_kg:pesoBruto};
+  }catch(e){ console.error('No se pudo guardar la memoria de packing:', e); }
 
   document.getElementById('sab-linea-codigo').value='';
   document.getElementById('sab-linea-buscar').value='';
   document.getElementById('sab-linea-cantidad').value='';
+  document.getElementById('sab-linea-bultos').value='';
+  document.getElementById('sab-linea-peso-neto').value='';
+  document.getElementById('sab-linea-peso-bruto').value='';
+  document.getElementById('sab-linea-memoria-aviso').style.display='none';
   document.getElementById('sab-linea-info').textContent='';
   document.getElementById('sab-linea-insumos').innerHTML='';
   recetaSabanaLineaSel = null;
@@ -2100,7 +2152,9 @@ function renderSalidaSabanas(){
   el.innerHTML = `<div class="stit" style="margin-top:14px">Líneas de Sábana agregadas</div>` + lista.map((l,i)=>`
     <div class="mb">
       <div class="mh">
-        <div><strong>${l.codigo}</strong> — ${l.receta_nombre} (${l.receta_codigo}, RIP ${l.rip}) · ${fmt(l.cantidad)} u</div>
+        <div><strong>${l.codigo}</strong> — ${l.receta_nombre} (${l.receta_codigo}, RIP ${l.rip}) · ${fmt(l.cantidad)} u
+          ${(l.bultos!=null||l.peso_neto_kg!=null)?` <span class="t2" style="font-size:11px">— Packing: ${l.bultos!=null?fmt(l.bultos)+' bultos':''}${l.peso_neto_kg!=null?', '+fmt(l.peso_neto_kg)+' kg neto':''}${l.peso_bruto_kg!=null?', '+fmt(l.peso_bruto_kg)+' kg bruto':''}</span>`:''}
+        </div>
         <button class="btn btnd" style="padding:2px 8px;font-size:10px" onclick="quitarLineaSabanaDeSalida(${i})">✕</button>
       </div>
       <table><thead><tr><th>Insumo</th><th>Necesario</th><th>Despacho anotado</th></tr></thead><tbody>
@@ -2865,6 +2919,7 @@ function renderSalidaHist(){
     renderSalidaSabanas();
     if(!recetasSabana.length) loadRecetasSabana().then(poblarDatalistRecetasLinea);
     else poblarDatalistRecetasLinea();
+    if(!Object.keys(sabanasPackingMemoria).length) loadSabanasPackingMemoria();
   }
   if(!salidaHistorial.length){el.innerHTML='<div class="empty">Sin salidas confirmadas.</div>';return;}
   try{
@@ -2927,6 +2982,7 @@ function renderSalidaHist(){
         <div style="font-size:11px;font-weight:600;margin:12px 0 8px;color:var(--ac)">🛏️ LÍNEAS DE SÁBANA (CTZF)</div>
         ${s.sabanas.map(l=>`<div style="font-size:11px;margin-bottom:8px">
           <strong>${l.codigo}</strong> — ${l.receta_nombre} (${l.receta_codigo}, RIP ${l.rip}) · ${l.cantidad.toLocaleString('es-AR')} u
+          ${(l.bultos!=null||l.peso_neto_kg!=null)?` — Packing: ${l.bultos!=null?l.bultos+' bultos':''}${l.peso_neto_kg!=null?', '+l.peso_neto_kg+' kg neto':''}${l.peso_bruto_kg!=null?', '+l.peso_bruto_kg+' kg bruto':''}`:''}
           <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:4px">
             <thead><tr style="background:var(--bg3)"><th style="padding:3px 6px;text-align:left">Insumo</th><th style="padding:3px 6px;text-align:right">Necesario</th><th style="padding:3px 6px;text-align:left">Despacho anotado</th></tr></thead>
             <tbody>${l.materiales.map(m=>`<tr><td style="padding:2px 6px">${m.nombre}</td><td style="padding:2px 6px;text-align:right">${m.necesario.toLocaleString('es-AR')} ${m.unidad}</td><td style="padding:2px 6px">${m.despacho_anotado||'—'}</td></tr>`).join('')}</tbody>
