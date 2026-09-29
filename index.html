@@ -675,7 +675,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
               <option value="pvc">Bolsa PVC</option><option value="cord">Corderito 180g</option>
               <option value="cord160">Corderito 160g</option><option value="terc300">Terciopelo 300g</option>
               <option value="terc360">Terciopelo 360g</option><option value="terc400">Terciopelo 400g</option>
-              <option value="insert">Insert</option><option value="funda">Funda Kits</option><option value="bubble">Manta BUBBLE (prod. terminado)</option><option value="manta">Manta Cacharel</option><option value="micro90">Microfibra 90g</option><option value="micro100">Microfibra 100g</option><option value="micro140">Microfibra 140g</option><option value="alma">Alma</option>
+              <option value="insert">Insert</option><option value="funda">Funda Kits</option><option value="bubble">Manta BUBBLE (prod. terminado)</option><option value="manta">Manta Cacharel</option><option value="micro90">Microfibra 90g</option><option value="micro100">Microfibra 100g</option><option value="micro140">Microfibra 140g</option><option value="micro80">Microfibra 80g</option><option value="alma">Alma</option>
               <option value="poliamida">Poliamida</option>
             </select>
           </div>
@@ -1532,10 +1532,10 @@ function getNeeded(k,med,qty,tipo){
   return parseFloat((qty*(m.pm[med]||0)).toFixed(4));
 }
 function getMatKeys(tipo){
-  if(tipo==='microsherpa') return ['guata','poliamida','hilo','micro90','micro100','micro140','tnt','bies','pvc','cord','insert'];
-  if(tipo==='micromicro')  return ['guata','poliamida','hilo','micro90','micro100','micro140','bies','pvc','insert'];
+  if(tipo==='microsherpa') return ['guata','poliamida','hilo','micro90','micro100','micro140','micro80','tnt','bies','pvc','cord','insert'];
+  if(tipo==='micromicro')  return ['guata','poliamida','hilo','micro90','micro100','micro140','micro80','bies','pvc','insert'];
   if(tipo==='art4009') return ['guata','poliamida','hilo','tnt','bies','pvc','cord','terc300','insert','funda'];
-  if(tipo==='suede') return ['guata','poliamida','hilo','micro90','micro100','micro140','tnt','bies','pvc','cord','insert'];
+  if(tipo==='suede') return ['guata','poliamida','hilo','micro90','micro100','micro140','micro80','tnt','bies','pvc','cord','insert'];
   if(tipo.startsWith('patagonia')) return ['pvc','alma','insert','manta'];
   const terc=tipo==='bunny'?'terc400':tipo==='shura'?'terc360':'terc300';
   return ['guata','poliamida','hilo','tnt','bies','pvc','cord',terc,'insert','funda'];
@@ -1677,11 +1677,11 @@ function onCalcChange(){
     html+=`<div class="mb"><div class="mh">
       <div><span class="mn2">${m.n}</span><span class="mncm">${m.ncm}</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:12px">Necesita: <strong>${m.factor?fmt(needed)+' u → '+fmt(needed*m.factor)+' m despacho':(k==='micro90'||k==='micro100'||k==='micro140')?fmt(needed)+' kg RIP (elegí los m a cancelar)':fmt(needed)+' '+cu}</strong></span>
-        <span class="t2" style="font-size:12px">Stock: ${(k==='micro90'||k==='micro100'||k==='micro140')?fmt(totalStock)+' m':fmt(totalStock)+' '+(m.factor?'m':cu)}</span>
+        <span style="font-size:12px">Necesita: <strong>${m.factor?fmt(needed)+' u → '+fmt(needed*m.factor)+' m despacho':(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80')?fmt(needed)+' kg RIP (elegí los m a cancelar)':fmt(needed)+' '+cu}</strong></span>
+        <span class="t2" style="font-size:12px">Stock: ${(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80')?fmt(totalStock)+' m':fmt(totalStock)+' '+(m.factor?'m':cu)}</span>
         ${ok?'<span class="bdg bg">✓ OK</span>':'<span class="bdg br">⚠ Insuficiente</span>'}
       </div></div>
-      <div class="nbox">${m.factor?`A cancelar: <strong>${fmt(needed)} u</strong> (certificado) — descontar stock: <strong>${fmt(needed*m.factor)} m</strong>`:(k==='micro90'||k==='micro100'||k==='micro140')?`RIP: <strong>${fmt(needed)} kg</strong> — ingresá los <strong>metros</strong> a cancelar del stock`:`A cancelar: <strong>${fmt(needed)} ${cu}</strong>`}${k==='tnt'?` <span class="t2">— RIP: <strong>${fmt(needed)} kg</strong> (elegí m o kg en cada despacho)</span>`:''}</div>
+      <div class="nbox">${m.factor?`A cancelar: <strong>${fmt(needed)} u</strong> (certificado) — descontar stock: <strong>${fmt(needed*m.factor)} m</strong>`:(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80')?`RIP: <strong>${fmt(needed)} kg</strong> — ingresá los <strong>metros</strong> a cancelar del stock`:`A cancelar: <strong>${fmt(needed)} ${cu}</strong>`}${k==='tnt'?` <span class="t2">— RIP: <strong>${fmt(needed)} kg</strong> (elegí m o kg en cada despacho)</span>`:''}</div>
       <div class="pbox"><span style="font-size:12px">Seleccionado: <strong id="sel-${k}">0 ${m.factor?'m':cu}</strong></span>
         <span id="falta-${k}" style="font-size:12px;color:var(--rd)">Falta: ${fmt(neededStock)} ${m.factor?'m':cu}</span></div>`;
 
@@ -1708,7 +1708,7 @@ function onCalcChange(){
           <td class="t2">${r.fecha}</td>
           <td class="t2" style="font-size:11px;max-width:150px;white-space:normal">${r.detalle||'—'}</td>
           <td class="mono">${fmt(disp)} ${cu}</td>
-          <td><input class="qinp" id="qinp_${uid}" type="number" step="0.001" min="0" max="${disp}" value="${m.factor?fmt(Math.min(neededStock,disp),4):(k==='micro90'||k==='micro100'||k==='micro140')?'0':fmt(disp,4)}" disabled
+          <td><input class="qinp" id="qinp_${uid}" type="number" step="0.001" min="0" max="${disp}" value="${m.factor?fmt(Math.min(neededStock,disp),4):(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80')?'0':fmt(disp,4)}" disabled
             oninput="onQty('${k}',${neededStock},'${uid}',${disp},'${cu}')" /></td>
           <td class="saldo" id="saldo_${uid}">${fmt(disp)} ${cu}</td>
           <td class="t2">${fmtU(r.fob)}</td>
@@ -1741,7 +1741,7 @@ function onCb(k,needed,uid,maxQty,cu){
   const qi=document.getElementById('qinp_'+uid);
   if(cb.checked){
     qi.disabled=false;
-    if(k==='micro90'||k==='micro100'||k==='micro140'){
+    if(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80'){
       // El RIP da kg de referencia, pero el stock es en metros — el usuario decide la cantidad real, sin autocompletar
       qi.value=0;
     } else {
@@ -2088,7 +2088,7 @@ function renderSalidaLineas(){
   emEl.style.display='none';
 
   // Materiales que aportan kg al CTZF
-  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
+  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140','micro80'];
 
   lEl.innerHTML=salidaActiva.lineas.map((l,i)=>{
     // 1. kg del CTZF: suma de taken de todos los materiales en kg
@@ -2097,7 +2097,7 @@ function renderSalidaLineas(){
       Object.entries(l.zfis).forEach(([k,sels])=>{
         if(!matKg.includes(k)) return;
         const cu=CANCEL_UNIT[k];
-        if(k==='micro90'||k==='micro100'||k==='micro140'){
+        if(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80'){
           // Microfibra: el peso real es el del RIP (kg), no los metros tomados del stock
           if(sels.length) kgCTZF+=getNeeded(k,l.med,l.qty,l.tipo);
           return;
@@ -2354,13 +2354,13 @@ function imprimirPackingList(salOverride){
     const bultos = Math.ceil(qty/bultosXcaja);
 
     // Peso neto (kg CTZF de la línea)
-    const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
+    const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140','micro80'];
     let kgCTZF=0;
     if(l.zfis){
       Object.entries(l.zfis).forEach(([k,sels])=>{
         if(!matKg.includes(k)) return;
         const cu=CANCEL_UNIT[k];
-        if(k==='micro90'||k==='micro100'||k==='micro140'||k==='tnt'){
+        if(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80'||k==='tnt'){
           // Microfibra y TNT: usar siempre el RIP en kg, no los metros/unidades tomados del stock
           if(sels.length) kgCTZF+=getNeeded(k,l.med,l.qty,l.tipo);
         } else if(cu==='kg'){
@@ -2590,7 +2590,7 @@ function imprimirSalida(salOverride){
       lineasGrupo.forEach(function(l){ needed += getNeeded(k,l.med,l.qty,l.tipo); });
       if(needed<=0) return;
       const cu=CANCEL_UNIT[k];
-      const cuDisplay=(k==='micro90'||k==='micro100'||k==='micro140')?'kg':cu;
+      const cuDisplay=(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80')?'kg':cu;
 
       // Selecciones de despacho combinadas de todas las líneas del grupo,
       // fusionando en una sola fila si el mismo despacho aparece en más de una línea
@@ -2953,13 +2953,13 @@ function calcularKgYValorLinea(l){
   const bultosXcaja = art.b[med]||1;
   const bultos = Math.ceil(qty/bultosXcaja);
 
-  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140'];
+  const matKg=['guata','cord','cord160','terc300','terc360','terc400','funda','tnt','micro90','micro100','micro140','micro80'];
   let kgCTZF=0;
   if(l.zfis){
     Object.entries(l.zfis).forEach(([k,sels])=>{
       if(!matKg.includes(k)) return;
       const cu=CANCEL_UNIT[k];
-      if(k==='micro90'||k==='micro100'||k==='micro140'||k==='tnt'){
+      if(k==='micro90'||k==='micro100'||k==='micro140'||k==='micro80'||k==='tnt'){
         if(sels.length) kgCTZF+=getNeeded(k,l.med,l.qty,l.tipo);
       } else if(cu==='kg'){
         sels.forEach(s=>kgCTZF+=s.taken||0);
@@ -5439,7 +5439,7 @@ function editAdmStock(mat, i){
 
   // Si la categoría es una fija conocida (no una creada por nombre), la preseleccionamos; sino, dejamos "🆕 Nueva"
   const matSelect = document.getElementById('adm-mat');
-  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','alma','poliamida'].includes(mat);
+  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','micro80','alma','poliamida'].includes(mat);
   matSelect.value = esFija ? mat : '';
 
   document.getElementById('adm-nombre').value = r.producto||'';
@@ -5525,7 +5525,7 @@ async function sincronizarTodoStockExtra(){
   let ok=0, fail=0; const errores=[];
   for(const mat of mats){
     // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
-    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','alma','poliamida'].includes(mat);
+    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','micro80','alma','poliamida'].includes(mat);
     if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
     for(const row of stockExtra[mat]){
       const res = await pushStockRowToSupabase(mat, row);
