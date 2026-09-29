@@ -169,6 +169,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 @media(max-width:600px){#chat-drawer{right:8px;bottom:74px;width:calc(100vw - 16px)}#chat-fab{right:12px;bottom:12px}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 <div class="hdr">
@@ -197,9 +198,10 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
     </div>
 
+    <button class="nb" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
+
     <button class="nb nadm" onclick="toggleNavMenu('admin-submenu')">⚙ Admin ▾</button>
     <div id="admin-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-minimos')">⚠️ Stock Mínimo</button>
       <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr);font-size:12px;opacity:.9">📄 Carga Despacho</a>
     </div>
@@ -445,7 +447,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   </div>
 
   <div style="margin-top:8px">
-    <div class="ct">Salidas confirmadas</div>
+    <div class="ct" style="display:flex;align-items:center;gap:8px">Salidas confirmadas
+      <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadSalidasFromSupabase().then(renderSalidaHist)" title="Actualizar">↻</button>
+    </div>
     <div id="sal-hist-lista"><div class="empty">Sin salidas confirmadas.</div></div>
   </div>
 </div>
@@ -472,6 +476,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <div id="sec-stock" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div class="stit" style="margin-bottom:0">Stock disponible</div>
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadStockFromSupabase().then(renderStock)" title="Actualizar">↻</button>
     <button class="btn btnp" onclick="imprimirStock()">&#128438; Imprimir stock</button>
     <button id="btn-sync-sb" class="btn" onclick="syncStockToSupabase()" style="background:#3ECF8E;color:#000;font-weight:bold">&#9729; Sync Stock → Supabase</button>
   </div>
@@ -544,7 +549,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="stit" style="margin-top:22px">Proforma Invoice generadas</div>
   <div id="pi-lista"><div class="empty">Ninguna todavía.</div></div>
 
-  <div class="stit" style="margin-top:22px">Órdenes registradas</div>
+  <div class="stit" style="margin-top:22px;display:flex;align-items:center;gap:8px">Órdenes registradas
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadOrdenesCompra()" title="Actualizar">↻</button>
+  </div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
 </div>
 
@@ -596,7 +603,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="merc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 
-  <div class="stit" style="margin-top:22px">Stock actual por depósito</div>
+  <div class="stit" style="margin-top:22px;display:flex;align-items:center;gap:8px">Stock actual por depósito
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadStockMercaderia()" title="Actualizar">↻</button>
+  </div>
   <div id="merc-lista"><div class="empty">Cargando...</div></div>
 
   <div class="stit" style="margin-top:22px">⚠️ Alertas de Galpón Externo</div>
@@ -1099,6 +1108,26 @@ async function enviarMailDirectoOFallback(to, asuntoTexto, cuerpoTexto){
     }catch(e){ console.error('Error llamando al Apps Script:', e); }
   }
   // Respaldo: abrir Gmail web con todo precargado
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(asuntoTexto)}&body=${encodeURIComponent(cuerpoTexto)}`, '_blank');
+}
+
+// Igual que la anterior, pero con un archivo adjunto (PDF en base64). Va por POST
+// porque un adjunto no entra en el límite de largo de una URL. Si falla, cae a
+// Gmail web sin el adjunto (mejor eso que no mandar nada).
+async function enviarMailConAdjuntoOFallback(to, asuntoTexto, cuerpoTexto, adjuntoBase64, adjuntoNombre){
+  if(APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'PEGAR_URL_ACA'){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'}, // evita el preflight CORS de Apps Script
+        body: JSON.stringify({to, subject: asuntoTexto, body: cuerpoTexto, adjuntoBase64, adjuntoNombre})
+      });
+      const data = await res.json();
+      if(data.ok){ showToast('✓ Mail con PDF adjunto enviado a '+to); return; }
+      console.error('Apps Script devolvió error:', data.error);
+    }catch(e){ console.error('Error llamando al Apps Script:', e); }
+  }
+  showToast('⚠ No se pudo adjuntar el PDF — se abre Gmail solo con el texto.');
   window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(asuntoTexto)}&body=${encodeURIComponent(cuerpoTexto)}`, '_blank');
 }
 let avisosCarga = [];
@@ -4021,16 +4050,6 @@ async function guardarOrdenCompra(){
     document.getElementById('oc-complementaria-aviso').style.display='none';
     await loadOrdenesCompra();
     agregarOrdenACalendar(id);
-    // Mail directo además del Calendar — así el aviso llega seguro, sin depender
-    // de que alguien confirme a mano el popup de Google Calendar.
-    if(!ordenRelacionada){
-      const itemsTxt = items.map(it=>`- ${it.insumo}: ${it.cantidad} ${it.unidad}`).join('\n');
-      enviarMailDirectoOFallback(
-        COMPRAS_GUESTS.join(','),
-        `Nueva Orden de Compra: ${numero} — ${proveedor}`,
-        `Se cargó una nueva orden de compra.\n\nOrden: ${numero}\nProveedor: ${proveedor}\nFecha de emisión: ${fechaEmision}\n\nÍtems:\n${itemsTxt}${nota?'\n\nNota: '+nota:''}\n\n— ALAV SRL, Z.F. General Pico`
-      );
-    }
   }catch(e){
     msg.style.color='var(--rd)'; msg.textContent='⚠ Error guardando la orden: '+e.message;
   }
@@ -4321,7 +4340,7 @@ async function cerrarOrdenCompra(id){
   }catch(e){ alert('Error cerrando la orden: '+e.message); }
 }
 
-function enviarOrdenPorMail(id){
+async function enviarOrdenPorMail(id){
   const o = ordenesCompra.find(x=>x.id===id);
   if(!o) return;
   let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
@@ -4335,7 +4354,15 @@ function enviarOrdenPorMail(id){
     (o.nota?`\n\nNota: ${o.nota}`:'')+
     `\n\n— ALAV SRL, Z.F. General Pico`;
   const to = COMPRAS_GUESTS.join(',');
-  enviarMailDirectoOFallback(to, asunto, cuerpo);
+
+  showToast('Generando PDF...');
+  try{
+    const pdfBase64 = await generarPdfOrdenCompraBase64(o);
+    await enviarMailConAdjuntoOFallback(to, asunto, cuerpo, pdfBase64, o.numero+'.pdf');
+  }catch(e){
+    console.error('No se pudo generar el PDF, se manda solo el texto:', e);
+    enviarMailDirectoOFallback(to, asunto, cuerpo);
+  }
 }
 
 function agregarOrdenACalendar(id){
@@ -4548,9 +4575,9 @@ function imprimirPI(id){
   setTimeout(()=>win.print(), 300);
 }
 
-function imprimirOrdenCompra(id){
-  const o = ordenesCompra.find(x=>x.id===id);
-  if(!o) return;
+// Arma el HTML completo de la Orden de Compra — se usa tanto para imprimir
+// como para generar el PDF que se adjunta al mail.
+function construirHtmlOrdenCompra(o){
   let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
 
   let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Orden de Compra '+o.numero+'</title>'
@@ -4580,11 +4607,36 @@ function imprimirOrdenCompra(id){
   if(o.nota) p+='<div style="margin-top:10px;font-size:11px"><strong>Nota:</strong> '+o.nota+'</div>';
 
   p+='</body></html>';
+  return p;
+}
 
+function imprimirOrdenCompra(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  const p = construirHtmlOrdenCompra(o);
   const win = window.open('', '_blank');
   win.document.write(p);
   win.document.close();
   setTimeout(()=>win.print(), 300);
+}
+
+// Genera el PDF de la orden como base64, para adjuntarlo al mail.
+function generarPdfOrdenCompraBase64(o){
+  return new Promise((resolve, reject)=>{
+    const div = document.createElement('div');
+    div.style.position='fixed'; div.style.left='-9999px'; div.style.top='0';
+    div.style.width='210mm'; div.style.background='#fff';
+    div.innerHTML = construirHtmlOrdenCompra(o).replace(/^[\s\S]*<body>/,'').replace(/<\/body>[\s\S]*$/,'');
+    div.style.padding='15mm'; div.style.color='#000'; div.style.fontFamily='Arial,sans-serif'; div.style.fontSize='12px';
+    document.body.appendChild(div);
+    html2pdf().from(div).set({margin:0, filename:o.numero+'.pdf', html2canvas:{scale:2}})
+      .outputPdf('datauristring')
+      .then(dataUri=>{
+        document.body.removeChild(div);
+        resolve(dataUri.split(',')[1]); // solo el base64, sin el prefijo data:...
+      })
+      .catch(err=>{ document.body.removeChild(div); reject(err); });
+  });
 }
 
 // ═══════════════════════════════════════════
