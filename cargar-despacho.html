@@ -263,9 +263,9 @@ function setUser(name){
 
 // ── Diccionarios (mismos que la app principal) ──────────────────────────────
 const UNIQUE_NCM = {'5503.20.90':'guata','5807.10.00':'poliamida','5508.10.00':'hilo','5603.11.30':'tnt','5806.32.00':'bies','3923.29.90':'pvc','4911.91.00':'insert','6301.40.00':'manta'};
-const AMBIGUOUS_NCM = {'6001.92.00':['cord','cord160','terc300','terc360','terc400','funda'],'5407.52.10':['micro90','micro100'],'4823.90.99':['alma','caja']};
-const MAT_LABELS = {guata:'Guata',poliamida:'Poliamida',hilo:'Hilo de coser',tnt:'Tejido TNT',bies:'Bies / Vivo',pvc:'Bolsa PVC',insert:'Insert',cord:'Corderito 180g',cord160:'Corderito 160g',terc300:'Terciopelo 300g',terc360:'Terciopelo 360g',terc400:'Terciopelo 400g',funda:'Funda Kits',micro90:'Microfibra 90g',micro100:'Microfibra 100g',alma:'Alma',manta:'Manta Cacharel',caja:'Caja'};
-const CANCEL_UNIT = {guata:'kg',tnt:'kg',cord:'kg',cord160:'kg',terc300:'kg',terc360:'kg',terc400:'kg',funda:'kg',hilo:'m',bies:'m',pvc:'u',insert:'u',poliamida:'m',manta:'u',micro90:'m',micro100:'m',alma:'u',caja:'u'};
+const AMBIGUOUS_NCM = {'6001.92.00':['cord','cord160','terc300','terc360','terc400','funda'],'5407.52.10':['micro90','micro100','micro80'],'4823.90.99':['alma','caja']};
+const MAT_LABELS = {guata:'Guata',poliamida:'Poliamida',hilo:'Hilo de coser',tnt:'Tejido TNT',bies:'Bies / Vivo',pvc:'Bolsa PVC',insert:'Insert',cord:'Corderito 180g',cord160:'Corderito 160g',terc300:'Terciopelo 300g',terc360:'Terciopelo 360g',terc400:'Terciopelo 400g',funda:'Funda Kits',micro90:'Microfibra 90g',micro100:'Microfibra 100g',micro80:'Microfibra 80g',alma:'Alma',manta:'Manta Cacharel',caja:'Caja'};
+const CANCEL_UNIT = {guata:'kg',tnt:'kg',cord:'kg',cord160:'kg',terc300:'kg',terc360:'kg',terc400:'kg',funda:'kg',hilo:'m',bies:'m',pvc:'u',insert:'u',poliamida:'m',manta:'u',micro90:'m',micro100:'m',micro80:'m',alma:'u',caja:'u'};
 const ALL_MATS = Object.keys(MAT_LABELS);
 
 function num(s){ if(!s) return 0; return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0; }
@@ -280,7 +280,7 @@ function classify(ncmShort, aiText, zaGsm){
   if(cands.length===1 && cands[0]==='alma') return {material:null, confidence:'sin_match', candidatos:cands};
   if(zaGsm){
     const g = parseInt(zaGsm);
-    const byGsm = {160:'cord160',180:'cord',300:'terc300',360:'terc360',400:'terc400',90:'micro90',100:'micro100'};
+    const byGsm = {160:'cord160',180:'cord',300:'terc300',360:'terc360',400:'terc400',90:'micro90',100:'micro100',80:'micro80'};
     if(byGsm[g] && cands.includes(byGsm[g])) return {material:byGsm[g], confidence:'media'};
   }
   if(ai.includes('SHERPA')) return {material:'cord160', confidence:'media'};
