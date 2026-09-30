@@ -131,12 +131,14 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg3)}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--ac)}
 @media(max-width:600px){.wrap{padding:10px}.hdr{padding:0 10px}.presence-roster{gap:4px}.p-user{padding:3px 8px;font-size:10px}}
 @media(min-width:901px){
-  body{padding-left:210px}
-  .hdr{position:fixed;top:0;left:0;bottom:0;width:210px;height:100vh;flex-direction:column;align-items:stretch;padding:18px 12px;gap:14px;overflow-y:auto;border-bottom:none;border-right:2px solid var(--ac);box-shadow:4px 0 16px rgba(0,0,0,.3)}
-  .hdr .logo{text-align:center;width:100%;margin-bottom:4px}
-  .hdr .nav{flex-direction:column;flex:none;overflow:visible;gap:3px;width:100%}
-  .hdr .nb{text-align:left;width:100%;padding:9px 12px}
-  .hdr #presence-badge.presence-roster{flex-direction:column;align-items:flex-start;gap:6px;margin-top:auto;width:100%;padding-top:14px;border-top:1px solid rgba(255,255,255,.12)}
+  body{padding-left:168px}
+  .hdr{position:fixed;top:0;left:0;bottom:0;width:168px;height:100vh;flex-direction:column;align-items:stretch;padding:14px 8px;gap:8px;overflow-y:auto;border-bottom:none;border-right:2px solid var(--ac);box-shadow:4px 0 16px rgba(0,0,0,.3)}
+  .hdr .logo{text-align:center;width:100%;margin-bottom:2px;font-size:13px}
+  .hdr .nav{flex-direction:column;flex:none;overflow:visible;gap:1px;width:100%}
+  .hdr .nb{text-align:left;width:100%;padding:6px 9px;font-size:10px}
+  .hdr .nav-submenu{padding:2px 0 2px 10px!important;gap:0!important}
+  .hdr .nav-submenu .nb{padding:5px 8px;font-size:9.5px}
+  .hdr #presence-badge.presence-roster{flex-direction:column;align-items:flex-start;gap:4px;margin-top:auto;width:100%;padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
   #update-banner,#minimo-banner{top:0}
 }
 /* Colaboración: presencia, banner de novedades, toast, modal de nombre */
@@ -387,7 +389,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--bd2)">
         <div style="font-size:12px;font-weight:600;margin-bottom:8px">🛏️ Agregar línea de Sábana (CTZF)</div>
         <div class="fr">
-          <div class="ff" style="max-width:180px"><label>Tu código de referencia</label><input id="sab-linea-codigo" placeholder="ej: 1070/1F"/></div>
+          <div class="ff" style="max-width:180px"><label>Tu código de referencia</label><input id="sab-linea-codigo" placeholder="ej: 1070/1F" onblur="aplicarAtajoCodigoReferencia()"/></div>
           <div class="ff" style="max-width:260px"><label>Buscar receta (RIP)</label>
             <input id="sab-linea-buscar" list="sab-lineas-datalist" placeholder="ej: 1060/1A, Manta, Ajustable Queen" oninput="seleccionarRecetaLinea()"/>
             <datalist id="sab-lineas-datalist"></datalist>
@@ -2036,9 +2038,9 @@ function poblarDatalistRecetasLinea(){
   dl.innerHTML = recetasSabana.map(r=>`<option value="${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})"></option>`).join('');
 }
 
-function seleccionarRecetaLinea(){
-  const texto = document.getElementById('sab-linea-buscar').value.trim();
-  recetaSabanaLineaSel = recetasSabana.find(r => `${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})` === texto) || null;
+function aplicarRecetaSeleccionada(receta){
+  recetaSabanaLineaSel = receta || null;
+  if(receta) document.getElementById('sab-linea-buscar').value = `${receta.articulo_codigo} — ${receta.articulo_nombre} (${receta.rip})`;
 
   const aviso = document.getElementById('sab-linea-memoria-aviso');
   const memo = recetaSabanaLineaSel ? sabanasPackingMemoria[recetaSabanaLineaSel.id] : null;
@@ -2051,6 +2053,33 @@ function seleccionarRecetaLinea(){
     aviso.style.display = 'none';
   }
   calcularInsumosLineaSabana();
+}
+
+function seleccionarRecetaLinea(){
+  const texto = document.getElementById('sab-linea-buscar').value.trim();
+  const receta = recetasSabana.find(r => `${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})` === texto) || null;
+  aplicarRecetaSeleccionada(receta);
+}
+
+// Si el código de referencia que tipeó coincide con un atajo conocido (ej: Covers),
+// se autocompleta la receta sola, sin que tenga que buscarla a mano.
+let articulosRecetaAtajos = {}; // codigo_referencia (en minúscula) -> receta_id
+
+async function loadArticulosRecetaAtajos(){
+  try{
+    const rows = await sbFetch('articulos_referencia_receta?select=*', {method:'GET', headers:{'Prefer':''}});
+    articulosRecetaAtajos = {};
+    (rows||[]).forEach(r=>{ articulosRecetaAtajos[r.codigo_referencia.trim().toLowerCase()] = r.receta_id; });
+  }catch(e){ /* si la tabla no existe todavía, no rompemos nada */ }
+}
+
+function aplicarAtajoCodigoReferencia(){
+  const codigo = document.getElementById('sab-linea-codigo').value.trim().toLowerCase();
+  if(!codigo) return;
+  const recetaId = articulosRecetaAtajos[codigo];
+  if(!recetaId) return; // no hay atajo conocido — elige a mano, como siempre
+  const receta = recetasSabana.find(r => r.id === recetaId);
+  if(receta) aplicarRecetaSeleccionada(receta);
 }
 
 function calcularInsumosLineaSabana(){
@@ -2920,6 +2949,7 @@ function renderSalidaHist(){
     if(!recetasSabana.length) loadRecetasSabana().then(poblarDatalistRecetasLinea);
     else poblarDatalistRecetasLinea();
     if(!Object.keys(sabanasPackingMemoria).length) loadSabanasPackingMemoria();
+    if(!Object.keys(articulosRecetaAtajos).length) loadArticulosRecetaAtajos();
   }
   if(!salidaHistorial.length){el.innerHTML='<div class="empty">Sin salidas confirmadas.</div>';return;}
   try{
