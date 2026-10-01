@@ -171,6 +171,7 @@ input.narrow{width:80px}
   <div class="card">
     <div class="stit">Revisá el descuento antes de confirmar</div>
     <div class="sub">Esto se calculó leyendo la tabla "Destinaciones que se Cancelan" del PDF — no hace falta certificado ni carga manual de artículos. Los renglones en rojo no alcanzan stock disponible; revisalos antes de confirmar.</div>
+    <div id="zf-resumen-no-encontrados" style="display:none;margin-bottom:12px;padding:10px 14px;background:var(--rbg);border:2px solid var(--rd);border-radius:var(--rs);color:var(--rd);font-weight:700;font-size:13px"></div>
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
@@ -502,10 +503,12 @@ async function renderZFE3(p){
   stockRows.forEach(r=>stockById[r.id]=r);
 
   const tbody = document.getElementById('zfe3-tbody');
+  const noEncontrados = [];
   tbody.innerHTML = p.consumos.map((c,i)=>{
     const id = c.despacho+'_'+c.item+'_'+c.subitem;
     const row = stockById[id];
     if(!row){
+      noEncontrados.push(id);
       return `<tr class="warn">
         <td style="text-align:center"><input type="checkbox" id="zi-${i}" disabled></td>
         <td class="mono">${id}</td>
@@ -526,6 +529,16 @@ async function renderZFE3(p){
       <td><span class="tag ${noAlcanza?'sin_match':'alta'}">${noAlcanza?'⚠ no alcanza':'✓ ok'}</span></td>
     </tr>`;
   }).join('');
+
+  const resumen = document.getElementById('zf-resumen-no-encontrados');
+  if(noEncontrados.length){
+    resumen.style.display = 'block';
+    resumen.innerHTML = `⚠️ ${noEncontrados.length} de ${p.consumos.length} ítem(s) NO coinciden con ningún despacho cargado en tu stock — estos NO se van a descontar:<br>`
+      + noEncontrados.map(id=>'• '+id).join('<br>')
+      + '<br><br>Revisá en Stock si ese despacho/ítem/subítem está cargado con otro número — si falta, hay que cargarlo primero.';
+  } else {
+    resumen.style.display = 'none';
+  }
 
   document.getElementById('zfe3-box').style.display = 'block';
   document.getElementById('btn-confirm-zfe3').disabled = false;

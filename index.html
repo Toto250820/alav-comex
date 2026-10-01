@@ -389,7 +389,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--rs);border:1px solid var(--bd2)">
         <div style="font-size:12px;font-weight:600;margin-bottom:8px">🛏️ Agregar línea de Sábana (CTZF)</div>
         <div class="fr">
-          <div class="ff" style="max-width:180px"><label>Tu código de referencia</label><input id="sab-linea-codigo" placeholder="ej: 1070/1F" onblur="aplicarAtajoCodigoReferencia()"/></div>
+          <div class="ff" style="max-width:180px"><label>Tu código de referencia</label><input id="sab-linea-codigo" placeholder="ej: 1070/1F" onblur="aplicarAtajoCodigoReferencia();calcularInsumosLineaSabana()"/></div>
           <div class="ff" style="max-width:260px"><label>Buscar receta (RIP)</label>
             <input id="sab-linea-buscar" list="sab-lineas-datalist" placeholder="ej: 1060/1A, Manta, Ajustable Queen" oninput="seleccionarRecetaLinea()"/>
             <datalist id="sab-lineas-datalist"></datalist>
@@ -2082,10 +2082,21 @@ function aplicarAtajoCodigoReferencia(){
   if(receta) aplicarRecetaSeleccionada(receta);
 }
 
+let sabanasDespachoMemoria = {}; // id (codigo_referencia + insumo) -> despacho_anotado
+
+async function loadSabanasDespachoMemoria(){
+  try{
+    const rows = await sbFetch('sabanas_despacho_memoria?select=*', {method:'GET', headers:{'Prefer':''}});
+    sabanasDespachoMemoria = {};
+    (rows||[]).forEach(r=>{ sabanasDespachoMemoria[r.id] = r.despacho_anotado; });
+  }catch(e){ /* si la tabla no existe todavía, no rompemos nada */ }
+}
+
 function calcularInsumosLineaSabana(){
   const info = document.getElementById('sab-linea-info');
   const cont = document.getElementById('sab-linea-insumos');
   const cantidad = parseFloat(document.getElementById('sab-linea-cantidad').value);
+  const codigo = document.getElementById('sab-linea-codigo').value.trim();
 
   if(!recetaSabanaLineaSel){ info.textContent=''; cont.innerHTML=''; return; }
   if(isNaN(cantidad) || cantidad<=0){ info.textContent='Falta poner la cantidad.'; cont.innerHTML=''; return; }
@@ -2097,11 +2108,14 @@ function calcularInsumosLineaSabana(){
   cont.innerHTML = `<table><thead><tr><th>Insumo</th><th>NCM</th><th>Necesario</th><th>Despacho / ítem / subítem</th></tr></thead><tbody>
     ${mats.map((m,i)=>{
       const necesario = parseFloat((m.cantidad*factor).toFixed(4));
+      const memId = codigo ? slugify(codigo)+'_'+slugify(m.nombre) : null;
+      const sugerido = memId ? (sabanasDespachoMemoria[memId]||'') : '';
       return `<tr>
         <td>${m.nombre}</td>
         <td class="mono">${m.ncm||'—'}</td>
         <td class="mono">${fmt(necesario)} ${m.unidad}</td>
-        <td><input id="sab-linea-desp-${i}" placeholder="ej: 26258ZFI8000020J ít.3 sub.0" style="width:100%;font-family:var(--mn);font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></td>
+        <td><input id="sab-linea-desp-${i}" value="${sugerido}" placeholder="ej: 26258ZFI8000020J ít.3 sub.0" style="width:100%;font-family:var(--mn);font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid ${sugerido?'var(--yw)':'var(--bd2)'};border-radius:var(--rs);color:var(--tx)"/>
+          ${sugerido?`<div style="font-size:9px;color:var(--yw)">↻ el que usaste la última vez — confirmá que siga con stock</div>`:''}</td>
       </tr>`;
     }).join('')}
   </tbody></table>`;
@@ -2150,6 +2164,19 @@ async function agregarLineaSabanaASalida(){
     });
     sabanasPackingMemoria[recetaSabanaLineaSel.id] = {bultos, peso_neto_kg:pesoNeto, peso_bruto_kg:pesoBruto};
   }catch(e){ console.error('No se pudo guardar la memoria de packing:', e); }
+
+  // Guardamos el despacho usado en cada insumo, para sugerirlo la próxima vez con este mismo código
+  for(const m of materialesUsados){
+    if(!m.despacho_anotado) continue;
+    const memId = slugify(codigo)+'_'+slugify(m.nombre);
+    try{
+      await sbFetch('sabanas_despacho_memoria', {
+        method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({id: memId, codigo_referencia: codigo, insumo: m.nombre, despacho_anotado: m.despacho_anotado, actualizado_por: who, actualizado_en: new Date().toISOString()})
+      });
+      sabanasDespachoMemoria[memId] = m.despacho_anotado;
+    }catch(e){ console.error('No se pudo guardar la memoria de despacho:', e); }
+  }
 
   document.getElementById('sab-linea-codigo').value='';
   document.getElementById('sab-linea-buscar').value='';
@@ -2950,6 +2977,7 @@ function renderSalidaHist(){
     else poblarDatalistRecetasLinea();
     if(!Object.keys(sabanasPackingMemoria).length) loadSabanasPackingMemoria();
     if(!Object.keys(articulosRecetaAtajos).length) loadArticulosRecetaAtajos();
+    if(!Object.keys(sabanasDespachoMemoria).length) loadSabanasDespachoMemoria();
   }
   if(!salidaHistorial.length){el.innerHTML='<div class="empty">Sin salidas confirmadas.</div>';return;}
   try{
@@ -3793,10 +3821,57 @@ function imprimirLiq(){
 }
 
 // ── STOCK ─────────────────────────────────────────────────────────────────────
+async function asignarCategoriaDespacho(id){
+  const sel = document.getElementById('asignar-cat-'+id);
+  const nuevaCat = sel.value;
+  if(!nuevaCat){ alert('Elegí una categoría de la lista.'); return; }
+  try{
+    await sbFetch('stock_base?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({material: nuevaCat})
+    });
+    showToast('✓ Categoría asignada.');
+    await loadStockFromSupabase();
+    renderStock();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
 function renderStock(){
   const el=document.getElementById('stock-lista');
   let html='';
+
+  // Despachos cargados sin categoría asignada (material vacío en Supabase) —
+  // quedan agrupados bajo la clave "null" y se pierden entre el resto, así
+  // que los mostramos aparte, bien arriba, con un selector para corregirlos ya.
+  const sinCategoria = [...(STOCK_BASE['null']||[]), ...(STOCK_BASE['']||[]), ...(STOCK_BASE['undefined']||[])];
+  if(sinCategoria.length){
+    const opciones = Object.entries(MAT_LABELS).map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+    html += `<div class="mb" style="border:2px solid var(--rd)">
+      <div class="mh" style="background:var(--rbg)"><span class="mn2" style="color:var(--rd)">⚠ Sin categoría asignada (${sinCategoria.length})</span></div>
+      <div class="tw"><table>
+        <thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Fecha</th><th>Detalle</th><th>Cant.</th><th>Asignar categoría</th></tr></thead>
+        <tbody>${sinCategoria.map(r=>{
+          const id = `${r.despacho}_${r.item}_${r.subitem}`;
+          return `<tr>
+            <td><span class="mono">${r.despacho}</span></td>
+            <td style="text-align:center">${r.item}</td><td style="text-align:center">${r.subitem}</td>
+            <td class="t2">${r.fecha}</td>
+            <td class="t2" style="font-size:11px">${r.detalle||r.producto||'—'}</td>
+            <td class="t2">${fmt(r.cantidad)} ${r.unidad||''}</td>
+            <td style="display:flex;gap:4px">
+              <select id="asignar-cat-${id}" style="font-family:var(--mn);font-size:11px;padding:3px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
+                <option value="">— elegir —</option>${opciones}
+              </select>
+              <button class="btn btnp" style="padding:3px 8px;font-size:10px" onclick="asignarCategoriaDespacho('${id}')">✓</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
   Object.entries(MAT_LABELS).forEach(([k,label])=>{
+    if(k==='null'||k===''||k==='undefined') return; // ya se muestran aparte, arriba
     const rows=getStock(k);
     const cu=CANCEL_UNIT[k];
     const total=rows.reduce((s,r)=>s+(r.cantidad-getCancelQty(r,k)),0);
