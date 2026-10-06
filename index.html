@@ -350,6 +350,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div class="ff" style="max-width:140px"><label>Número de salida</label>
           <input id="sal-nro" placeholder="ej: 170A" style="font-family:var(--mn);font-size:13px"/>
         </div>
+        <div class="ff" style="max-width:200px"><label>Nº de remito</label>
+          <input id="sal-remito" placeholder="ej: R-0001-00001234" style="font-family:var(--mn);font-size:13px"/>
+        </div>
         <div class="ff"><label>Descripción (opcional)</label>
           <input id="sal-desc" placeholder="ej: TRIPLES RABBIT"/>
         </div>
@@ -370,6 +373,9 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div>
           <span class="bdg bo">EN CURSO</span>
           <span id="sal-titulo" style="font-size:14px;font-weight:600;margin-left:10px;color:var(--or)"></span>
+          <span style="margin-left:14px;font-size:11px;color:var(--tx3)">Remito Nº:
+            <input id="sal-remito-activo" onchange="actualizarRemitoSalida()" placeholder="sin remito" style="font-family:var(--mn);font-size:12px;width:160px;padding:3px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+          </span>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="sal-marca" style="font-size:12px;padding:4px 8px;border-radius:var(--rs);border:1px solid var(--bd2);background:var(--bg2);color:var(--tx)">
@@ -983,7 +989,8 @@ async function loadSalidasFromSupabase() {
           nro: r.nro, desc: r.descripcion,
           lineas: r.lineas, sabanas: r.sabanas||[], zfeNro: r.zfe_nro,
           zfeFecha: r.zfe_fecha, cancelaciones: r.cancelaciones, ts: r.ts,
-          facturaNro: r.factura_nro
+          facturaNro: r.factura_nro,
+          remito: r.remito_nro||null
         });
       }
     });
@@ -1026,7 +1033,8 @@ async function saveSalidaToSupabase(salida) {
         nro: salida.nro, descripcion: salida.desc,
         lineas: salida.lineas, sabanas: salida.sabanas||[], zfe_nro: salida.zfeNro,
         zfe_fecha: salida.zfeFecha, cancelaciones: salida.cancelaciones, ts: salida.ts,
-        factura_nro: salida.facturaNro||null
+        factura_nro: salida.facturaNro||null,
+        remito_nro: salida.remito||null
       })
     });
   } catch(e) { console.error('Error guardando salida:', e); }
@@ -1858,11 +1866,15 @@ function collectZFIs(){
 function crearSalida(){
   const nro=document.getElementById('sal-nro').value.trim();
   if(!nro){alert('Ingresá el número de salida.');return;}
+  const remito=document.getElementById('sal-remito').value.trim();
+  if(!remito){alert('Ingresá el número de remito.');return;}
   const desc=document.getElementById('sal-desc').value.trim();
-  salidaActiva={id:Date.now(),nro,desc,lineas:[],sabanas:[]};
+  salidaActiva={id:Date.now(),nro,desc,remito,lineas:[],sabanas:[]};
   salidaBorradores.push(salidaActiva);
   salidaCancelaciones=[];
   document.getElementById('sal-titulo').textContent=`Salida ${nro}${desc?' — '+desc:''}`;
+  document.getElementById('sal-remito-activo').value=remito;
+  document.getElementById('sal-remito').value=''; // que no se arrastre al próximo alta
   document.getElementById('sal-activa-wrap').style.display='block';
   document.getElementById('sal-nueva-wrap').style.display='none';
   document.getElementById('sal-pdf-status').textContent='Sin PDF';
@@ -1921,6 +1933,12 @@ function aplicarReserva(salida){
   reservaPatch[salida.id]=consumo;
 }
 
+function actualizarRemitoSalida(){
+  if(!salidaActiva) return;
+  salidaActiva.remito = document.getElementById('sal-remito-activo').value.trim();
+  guardarBorrador();
+}
+
 function guardarBorrador(){
   if(!salidaActiva) return;
   const idx=salidaBorradores.findIndex(b=>b.id===salidaActiva.id);
@@ -1937,6 +1955,7 @@ function abrirBorrador(id){
   if(salidaActiva){
     document.getElementById('sal-activa-wrap').style.display='block';
     document.getElementById('sal-titulo').textContent=salidaActiva.nro+(salidaActiva.desc?' — '+salidaActiva.desc:'');
+    document.getElementById('sal-remito-activo').value=salidaActiva.remito||'';
     document.getElementById('sal-zfe-nro').value='';
     document.getElementById('sal-zfe-fecha').value='';
     document.getElementById('sal-factura-nro').value='';
@@ -2587,7 +2606,7 @@ function imprimirPackingList(salOverride){
     +'<h1>PACKING LIST — SALIDA '+sal.nro+(sal.desc?' — '+sal.desc:'')+'</h1>'
     +'<div class="sub">ALAV SRL &nbsp;|&nbsp; Z.F. GENERAL PICO, LA PAMPA &nbsp;|&nbsp; Marca: <strong>'+marca+'</strong> &nbsp;|&nbsp; NCM: <strong>'+NCM+'</strong></div>'
     +'</div>'
-    +'<div class="hdr-right"><strong>Fecha:</strong> '+fecha+'</div>'
+    +'<div class="hdr-right">'+(sal.remito?'<strong>Remito Nº:</strong> '+sal.remito+'<br>':'')+'<strong>Fecha:</strong> '+fecha+'</div>'
     +'</div>';
 
   // Tabla de ítems
@@ -2940,6 +2959,7 @@ function confirmarSalida(){
     lineas:[...salidaActiva.lineas],
     sabanas:[...(salidaActiva.sabanas||[])],
     zfeNro, zfeFecha, facturaNro: facturaNro||null,
+    remito: salidaActiva.remito||null,
     cancelaciones:[...salidaCancelaciones],
     ts:new Date().toLocaleDateString('es-AR')
   });
@@ -3001,6 +3021,7 @@ function renderSalidaHist(){
           <span style="font-size:13px;font-weight:600">${s.desc||''}</span>
           <span class="t2">${s.zfeFecha}</span>
           <span class="mono t2" style="font-size:11px">${s.zfeNro}</span>
+          ${s.remito?`<span class="bdg bb">Remito ${s.remito}</span>`:''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn" style="padding:4px 10px;font-size:11px" onclick="toggleDetalleSalida(${si})">🔍 Ver detalle</button>
