@@ -709,7 +709,11 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
             <input id="adm-nombre" placeholder="ej: ELASTIC BAND 6MM"/>
           </div>
           <div class="ff" style="max-width:220px"><label>Nº Despacho</label>
-            <input id="adm-desp" placeholder="ej: 26258ZFI8000020X" style="font-family:var(--mn);font-size:12px"/>
+            <input id="adm-desp" placeholder="ej: 26258ZFI8000020X" style="font-family:var(--mn);font-size:12px" oninput="onDespachoManualInput()"/>
+          </div>
+          <div class="ff" id="adm-et19-wrap" style="display:none;max-width:330px"><label>🔗 ET19 a la que corresponde este ZFI6 (obligatorio)</label>
+            <select id="adm-et19-sel" onchange="onCambioET19Manual()" style="font-family:var(--mn);font-size:12px"><option value="">Cargando ET19...</option></select>
+            <input id="adm-et19-manual" placeholder="ej: 26090ET19000145J" style="display:none;margin-top:4px;font-family:var(--mn);font-size:12px"/>
           </div>
           <div class="ff" style="max-width:65px"><label>Ítem</label><input id="adm-item" type="number" min="1" value="1"/></div>
           <div class="ff" style="max-width:65px"><label>Subítem</label><input id="adm-sub" type="number" min="0" value="0"/></div>
@@ -1096,11 +1100,29 @@ async function syncStockToSupabase() {
 }
 
 // Al cargar la página: intentar cargar desde Supabase primero
+// Vínculo ZFI6 -> ET19 (despacho -> {et19, oc_id, oc_numero})
+let zfi6Et19Map = {};
+async function loadZfi6Et19(){
+  try{
+    const rows = await sbFetch('zfi6_et19?select=*', {method:'GET', headers:{'Prefer':''}});
+    zfi6Et19Map = {};
+    (rows||[]).forEach(r=>{ zfi6Et19Map[r.despacho] = r; });
+  }catch(e){ /* si la tabla todavía no existe, no rompemos nada */ }
+}
+
+// Lista de ZFI6 vinculados a una ET19 (para mostrar en la orden de compra)
+function zfi6DeET19(et19){
+  if(!et19) return '';
+  const ds = Object.values(zfi6Et19Map).filter(v=>(v.et19||'').trim()===et19.trim()).map(v=>v.despacho);
+  return ds.length ? ` · <span style="color:var(--gr)">ZFI6 vinculado${ds.length>1?'s':''}: <span class="mono">${ds.join(', ')}</span></span>` : '';
+}
+
 async function initFromSupabase() {
   await loadCustomCategoriasFromSupabase();
   const stockOk = await loadStockFromSupabase();
   await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
   try{ const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}}); stockMinimos = rows || []; }catch(e){}
+  await loadZfi6Et19();
   if(stockOk) { renderStock(); renderSalidaHist(); }
 }
 
@@ -1751,7 +1773,7 @@ function onCalcChange(){
         const uid=`cb_${k}_${r.despacho.replace(/[^a-zA-Z0-9]/g,'')}_${r.item}_${r.subitem}`;
         t+=`<tr class="${cls}">
           <td class="cbtd"><input type="checkbox" id="${uid}" onchange="onCb('${k}',${neededStock},'${uid}',${disp},'${cu}')" /></td>
-          <td><span class="mono">${r.despacho}</span>${esNac(r.despacho)?'<span class="bnac" style="margin-left:4px">NAC</span>':''}</td>
+          <td><span class="mono">${r.despacho}</span>${esNac(r.despacho)?'<span class="bnac" style="margin-left:4px">NAC</span>':''}${zfi6Et19Map[r.despacho]?`<div class="t2 mono" style="font-size:10px;color:var(--ac)">🔗 ET19 ${zfi6Et19Map[r.despacho].et19}</div>`:''}</td>
           <td style="text-align:center">${r.item}</td><td style="text-align:center">${r.subitem}</td>
           <td class="t2">${r.fecha}</td>
           <td class="t2" style="font-size:11px;max-width:150px;white-space:normal">${r.detalle||'—'}</td>
@@ -3905,7 +3927,7 @@ function renderStock(){
       return `<div class="${lcls}">${lbl}</div><div class="tw"><table>
         <thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Fecha</th><th>Detalle</th><th>Cant. orig.</th><th>Disponible (${cu})</th><th>FOB</th></tr></thead>
         <tbody>${rws.map(r=>`<tr class="${cls}">
-          <td><span class="mono">${r.despacho}</span>${esNac(r.despacho)?'<span class="bnac" style="margin-left:4px">NAC</span>':''}</td>
+          <td><span class="mono">${r.despacho}</span>${esNac(r.despacho)?'<span class="bnac" style="margin-left:4px">NAC</span>':''}${zfi6Et19Map[r.despacho]?`<div class="t2 mono" style="font-size:10px;color:var(--ac)">🔗 ET19 ${zfi6Et19Map[r.despacho].et19}</div>`:''}</td>
           <td style="text-align:center">${r.item}</td><td style="text-align:center">${r.subitem}</td>
           <td class="t2">${r.fecha}</td>
           <td class="t2" style="font-size:11px">${r.detalle||'—'}</td>
@@ -4285,7 +4307,7 @@ function renderOrdenesCompra(){
           <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${estadoTxt}</span>
           ${o.orden_relacionada?`<span class="bdg by">OC COMPLEMENTARIA</span>`:''}
         </div>
-        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision}${o.fecha_cierre?` · Cierre: ${o.fecha_cierre}`:''}${o.sita?` · SITA: ${o.sita}`:''}${o.et19?` · ET19: ${o.et19}`:''} · por ${o.creado_por||'?'}</div>
+        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision}${o.fecha_cierre?` · Cierre: ${o.fecha_cierre}`:''}${o.sita?` · SITA: ${o.sita}`:''}${o.et19?` · ET19: ${o.et19}`:''}${zfi6DeET19(o.et19)} · por ${o.creado_por||'?'}</div>
       </div>
 
       ${(hayExcedente && !excedenteRegularizado) ? `
@@ -5678,6 +5700,7 @@ function editAdmStock(mat, i){
 
   document.getElementById('adm-nombre').value = r.producto||'';
   document.getElementById('adm-desp').value = r.despacho;
+  onDespachoManualInput();
   document.getElementById('adm-item').value = r.item;
   document.getElementById('adm-sub').value = r.subitem;
   document.getElementById('adm-fecha').value = r.fecha||'';
@@ -5707,6 +5730,7 @@ function cancelarEdicionStock(){
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
   document.getElementById('adm-mat').value='';
+  resetET19Manual();
   document.getElementById('adm-submit-btn').textContent = '+ Agregar';
   document.getElementById('adm-cancel-edit-btn').style.display = 'none';
   document.getElementById('adm-msg').style.display='none';
@@ -6184,6 +6208,55 @@ function slugify(txt){
     .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'insumo';
 }
 
+// ── ZFI6 → ET19 en la carga manual ──
+let et19DisponiblesManual = [];
+
+async function onDespachoManualInput(){
+  const desp = document.getElementById('adm-desp').value.toUpperCase();
+  const wrap = document.getElementById('adm-et19-wrap');
+  const esZFI6 = desp.includes('ZFI6');
+  wrap.style.display = esZFI6 ? 'block' : 'none';
+  if(esZFI6 && !et19DisponiblesManual.length) await cargarET19ParaZFI6Manual();
+}
+
+async function cargarET19ParaZFI6Manual(){
+  const sel = document.getElementById('adm-et19-sel');
+  try{
+    const rows = await sbFetch('ordenes_compra?select=id,numero,proveedor,et19&et19=not.is.null&order=creado_en.desc', {method:'GET', headers:{'Prefer':''}});
+    et19DisponiblesManual = (rows||[]).filter(o=>o.et19 && o.et19.trim());
+  }catch(e){ et19DisponiblesManual = []; }
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">— Elegí la ET19 —</option>'
+    + et19DisponiblesManual.map(o=>`<option value="${o.id}">${o.et19} — ${o.numero} — ${o.proveedor}</option>`).join('')
+    + '<option value="__otra__">Otra ET19 (escribir el número)</option>';
+  sel.value = actual;
+}
+
+function onCambioET19Manual(){
+  document.getElementById('adm-et19-manual').style.display =
+    document.getElementById('adm-et19-sel').value==='__otra__' ? 'block' : 'none';
+}
+
+function getET19ManualElegida(){
+  const v = document.getElementById('adm-et19-sel').value;
+  if(!v) return null;
+  if(v==='__otra__'){
+    const n = document.getElementById('adm-et19-manual').value.trim();
+    return n ? {et19:n, oc_id:null, oc_numero:null} : null;
+  }
+  const o = et19DisponiblesManual.find(x=>x.id===v);
+  return o ? {et19:o.et19.trim(), oc_id:o.id, oc_numero:o.numero} : null;
+}
+
+function resetET19Manual(){
+  const sel = document.getElementById('adm-et19-sel');
+  if(sel) sel.value='';
+  const man = document.getElementById('adm-et19-manual');
+  if(man){ man.value=''; man.style.display='none'; }
+  const wrap = document.getElementById('adm-et19-wrap');
+  if(wrap) wrap.style.display='none';
+}
+
 async function addStock(){
   const matSel=document.getElementById('adm-mat').value;
   const nombreInsumo=document.getElementById('adm-nombre').value.trim();
@@ -6238,6 +6311,29 @@ async function addStock(){
     if(!ok){ msg.style.color='var(--yw)'; msg.textContent='⚠ Carga cancelada — evitaste un duplicado.'; btn.disabled=false; btn.textContent=btnTextoOriginal; return; }
   }
 
+  // ZFI6: tiene que quedar vinculado a una ET19 (el vínculo se guarda ANTES que el stock,
+  // así si falla no queda nada cargado a medias).
+  if(desp.toUpperCase().includes('ZFI6')){
+    const v = getET19ManualElegida();
+    if(!v && !zfi6Et19Map[desp]){
+      msg.style.color='var(--rd)'; msg.textContent='Este es un ZFI6: elegí la ET19 a la que corresponde.';
+      btn.disabled=false; btn.textContent=btnTextoOriginal; return;
+    }
+    if(v){
+      try{
+        const who = localStorage.getItem('ga_user_label')||'alguien';
+        await sbFetch('zfi6_et19', {
+          method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+          body: JSON.stringify({despacho: desp, et19: v.et19, oc_id: v.oc_id, oc_numero: v.oc_numero, vinculado_por: who})
+        });
+        zfi6Et19Map[desp] = {despacho: desp, et19: v.et19, oc_id: v.oc_id, oc_numero: v.oc_numero};
+      }catch(e){
+        msg.style.color='var(--rd)'; msg.textContent='⚠ No se pudo guardar el vínculo con la ET19, no se cargó nada: '+e.message;
+        btn.disabled=false; btn.textContent=btnTextoOriginal; return;
+      }
+    }
+  }
+
   if(esCategoriaNueva) await pushCustomCategoriaToSupabase(mat, nombreInsumo, cu);
 
   let nuevaFila;
@@ -6287,6 +6383,7 @@ async function addStock(){
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
   document.getElementById('adm-mat').value='';
+  resetET19Manual();
   btn.disabled=false; btn.textContent=btnTextoOriginal;
 }
 

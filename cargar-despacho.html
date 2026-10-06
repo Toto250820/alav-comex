@@ -205,6 +205,16 @@ input.narrow{width:80px}
       <div class="hi"><label>Seguro Total</label><b id="rv-seguro">—</b></div>
     </div>
     <div id="dup-warning"></div>
+    <div id="zfi6-et19-box" style="display:none;margin-top:14px;padding:12px;border:2px solid var(--ac);border-radius:var(--rs);background:var(--bg3)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">🔗 Vincular este ZFI6 a una ET19 (obligatorio)</div>
+      <div class="sub" style="margin-bottom:8px">Elegí la ET19 a la que corresponde este ZFI6, así más adelante se sabe cuál es cuál.</div>
+      <select id="zfi6-et19-sel" onchange="onCambioET19ZFI6()" style="font-family:var(--mn);font-size:13px;padding:6px 8px;min-width:320px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
+        <option value="">Cargando ET19...</option>
+      </select>
+      <div id="zfi6-et19-manual-wrap" style="display:none;margin-top:8px">
+        <input id="zfi6-et19-manual" oninput="updateSubmitState()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px;padding:6px 8px;width:260px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -631,6 +641,11 @@ async function renderReview(p){
   document.getElementById('rv-flete').textContent = 'USD ' + p.flete_desp.toFixed(2);
   document.getElementById('rv-seguro').textContent = 'USD ' + p.seguro_desp.toFixed(2);
 
+  // Si es un ZFI6, hay que vincularlo a una ET19 ya cargada en el sistema
+  const et19Box = document.getElementById('zfi6-et19-box');
+  if(p.tipo === 'ZFI6'){ et19Box.style.display = 'block'; cargarET19ParaZFI6(); }
+  else { et19Box.style.display = 'none'; }
+
   // chequeo de duplicado
   const dupBox = document.getElementById('dup-warning');
   dupBox.innerHTML = '';
@@ -684,7 +699,42 @@ function updateSubmitState(){
     const inc = document.getElementById('inc-'+i).checked;
     if(inc){ anyIncluded = true; if(!document.getElementById('mat-'+i).value) ok = false; }
   });
+  if(currentParsed && currentParsed.tipo === 'ZFI6' && !getET19ZFI6Elegida()) ok = false;
   document.getElementById('btn-confirm').disabled = !(ok && anyIncluded);
+}
+
+// ── Vínculo ZFI6 → ET19 ──────────────────────────────────────────────────────
+let et19DisponiblesZFI6 = [];
+
+async function cargarET19ParaZFI6(){
+  const sel = document.getElementById('zfi6-et19-sel');
+  sel.innerHTML = '<option value="">Cargando ET19...</option>';
+  try{
+    const rows = await sbFetch('ordenes_compra?select=id,numero,proveedor,et19,et19_fecha&et19=not.is.null&order=creado_en.desc', {method:'GET', headers:{'Prefer':''}});
+    et19DisponiblesZFI6 = (rows||[]).filter(o=>o.et19 && o.et19.trim());
+  }catch(e){ et19DisponiblesZFI6 = []; }
+  sel.innerHTML = '<option value="">— Elegí la ET19 —</option>'
+    + et19DisponiblesZFI6.map(o=>`<option value="${o.id}">${o.et19} — ${o.numero} — ${o.proveedor}</option>`).join('')
+    + '<option value="__otra__">Otra ET19 (escribir el número)</option>';
+  updateSubmitState();
+}
+
+function onCambioET19ZFI6(){
+  const v = document.getElementById('zfi6-et19-sel').value;
+  document.getElementById('zfi6-et19-manual-wrap').style.display = (v==='__otra__') ? 'block' : 'none';
+  updateSubmitState();
+}
+
+// Devuelve {et19, oc_id, oc_numero} o null si todavía no eligió nada
+function getET19ZFI6Elegida(){
+  const v = document.getElementById('zfi6-et19-sel').value;
+  if(!v) return null;
+  if(v === '__otra__'){
+    const n = document.getElementById('zfi6-et19-manual').value.trim();
+    return n ? {et19:n, oc_id:null, oc_numero:null} : null;
+  }
+  const o = et19DisponiblesZFI6.find(x=>x.id===v);
+  return o ? {et19:o.et19.trim(), oc_id:o.id, oc_numero:o.numero} : null;
 }
 
 async function confirmarCarga(){
@@ -716,13 +766,25 @@ async function confirmarCarga(){
     });
   });
   try{
+    const who = localStorage.getItem('ga_user_label')||'alguien';
+    let vinculoTxt = '';
+    if(p.tipo === 'ZFI6'){
+      const v = getET19ZFI6Elegida();
+      if(!v) throw new Error('Falta elegir la ET19 a la que corresponde este ZFI6.');
+      // Se guarda el vínculo ANTES que el stock: si esto falla, no se carga nada a medias.
+      await sbFetch('zfi6_et19', {
+        method:'POST',
+        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({despacho: p.despacho, et19: v.et19, oc_id: v.oc_id, oc_numero: v.oc_numero, vinculado_por: who})
+      });
+      vinculoTxt = ` Vinculado a la ET19 <b>${v.et19}</b>${v.oc_numero?' ('+v.oc_numero+')':''}.`;
+    }
     await sbFetch('stock_base', {
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
       body: JSON.stringify(rows)
     });
-    const who = localStorage.getItem('ga_user_label')||'alguien';
-    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Despacho <b>${p.despacho}</b> cargado al stock (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}. <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
+    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Despacho <b>${p.despacho}</b> cargado al stock (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}.${vinculoTxt} <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
     document.getElementById('review-box').style.display='none';
   }catch(e){
     document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error al guardar en Supabase: ${e.message}</div>`;
@@ -736,6 +798,9 @@ function resetTool(){
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
+  document.getElementById('zfi6-et19-box').style.display='none';
+  document.getElementById('zfi6-et19-manual').value='';
+  document.getElementById('zfi6-et19-manual-wrap').style.display='none';
   document.getElementById('error-box').innerHTML='';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('file-inp').value='';
