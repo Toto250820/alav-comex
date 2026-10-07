@@ -200,6 +200,7 @@ input.narrow{width:80px}
       <div class="sub" style="margin-bottom:8px">Escribí el número de la ET19 a la que corresponde este ZFI6 (o elegila de las sugeridas), así más adelante se sabe cuál es cuál.</div>
       <input id="zfi6-et19-in" list="zfi6-et19-list" oninput="updateSubmitState()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px;padding:6px 8px;width:300px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
       <datalist id="zfi6-et19-list"></datalist>
+      <div id="zfi6-et19-origen" class="sub" style="margin-top:6px"></div>
     </div>
   </div>
 
@@ -220,6 +221,7 @@ input.narrow{width:80px}
       <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
       <button class="btn btng" id="btn-confirm" onclick="confirmarCarga()" disabled>✓ Confirmar y cargar a stock</button>
     </div>
+    <div id="submit-hint" style="display:none;margin-top:10px;padding:10px 12px;border:2px solid var(--rd);background:var(--rbg);color:var(--rd);font-size:13px;font-weight:600;border-radius:var(--rs)"></div>
   </div>
 </div>
 
@@ -259,7 +261,7 @@ function setUser(name){
 })();
 
 // ── Diccionarios (mismos que la app principal) ──────────────────────────────
-const UNIQUE_NCM = {'5503.20.90':'guata','5807.10.00':'poliamida','5508.10.00':'hilo','5603.11.30':'tnt','5806.32.00':'bies','3923.29.90':'pvc','4911.91.00':'insert','6301.40.00':'manta'};
+const UNIQUE_NCM = {'5503.20.90':'guata','5807.10.00':'poliamida','5508.10.00':'hilo','5603.11.30':'tnt','5806.32.00':'bies','3923.29.90':'pvc','4911.91.00':'insert','6301.40.00':'manta','4819.10.00':'caja'};
 const AMBIGUOUS_NCM = {'6001.92.00':['cord','cord160','terc300','terc360','terc400','funda'],'5407.52.10':['micro90','micro100','micro80'],'4823.90.99':['alma','caja']};
 const MAT_LABELS = {guata:'Guata',poliamida:'Poliamida',hilo:'Hilo de coser',tnt:'Tejido TNT',bies:'Bies / Vivo',pvc:'Bolsa PVC',insert:'Insert',cord:'Corderito 180g',cord160:'Corderito 160g',terc300:'Terciopelo 300g',terc360:'Terciopelo 360g',terc400:'Terciopelo 400g',funda:'Funda Kits',micro90:'Microfibra 90g',micro100:'Microfibra 100g',micro80:'Microfibra 80g',alma:'Alma',manta:'Manta Cacharel',caja:'Caja'};
 const CANCEL_UNIT = {guata:'kg',tnt:'kg',cord:'kg',cord160:'kg',terc300:'kg',terc360:'kg',terc400:'kg',funda:'kg',hilo:'m',bies:'m',pvc:'u',insert:'u',poliamida:'m',manta:'u',micro90:'m',micro100:'m',micro80:'m',alma:'u',caja:'u'};
@@ -338,14 +340,16 @@ function parseDespacho(fullPagesText) {
       const unitario = unitM ? num(unitM[1]) : null;
       const nearby = text.slice(im.index, im.index+2000);
       const aiM = nearby.match(/AI\(([^)]*)\)/);
-      const zaM = nearby.match(/ZA\((\d+)GSM\)/i);
+      // Dos formatos: "ZA(80GSM)" (viejo) y "ZA(000085) = PESO EN g/m2" (actual de ARCA)
+      const zaM = nearby.match(/ZA\((\d+)GSM\)/i) || nearby.match(/ZA\((\d+)\)\s*=\s*PESO EN g\/m2/i);
       const cls = classify(ncmShort, aiM ? aiM[1] : '', zaM ? zaM[1] : null);
       const cif = fobDolar!==null ? Math.round((fobDolar * (1 + (flete_desp+seguro_desp)/fob_desp))*100)/100 : null;
-      items.push({item:itemNum, subitem:0, ncm:ncmShort, kgs_neto, unidad, cantidad, fob:fobDolar, unitario, cif,
+      items.push({item:itemNum, subitem:0, ncm:ncmShort, gsm: zaM ? parseInt(zaM[1]) : null, kgs_neto, unidad, cantidad, fob:fobDolar, unitario, cif,
         ai: aiM ? aiM[1] : null, material: cls.material, confidence: cls.confidence, candidatos: cls.candidatos||null});
     }
   });
-  return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, items};
+  const et19M = fullPagesText.join(' ').replace(/\|/g,' ').replace(/\s+/g,' ').match(/DEST-PROC-TER-AD\s*=\s*(\d{5}ET19\d{6}[A-Z])/);
+  return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, et19_pdf: et19M ? et19M[1] : null, items};
 }
 
 // ── UI: drag & drop ──────────────────────────────────────────────────────────
@@ -649,7 +653,15 @@ async function renderReview(p){
 
   // Si es un ZFI6, hay que vincularlo a una ET19 ya cargada en el sistema
   const et19Box = document.getElementById('zfi6-et19-box');
-  if(p.tipo === 'ZFI6'){ et19Box.style.display = 'block'; cargarET19ParaZFI6(); }
+  if(p.tipo === 'ZFI6'){
+    et19Box.style.display = 'block';
+    const origen = document.getElementById('zfi6-et19-origen');
+    if(p.et19_pdf){
+      document.getElementById('zfi6-et19-in').value = p.et19_pdf;
+      origen.innerHTML = '✓ Leída del propio PDF del ZFI6 — revisala y, si es otra, corregila.';
+    } else { origen.innerHTML = 'Este PDF no trae la ET19: escribila a mano.'; }
+    cargarET19ParaZFI6();
+  }
   else { et19Box.style.display = 'none'; }
 
   // chequeo de duplicado
@@ -671,7 +683,7 @@ async function renderReview(p){
     return `<tr id="row-${i}" class="${it.confidence==='sin_match'?'warn':''}">
       <td style="text-align:center"><input type="checkbox" id="inc-${i}" checked onchange="updateSubmitState()"></td>
       <td class="mono">${it.item}</td>
-      <td class="mono">${it.ncm}${it.ai?`<div style="font-size:10px;color:var(--tx3)">${it.ai}</div>`:''}</td>
+      <td class="mono">${it.ncm}${it.ai?`<div style="font-size:10px;color:var(--tx3)">${it.ai}</div>`:''}${it.gsm?`<div style="font-size:10px;color:var(--ac)">${it.gsm} g/m²</div>`:''}</td>
       <td><span class="tag ${it.confidence}">${it.confidence==='alta'?'✓ auto':it.confidence==='media'?'~ probable':'⚠ elegir'}</span></td>
       <td><select id="mat-${i}" class="${it.confidence==='sin_match'?'needsel':''}" onchange="onMatChange(${i})">${opts}</select></td>
       <td><input type="number" step="0.01" class="narrow mono" id="cant-${i}" value="${it.cantidad!=null?it.cantidad:''}"></td>
@@ -700,13 +712,28 @@ function onMatChange(i){
 }
 
 function updateSubmitState(){
-  let ok = true, anyIncluded = false;
+  if(!currentParsed || !currentParsed.items) return;
+  if(currentParsed.items.length && !document.getElementById('inc-0')) return; // la tabla todavía no se dibujó
+  // Junta TODO lo que falta, así el botón nunca queda bloqueado sin explicación
+  const faltan = [];
+  let anyIncluded = false;
+  const sinInsumo = [];
   currentParsed.items.forEach((it,i)=>{
     const inc = document.getElementById('inc-'+i).checked;
-    if(inc){ anyIncluded = true; if(!document.getElementById('mat-'+i).value) ok = false; }
+    if(inc){ anyIncluded = true; if(!document.getElementById('mat-'+i).value) sinInsumo.push(it.item); }
   });
-  if(currentParsed && currentParsed.tipo === 'ZFI6' && !getET19ZFI6Elegida()) ok = false;
-  document.getElementById('btn-confirm').disabled = !(ok && anyIncluded);
+  if(!anyIncluded) faltan.push('Tildá al menos un ítem para cargar.');
+  if(sinInsumo.length) faltan.push('Falta elegir el insumo del ítem ' + sinInsumo.join(', ') + '.');
+  const esZFI6 = currentParsed && currentParsed.tipo === 'ZFI6';
+  const sinET19 = esZFI6 && !getET19ZFI6Elegida();
+  if(sinET19) faltan.push('Falta escribir la ET19 a la que corresponde este ZFI6 (recuadro azul "Vincular este ZFI6 a una ET19", arriba, en "Datos del despacho").');
+
+  const inpET = document.getElementById('zfi6-et19-in');
+  if(inpET) inpET.style.borderColor = sinET19 ? 'var(--rd)' : '';
+  const hint = document.getElementById('submit-hint');
+  hint.style.display = faltan.length ? 'block' : 'none';
+  hint.innerHTML = faltan.length ? '⚠ Todavía no se puede cargar:<br>• ' + faltan.join('<br>• ') : '';
+  document.getElementById('btn-confirm').disabled = faltan.length > 0;
 }
 
 // ── Vínculo ZFI6 → ET19 ──────────────────────────────────────────────────────
@@ -732,12 +759,68 @@ function getET19ZFI6Elegida(){
   return {et19:n, oc_id:o?o.id:null, oc_numero:o?o.numero:null};
 }
 
+async function confirmarCarga(){
+  const btn = document.getElementById('btn-confirm');
+  btn.disabled = true; btn.textContent = 'Cargando...';
+  const p = currentParsed;
+  const rows = [];
+  p.items.forEach((it,i)=>{
+    if(!document.getElementById('inc-'+i).checked) return;
+    const mat = document.getElementById('mat-'+i).value;
+    if(!mat) return;
+    const despacho = p.despacho;
+    const item = it.item, subitem = it.subitem;
+    rows.push({
+      id: despacho+'_'+item+'_'+subitem,
+      material: mat, despacho, item, subitem,
+      cantidad: parseFloat(document.getElementById('cant-'+i).value)||0,
+      cancel_qty: 0,
+      cancel_unit: CANCEL_UNIT[mat]||'kg',
+      unidad: document.getElementById('uni-'+i).value||'KILOGRAMO',
+      fob: parseFloat(document.getElementById('fob-'+i).value)||0,
+      cif: parseFloat(document.getElementById('cif-'+i).value)||0,
+      kgs_neto: parseFloat(document.getElementById('kg-'+i).value)||0,
+      producto: MAT_LABELS[mat]||'',
+      detalle: document.getElementById('det-'+i).value||'',
+      fecha: p.fecha,
+      sospechoso: document.getElementById('sosp-'+i).checked,
+      fob_desp: p.fob_desp, flete_desp: p.flete_desp, seguro_desp: p.seguro_desp
+    });
+  });
+  try{
+    const who = localStorage.getItem('ga_user_label')||'alguien';
+    let vinculoTxt = '';
+    if(p.tipo === 'ZFI6'){
+      const v = getET19ZFI6Elegida();
+      if(!v) throw new Error('Falta elegir la ET19 a la que corresponde este ZFI6.');
+      // El vínculo se guarda ANTES que el stock: si falla, no se carga nada a medias.
+      await sbFetch('zfi6_et19', {
+        method:'POST',
+        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({despacho: p.despacho, et19: v.et19.toUpperCase(), oc_id: v.oc_id, oc_numero: v.oc_numero, vinculado_por: who})
+      });
+      vinculoTxt = ` Vinculado a la ET19 <b>${v.et19.toUpperCase()}</b>.`;
+    }
+    await sbFetch('stock_base', {
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify(rows)
+    });
+    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Despacho <b>${p.despacho}</b> cargado al stock (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}.${vinculoTxt} <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
+    document.getElementById('review-box').style.display='none';
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error al guardar en Supabase: ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = '✓ Confirmar y cargar a stock';
+  }
+}
+
 function resetTool(){
   currentParsed = null;
   currentET19 = null;
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
   document.getElementById('et-registro-msg').innerHTML='';
+  document.getElementById('submit-hint').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
   document.getElementById('zfi6-et19-box').style.display='none';
   document.getElementById('zfi6-et19-in').value='';
