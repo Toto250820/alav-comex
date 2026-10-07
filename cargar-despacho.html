@@ -145,17 +145,6 @@ input.narrow{width:80px}
       <button class="btn" onclick="resetTool()">Cargar otro PDF</button>
     </div>
   </div>
-
-  <div class="card">
-    <div class="stit">¿Con qué orden de compra va?</div>
-    <div class="sub">Si esta materia prima corresponde a una orden de compra ya CONFIRMADA por cantidad y con el SITA cargado en la app, elegila acá para vincularle esta ET19 y cerrarla del todo.</div>
-    <div class="fr">
-      <div class="ff" style="max-width:320px"><label>Orden de compra</label>
-        <select id="et-oc-sel" onchange="renderCotejoOCdesdeET19()"><option value="">Cargando órdenes confirmadas...</option></select>
-      </div>
-    </div>
-    <div id="et-oc-cotejo"></div>
-  </div>
 </div>
 
 <div id="zfe3-box" style="display:none">
@@ -207,13 +196,9 @@ input.narrow{width:80px}
     <div id="dup-warning"></div>
     <div id="zfi6-et19-box" style="display:none;margin-top:14px;padding:12px;border:2px solid var(--ac);border-radius:var(--rs);background:var(--bg3)">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px">🔗 Vincular este ZFI6 a una ET19 (obligatorio)</div>
-      <div class="sub" style="margin-bottom:8px">Elegí la ET19 a la que corresponde este ZFI6, así más adelante se sabe cuál es cuál.</div>
-      <select id="zfi6-et19-sel" onchange="onCambioET19ZFI6()" style="font-family:var(--mn);font-size:13px;padding:6px 8px;min-width:320px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
-        <option value="">Cargando ET19...</option>
-      </select>
-      <div id="zfi6-et19-manual-wrap" style="display:none;margin-top:8px">
-        <input id="zfi6-et19-manual" oninput="updateSubmitState()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px;padding:6px 8px;width:260px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
-      </div>
+      <div class="sub" style="margin-bottom:8px">Escribí el número de la ET19 a la que corresponde este ZFI6 (o elegila de las sugeridas), así más adelante se sabe cuál es cuál.</div>
+      <input id="zfi6-et19-in" list="zfi6-et19-list" oninput="updateSubmitState()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px;padding:6px 8px;width:300px;background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+      <datalist id="zfi6-et19-list"></datalist>
     </div>
   </div>
 
@@ -408,7 +393,6 @@ function renderET19(p){
   document.getElementById('et-meses').value = '22';
   document.getElementById('et19-box').style.display = 'block';
   recalcularVencimientoET19();
-  cargarOrdenesAbiertasParaET19();
 }
 
 let ordenesAbiertasET19 = [];
@@ -704,92 +688,26 @@ function updateSubmitState(){
 }
 
 // ── Vínculo ZFI6 → ET19 ──────────────────────────────────────────────────────
-let et19DisponiblesZFI6 = [];
+let et19DisponiblesZFI6 = [];   // órdenes con ET19 (solo para sugerir y, si coincide, guardar el id por detrás)
 
 async function cargarET19ParaZFI6(){
-  const sel = document.getElementById('zfi6-et19-sel');
-  sel.innerHTML = '<option value="">Cargando ET19...</option>';
+  const dl = document.getElementById('zfi6-et19-list');
+  const sugeridas = new Set();
+  et19DisponiblesZFI6 = []; // las órdenes de compra ya no se relacionan con las ET19
   try{
-    const rows = await sbFetch('ordenes_compra?select=id,numero,proveedor,et19,et19_fecha&et19=not.is.null&order=creado_en.desc', {method:'GET', headers:{'Prefer':''}});
-    et19DisponiblesZFI6 = (rows||[]).filter(o=>o.et19 && o.et19.trim());
-  }catch(e){ et19DisponiblesZFI6 = []; }
-  sel.innerHTML = '<option value="">— Elegí la ET19 —</option>'
-    + et19DisponiblesZFI6.map(o=>`<option value="${o.id}">${o.et19} — ${o.numero} — ${o.proveedor}</option>`).join('')
-    + '<option value="__otra__">Otra ET19 (escribir el número)</option>';
+    const prev = await sbFetch('zfi6_et19?select=et19', {method:'GET', headers:{'Prefer':''}});
+    (prev||[]).forEach(v=>{ if(v.et19) sugeridas.add(v.et19.trim()); });
+  }catch(e){}
+  dl.innerHTML = [...sugeridas].map(e=>`<option value="${e}"></option>`).join('');
   updateSubmitState();
 }
 
-function onCambioET19ZFI6(){
-  const v = document.getElementById('zfi6-et19-sel').value;
-  document.getElementById('zfi6-et19-manual-wrap').style.display = (v==='__otra__') ? 'block' : 'none';
-  updateSubmitState();
-}
-
-// Devuelve {et19, oc_id, oc_numero} o null si todavía no eligió nada
+// Devuelve {et19, oc_id, oc_numero} o null si todavía no escribió nada
 function getET19ZFI6Elegida(){
-  const v = document.getElementById('zfi6-et19-sel').value;
-  if(!v) return null;
-  if(v === '__otra__'){
-    const n = document.getElementById('zfi6-et19-manual').value.trim();
-    return n ? {et19:n, oc_id:null, oc_numero:null} : null;
-  }
-  const o = et19DisponiblesZFI6.find(x=>x.id===v);
-  return o ? {et19:o.et19.trim(), oc_id:o.id, oc_numero:o.numero} : null;
-}
-
-async function confirmarCarga(){
-  const btn = document.getElementById('btn-confirm');
-  btn.disabled = true; btn.textContent = 'Cargando...';
-  const p = currentParsed;
-  const rows = [];
-  p.items.forEach((it,i)=>{
-    if(!document.getElementById('inc-'+i).checked) return;
-    const mat = document.getElementById('mat-'+i).value;
-    if(!mat) return;
-    const despacho = p.despacho;
-    const item = it.item, subitem = it.subitem;
-    rows.push({
-      id: despacho+'_'+item+'_'+subitem,
-      material: mat, despacho, item, subitem,
-      cantidad: parseFloat(document.getElementById('cant-'+i).value)||0,
-      cancel_qty: 0,
-      cancel_unit: CANCEL_UNIT[mat]||'kg',
-      unidad: document.getElementById('uni-'+i).value||'KILOGRAMO',
-      fob: parseFloat(document.getElementById('fob-'+i).value)||0,
-      cif: parseFloat(document.getElementById('cif-'+i).value)||0,
-      kgs_neto: parseFloat(document.getElementById('kg-'+i).value)||0,
-      producto: MAT_LABELS[mat]||'',
-      detalle: document.getElementById('det-'+i).value||'',
-      fecha: p.fecha,
-      sospechoso: document.getElementById('sosp-'+i).checked,
-      fob_desp: p.fob_desp, flete_desp: p.flete_desp, seguro_desp: p.seguro_desp
-    });
-  });
-  try{
-    const who = localStorage.getItem('ga_user_label')||'alguien';
-    let vinculoTxt = '';
-    if(p.tipo === 'ZFI6'){
-      const v = getET19ZFI6Elegida();
-      if(!v) throw new Error('Falta elegir la ET19 a la que corresponde este ZFI6.');
-      // Se guarda el vínculo ANTES que el stock: si esto falla, no se carga nada a medias.
-      await sbFetch('zfi6_et19', {
-        method:'POST',
-        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-        body: JSON.stringify({despacho: p.despacho, et19: v.et19, oc_id: v.oc_id, oc_numero: v.oc_numero, vinculado_por: who})
-      });
-      vinculoTxt = ` Vinculado a la ET19 <b>${v.et19}</b>${v.oc_numero?' ('+v.oc_numero+')':''}.`;
-    }
-    await sbFetch('stock_base', {
-      method:'POST',
-      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify(rows)
-    });
-    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Despacho <b>${p.despacho}</b> cargado al stock (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}.${vinculoTxt} <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
-    document.getElementById('review-box').style.display='none';
-  }catch(e){
-    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error al guardar en Supabase: ${e.message}</div>`;
-    btn.disabled = false; btn.textContent = '✓ Confirmar y cargar a stock';
-  }
+  const n = (document.getElementById('zfi6-et19-in').value||'').trim();
+  if(!n) return null;
+  const o = et19DisponiblesZFI6.find(x=>x.et19.trim().toUpperCase()===n.toUpperCase());
+  return {et19:n, oc_id:o?o.id:null, oc_numero:o?o.numero:null};
 }
 
 function resetTool(){
@@ -799,8 +717,7 @@ function resetTool(){
   document.getElementById('et19-box').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
   document.getElementById('zfi6-et19-box').style.display='none';
-  document.getElementById('zfi6-et19-manual').value='';
-  document.getElementById('zfi6-et19-manual-wrap').style.display='none';
+  document.getElementById('zfi6-et19-in').value='';
   document.getElementById('error-box').innerHTML='';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('file-inp').value='';

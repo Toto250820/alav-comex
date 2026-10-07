@@ -198,6 +198,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">✓ Compra Realizada</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('prorroga',this)">⏳ Prórroga ET19</button>
     </div>
 
     <button class="nb" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
@@ -555,21 +556,28 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="oc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 
-  <div class="stit" style="margin-top:22px">Proforma Invoice (PI) — juntar varias OC bajo un mismo SITA</div>
-  <div class="card">
-    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Elegí las órdenes CONFIRMADAS que van a compartir un mismo SITA. Se junta el detalle de todas, le ponés el valor unitario en USD a cada ítem, y calcula el total solo.</div>
-    <div id="pi-oc-checklist"><div class="empty">Cargando órdenes...</div></div>
-    <button class="btn btnp" style="margin-top:10px" onclick="generarPI()">🧾 Generar PI con las seleccionadas</button>
-    <div id="pi-armado"></div>
-  </div>
-
-  <div class="stit" style="margin-top:22px">Proforma Invoice generadas</div>
-  <div id="pi-lista"><div class="empty">Ninguna todavía.</div></div>
-
   <div class="stit" style="margin-top:22px;display:flex;align-items:center;gap:8px">Órdenes registradas
     <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadOrdenesCompra()" title="Actualizar">↻</button>
   </div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
+</div>
+
+<!-- PRÓRROGA ET19 -->
+<div id="sec-prorroga" class="sec">
+  <div class="stit" style="display:flex;align-items:center;gap:8px">Prórroga de ET19 — ¿queda saldo en el ZFI6?
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="initProrroga(true)" title="Actualizar datos">↻</button>
+  </div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Escribí el número de la ET19: te muestra el ZFI6 que tiene vinculado, cada ítem con lo que queda y lo que no, y si corresponde pedir la prórroga.</div>
+    <div class="fr" style="align-items:flex-end">
+      <div class="ff" style="max-width:320px"><label>Nº de ET19</label>
+        <input id="pror-et19" list="pror-et19-list" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px" onkeyup="if(event.key==='Enter')consultarProrroga()"/>
+        <datalist id="pror-et19-list"></datalist>
+      </div>
+      <button class="btn btnp" onclick="consultarProrroga()">Consultar</button>
+    </div>
+  </div>
+  <div id="pror-resultado"></div>
 </div>
 
 <!-- SOLICITUD DE INSUMOS IMPORTADOS -->
@@ -712,8 +720,8 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
             <input id="adm-desp" placeholder="ej: 26258ZFI8000020X" style="font-family:var(--mn);font-size:12px" oninput="onDespachoManualInput()"/>
           </div>
           <div class="ff" id="adm-et19-wrap" style="display:none;max-width:330px"><label>🔗 ET19 a la que corresponde este ZFI6 (obligatorio)</label>
-            <select id="adm-et19-sel" onchange="onCambioET19Manual()" style="font-family:var(--mn);font-size:12px"><option value="">Cargando ET19...</option></select>
-            <input id="adm-et19-manual" placeholder="ej: 26090ET19000145J" style="display:none;margin-top:4px;font-family:var(--mn);font-size:12px"/>
+            <input id="adm-et19-in" list="adm-et19-list" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px"/>
+            <datalist id="adm-et19-list"></datalist>
           </div>
           <div class="ff" style="max-width:65px"><label>Ítem</label><input id="adm-item" type="number" min="1" value="1"/></div>
           <div class="ff" style="max-width:65px"><label>Subítem</label><input id="adm-sub" type="number" min="0" value="0"/></div>
@@ -1673,7 +1681,8 @@ function showSec(id,btn){
   btn.classList.add('active');
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
-  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); loadPIs(); }
+  if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
+  if(id==='prorroga') initProrroga(false);
   if(id==='solimp'){ if(!solImpItemIndices.length) agregarLineaSolImp(); if(!document.getElementById('solimp-fecha').value) document.getElementById('solimp-fecha').value = new Date().toISOString().slice(0,10); loadSolicitudesImportados(); }
   if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); loadSalidasSueltasZFE3().then(poblarDatalistSalidas); }
   if(id==='sal')   renderSalidaHist();
@@ -4265,7 +4274,6 @@ async function loadOrdenesCompra(){
     const rows = await sbFetch('ordenes_compra?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
     ordenesCompra = rows || [];
     renderOrdenesCompra();
-    renderChecklistPI(); // siempre en sync — antes solo se cargaba una vez al entrar a la pantalla
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de órdenes (¿corriste el SQL en Supabase?).</div>';
   }
@@ -4275,121 +4283,115 @@ function renderOrdenesCompra(){
   const el = document.getElementById('oc-lista');
   if(!el) return;
   if(!ordenesCompra.length){ el.innerHTML='<div class="empty">Sin órdenes registradas todavía.</div>'; return; }
-  const ESTADO_TAG = {abierta:'by', confirmada:'bb', cerrada:'bg', cancelada:'br'};
-  el.innerHTML = ordenesCompra.map(o=>{
+
+  // 'confirmada' quedó de cuando la orden tenía más pasos: se trata igual que una abierta
+  const esPendiente = o => o.estado==='abierta' || o.estado==='confirmada';
+  const q = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const inpStyle = 'font-family:var(--sn);font-size:12px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)';
+
+  const tarjeta = o=>{
     let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
-    const editableCotejo = o.estado==='abierta';
-    const cien = items.every(it=>(it.recibido||0) >= it.cantidad);
-    const itemsExcedente = items.filter(it=>(it.excedente_detectado||0) > 0);
-    const hayExcedente = itemsExcedente.length>0;
-
-    // ¿Ya existe una OC complementaria vinculada, y ella misma llegó a confirmada/cerrada?
-    const complementaria = ordenesCompra.find(x=>x.orden_relacionada===o.id);
-    const excedenteRegularizado = !hayExcedente || (complementaria && (complementaria.estado==='confirmada'||complementaria.estado==='cerrada'));
-
-    const puedeCargarSita = o.estado==='confirmada' && excedenteRegularizado;
-    const tieneSita = !!(o.sita && o.sita.trim());
-    const puedeCargarEt19 = puedeCargarSita && tieneSita;
-    const tieneET19 = !!(o.et19 && o.et19.trim());
-
-    let estadoTxt = hayExcedente && !excedenteRegularizado ? 'ABIERTA — esperando OC complementaria por excedente' : 'ABIERTA — cotejando mercadería';
-    if(o.estado==='confirmada'){
-      if(!excedenteRegularizado) estadoTxt = 'CONFIRMADA — esperando OC complementaria por excedente';
-      else if(!tieneSita) estadoTxt = 'CONFIRMADA — falta cargar el SITA';
-      else if(!tieneET19) estadoTxt = 'CONFIRMADA — falta cargar la ET19';
-      else estadoTxt = 'CONFIRMADA — lista para cerrar';
-    } else if(o.estado==='cerrada') estadoTxt = 'CERRADA';
-    else if(o.estado==='cancelada') estadoTxt = 'CANCELADA';
+    const pendiente = esPendiente(o);
+    const estadoTxt = pendiente ? 'PEDIDO ABIERTO' : (o.estado==='cerrada' ? 'CERRADA — llegó el pedido' : 'CANCELADA');
+    const tagCls = pendiente ? 'by' : (o.estado==='cerrada' ? 'bg' : 'br');
 
     return `<div class="mb">
       <div class="mh">
-        <div><span class="mono" style="font-weight:600">${o.numero}</span> — <strong>${o.proveedor}</strong>
-          <span class="bdg ${ESTADO_TAG[o.estado]||'by'}">${estadoTxt}</span>
-          ${o.orden_relacionada?`<span class="bdg by">OC COMPLEMENTARIA</span>`:''}
-        </div>
-        <div style="font-size:11px;color:var(--tx3)">Emisión: ${o.fecha_emision}${o.fecha_cierre?` · Cierre: ${o.fecha_cierre}`:''}${o.sita?` · SITA: ${o.sita}`:''}${o.et19?` · ET19: ${o.et19}`:''}${zfi6DeET19(o.et19)} · por ${o.creado_por||'?'}</div>
+        <div><span class="mono" style="font-weight:600">${q(o.numero)}</span> — <strong>${q(o.proveedor)}</strong>
+          <span class="bdg ${tagCls}">${estadoTxt}</span></div>
+        <div style="font-size:11px;color:var(--tx3)">Pedido: ${q(o.fecha_emision)}${o.fecha_cierre?` · Llegó: ${q(o.fecha_cierre)}`:''}${o.remito_entrega?` · Remito de entrega: <strong>${q(o.remito_entrega)}</strong>`:''} · por ${q(o.creado_por||'?')}</div>
       </div>
 
-      ${(hayExcedente && !excedenteRegularizado) ? `
-        <div class="ibox" style="border-color:var(--rd);background:var(--rbg)">
-          <div style="width:100%">
-            <div style="color:var(--rd);font-weight:600;font-size:12px;margin-bottom:6px">⚠ Llegó de más — hace falta una OC complementaria antes de poder cargar el SITA</div>
-            ${itemsExcedente.map(it=>`<div style="font-size:12px">• ${it.insumo}: <strong>+${fmt(it.excedente_detectado)} ${it.unidad}</strong> de más</div>`).join('')}
-            <button class="btn btnd" style="margin-top:8px" onclick='crearOCComplementaria("${o.id}", ${JSON.stringify(itemsExcedente).replace(/'/g,"&#39;")})'>➕ Crear OC complementaria por el excedente</button>
-          </div>
-        </div>
-      ` : ''}
-
-      ${puedeCargarSita ? `<div class="pbox">
-        <div><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">SITA</span>
-          ${!tieneSita ? `<div style="display:flex;gap:6px;margin-top:3px">
-              <input id="oc-sita-${o.id}" value="${o.sita||''}" placeholder="Nº de SITA" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
-              <button class="btn" onclick="guardarSitaOrden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
-            </div>`
-          : `<strong>${o.sita}</strong>`}
-        </div>
-      </div>` : ''}
-
-      ${puedeCargarEt19 ? `<div class="pbox" style="flex-direction:column;align-items:flex-start;gap:8px">
-        <div style="width:100%"><span class="il" style="display:block;font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn)">ET19 asociada</span>
-          ${!tieneET19 ? `<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;align-items:flex-end">
-              <div><label style="font-size:9px;color:var(--tx3);display:block">Nº ET19</label>
-                <input id="oc-et19-${o.id}" value="${o.et19||''}" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
-              <div><label style="font-size:9px;color:var(--tx3);display:block">Fecha oficialización</label>
-                <input id="oc-et19-fecha-${o.id}" type="date" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
-              <div><label style="font-size:9px;color:var(--tx3);display:block">Plazo</label>
-                <select id="oc-et19-meses-${o.id}" style="font-family:var(--mn);font-size:12px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
-                  <option value="22" selected>22 meses</option><option value="12">12 meses</option><option value="24">24 meses</option>
-                </select></div>
-              <button class="btn" onclick="guardarET19Orden('${o.id}')" style="padding:5px 10px;font-size:11px">Guardar</button>
-            </div>`
-          : `<strong>${o.et19}</strong>${o.et19_fecha?` <span class="t2" style="font-size:11px">— vence ${fmtFechaET19Orden(o)}</span> <button class="btn" style="font-size:10px;padding:3px 8px;margin-left:6px" onclick="enviarMailVencimientoET19('${o.id}')">📧 Mail con vencimiento</button>`:''}`}
-        </div>
-      </div>` : ''}
-
-      <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Recibido</th><th>%</th><th>Nota</th></tr></thead><tbody>
+      <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Nota</th></tr></thead><tbody>
         ${items.map((it,i)=>{
-          const pct = it.cantidad>0 ? Math.round(((it.recibido||0)/it.cantidad)*100) : 0;
-          const cumplido = (it.recibido||0) >= it.cantidad;
-          const exceso = (it.excedente_detectado||0) > 0;
-          return `<tr class="${exceso?'rsosp':(cumplido?'rnac':'')}">
-            <td>${editableCotejo
-              ? `<input id="oc-item-insumo-${o.id}-${i}" value="${it.insumo}" style="width:130px;font-family:var(--sn);font-size:12px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>`
-              : it.insumo}</td>
-            <td>${editableCotejo
-              ? `<input id="oc-cantpedida-${o.id}-${i}" type="number" step="0.01" value="${it.cantidad}" class="qinp" style="width:80px"/>
+          // Si la unidad del ítem no es una de las tres de siempre, se conserva (para no cambiarla sin querer al guardar)
+          const unis = ['kg','m','u']; if(it.unidad && !unis.includes(it.unidad)) unis.push(it.unidad);
+          return `<tr>
+            <td>${pendiente
+              ? `<input id="oc-item-insumo-${o.id}-${i}" value="${q(it.insumo)}" style="width:150px;${inpStyle}"/>`
+              : q(it.insumo)}</td>
+            <td>${pendiente
+              ? `<input id="oc-cantpedida-${o.id}-${i}" type="number" step="0.01" value="${it.cantidad}" class="qinp" style="width:90px"/>
                  <select id="oc-item-unidad-${o.id}-${i}" style="font-family:var(--mn);font-size:11px;padding:4px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)">
-                   ${['kg','m','u'].map(u=>`<option value="${u}" ${it.unidad===u?'selected':''}>${u}</option>`).join('')}
+                   ${unis.map(u=>`<option value="${q(u)}" ${it.unidad===u?'selected':''}>${q(u)}</option>`).join('')}
                  </select>`
-              : `<span class="mono">${fmt(it.cantidad)} ${it.unidad}</span>`}</td>
-            <td>${editableCotejo
-              ? `<input id="oc-recibido-${o.id}-${i}" type="number" step="0.01" value="${it.recibido||0}" class="qinp" style="width:90px"/>`
-              : `<span class="mono">${fmt(it.recibido||0)} ${it.unidad}</span>`}
-              ${exceso?` <span class="bdg by" style="margin-left:4px">⚠ +${fmt(it.excedente_detectado)} de más — pendiente de OC complementaria</span>`:''}</td>
-            <td class="mono" style="color:${exceso?'var(--yw)':(cumplido?'var(--gr)':'var(--tx3)')}">${pct}%</td>
-            <td>${editableCotejo
-              ? `<input id="oc-item-nota-${o.id}-${i}" value="${it.nota||''}" placeholder="opcional" style="width:110px;font-family:var(--sn);font-size:12px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>`
-              : (it.nota||'')}</td>
+              : `<span class="mono">${fmt(it.cantidad)} ${q(it.unidad)}</span>`}</td>
+            <td>${pendiente
+              ? `<input id="oc-item-nota-${o.id}-${i}" value="${q(it.nota||'')}" placeholder="opcional" style="width:150px;${inpStyle}"/>`
+              : q(it.nota||'')}</td>
           </tr>`;
         }).join('')}
       </tbody></table>
-      ${o.nota?`<div class="nbox">${o.nota}</div>`:''}
+      ${o.nota?`<div class="nbox">${q(o.nota)}</div>`:''}
 
       <div style="display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap">
         <button class="btn" onclick="imprimirOrdenCompra('${o.id}')">🖨 Imprimir / PDF</button>
         <button class="btn" onclick="enviarOrdenPorMail('${o.id}')">📧 Enviar por mail</button>
         <button class="btn" onclick="agregarOrdenACalendar('${o.id}')">📅 Agregar a Calendar</button>
-        ${editableCotejo?`
-          <button class="btn btnpu" onclick="guardarCotejoOrden('${o.id}')">✓ Guardar cambios</button>
-          <button class="btn ${cien?'btng':''}" ${cien?'':'disabled title="Todavía no llegó el 100% de la mercadería"'} onclick="confirmarCantidadOrden('${o.id}')">📦 Confirmar cantidad${cien?'':' (falta llegar al 100%)'}</button>
+        ${pendiente?`
+          <button class="btn btnpu" onclick="guardarEdicionOrden('${o.id}')">✓ Guardar cambios</button>
           <button class="btn btnd" onclick="marcarEstadoOC('${o.id}','cancelada')">✕ Cancelar orden</button>
         `:''}
-        ${puedeCargarEt19?`
-          <button class="btn ${tieneET19?'btng':''}" ${tieneET19?'':'disabled title="Cargá el número de ET19 primero"'} onclick="cerrarOrdenCompra('${o.id}')">🔒 Cerrar orden${tieneET19?'':' (falta la ET19)'}</button>
-        `:''}
       </div>
+
+      ${pendiente?`<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+        <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">Cuando llegue el pedido — Nº de remito de entrega</label>
+          <input id="oc-remito-${o.id}" placeholder="ej: R-0001-00001234" style="font-family:var(--mn);font-size:12px;padding:5px 7px;width:230px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
+        <button class="btn btng" onclick="cerrarOrdenConRemito('${o.id}')">🔒 Cerrar — llegó el pedido</button>
+      </div>`:''}
     </div>`;
-  }).join('');
+  };
+
+  const abiertas = ordenesCompra.filter(esPendiente);
+  const historial = ordenesCompra.filter(o=>!esPendiente(o));
+
+  el.innerHTML =
+    `<div class="ct" style="margin:6px 0">Pedidos abiertos (${abiertas.length})</div>`
+    + (abiertas.length ? abiertas.map(tarjeta).join('') : '<div class="empty">No hay pedidos abiertos.</div>')
+    + (historial.length ? `<div class="ct" style="margin:22px 0 6px">Historial de pedidos (${historial.length})</div>` + historial.map(tarjeta).join('') : '');
+}
+
+// Guarda lo que se editó de los ítems mientras el pedido sigue abierto
+async function guardarEdicionOrden(id){
+  const o = ordenesCompra.find(x=>x.id===id);
+  if(!o) return;
+  let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
+  const nuevos = [];
+  for(let i=0;i<items.length;i++){
+    const it = items[i];
+    const insumo = (document.getElementById('oc-item-insumo-'+id+'-'+i)?.value||'').trim();
+    const cantidad = parseFloat(document.getElementById('oc-cantpedida-'+id+'-'+i)?.value);
+    if(!insumo){ alert('Cada ítem necesita el nombre del insumo.'); return; }
+    if(isNaN(cantidad) || cantidad<=0){ alert('Revisá la cantidad de "'+insumo+'": tiene que ser mayor a 0.'); return; }
+    nuevos.push({...it, insumo, cantidad,
+      unidad: document.getElementById('oc-item-unidad-'+id+'-'+i)?.value || it.unidad,
+      nota: (document.getElementById('oc-item-nota-'+id+'-'+i)?.value||'').trim()});
+  }
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({items: JSON.stringify(nuevos)})
+    });
+    await loadOrdenesCompra();
+    showToast('✓ Cambios guardados.');
+  }catch(e){ alert('Error guardando los cambios: '+e.message); }
+}
+
+// Se cierra recién cuando llega el pedido, y queda anotado el remito de entrega
+async function cerrarOrdenConRemito(id){
+  const remito = (document.getElementById('oc-remito-'+id)?.value||'').trim();
+  if(!remito){ alert('Escribí el número de remito de entrega para poder cerrar el pedido.'); return; }
+  if(!confirm(`¿Cerrar este pedido con el remito ${remito}?\n\nYa no se va a poder editar.`)) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({estado:'cerrada', fecha_cierre: new Date().toISOString().slice(0,10), remito_entrega: remito})
+    });
+    await loadOrdenesCompra();
+    showToast('✓ Pedido cerrado con el remito '+remito);
+  }catch(e){
+    alert('Error cerrando el pedido: '+e.message + (String(e.message).includes('remito_entrega') ? '\n\nFalta correr el SQL "ordenes_remito_entrega_setup.sql" en Supabase.' : ''));
+  }
 }
 
 async function guardarSitaOrden(id){
@@ -4800,8 +4802,7 @@ function construirHtmlOrdenCompra(o){
     +'<div><div class="il">Proveedor</div><div class="iv">'+o.proveedor+'</div></div>'
     +'<div><div class="il">Fecha de pedido</div><div class="iv">'+o.fecha_emision+'</div></div>'
     +(o.fecha_cierre?'<div><div class="il">Fecha de cierre</div><div class="iv">'+o.fecha_cierre+'</div></div>':'')
-    +(o.sita?'<div><div class="il">SITA</div><div class="iv">'+o.sita+'</div></div>':'')
-    +(o.et19?'<div><div class="il">ET19</div><div class="iv">'+o.et19+'</div></div>':'')
+    +(o.remito_entrega?'<div><div class="il">Remito de entrega</div><div class="iv">'+o.remito_entrega+'</div></div>':'')
     +'</div>';
 
   p+='<table><thead><tr><th>Insumo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>'
@@ -4993,6 +4994,191 @@ function enviarSolicitudImportadosPorMail(id){
     (s.nota?`\n\nNota: ${s.nota}`:'')+
     `\n\n— ALAV SRL, Z.F. General Pico`;
   enviarMailDirectoOFallback(COMPRAS_GUESTS.join(','), asunto, cuerpo);
+}
+
+// ═══════════════════════════════════════════
+// PRÓRROGA DE ET19 — ¿queda saldo en los ZFI6 vinculados?
+// ═══════════════════════════════════════════
+let prorrogaOrdenes = [];   // órdenes de compra que tienen ET19 (para mostrar vencimiento)
+let prorrogaUltima = null;  // último resultado consultado (lo usa Imprimir)
+
+function escPror(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nzET19(s){ return (s||'').trim().toUpperCase(); }
+
+async function initProrroga(forzar){
+  // Se recarga todo: de este dato depende una decisión (pedir o no la prórroga)
+  try{ await loadStockFromSupabase(); }catch(e){}
+  await loadZfi6Et19();
+  prorrogaOrdenes = []; // las órdenes de compra ya no se relacionan con las ET19
+  const conocidas = new Set();
+  prorrogaOrdenes.forEach(o=>conocidas.add(o.et19.trim()));
+  Object.values(zfi6Et19Map).forEach(v=>{ if(v.et19) conocidas.add(v.et19.trim()); });
+  const dl = document.getElementById('pror-et19-list');
+  if(dl) dl.innerHTML = [...conocidas].map(e=>`<option value="${escPror(e)}"></option>`).join('');
+  if(forzar && document.getElementById('pror-et19').value.trim()) consultarProrroga();
+}
+
+// Todas las filas de stock (con o sin saldo) de un despacho, en cualquier categoría
+function filasDeDespacho(despacho){
+  const out = [];
+  const claves = new Set([...Object.keys(STOCK_BASE), ...Object.keys(stockExtra)]);
+  claves.forEach(k=>{
+    [...(STOCK_BASE[k]||[]), ...(stockExtra[k]||[])].forEach(r=>{
+      if(r.despacho !== despacho) return;
+      const original = parseFloat(r.cantidad)||0;
+      const consumido = parseFloat(getCancelQty(r,k))||0;
+      const saldo = parseFloat((original - consumido).toFixed(4));
+      out.push({
+        item: r.item, sub: r.subitem, material: MAT_LABELS[k]||k, producto: r.producto||'',
+        unidad: CANCEL_UNIT[k]||r.cancel_unit||'', original, consumido, saldo,
+        conSaldo: saldo > 0.005   // por debajo de 0,005 se ve como 0,00: no cuenta como saldo
+      });
+    });
+  });
+  return out.sort((a,b)=> (a.item-b.item) || (a.sub-b.sub));
+}
+
+function consultarProrroga(){
+  const et19 = document.getElementById('pror-et19').value.trim();
+  const cont = document.getElementById('pror-resultado');
+  if(!et19){ cont.innerHTML = '<div class="empty">Escribí el número de la ET19.</div>'; return; }
+
+  const oc = prorrogaOrdenes.find(o=>nzET19(o.et19)===nzET19(et19)) || null;
+  const venc = oc && oc.et19_fecha ? fmtFechaET19Orden(oc) : null;
+  const vinculos = Object.values(zfi6Et19Map).filter(v=>nzET19(v.et19)===nzET19(et19));
+
+  const zfi6 = vinculos.map(v=>({despacho: v.despacho, filas: filasDeDespacho(v.despacho)}));
+  const itemsConSaldo = zfi6.reduce((s,z)=>s+z.filas.filter(f=>f.conSaldo).length, 0);
+  const algunoSinStock = zfi6.some(z=>!z.filas.length);
+
+  let veredicto;
+  if(!zfi6.length) veredicto = 'sinvinculo';
+  else if(itemsConSaldo>0) veredicto = 'prorroga';
+  else if(algunoSinStock) veredicto = 'revisar';
+  else veredicto = 'no';
+
+  prorrogaUltima = {et19, oc, venc, zfi6, itemsConSaldo, veredicto};
+  renderProrroga();
+}
+
+function renderProrroga(){
+  const cont = document.getElementById('pror-resultado');
+  const d = prorrogaUltima;
+  if(!d){ cont.innerHTML=''; return; }
+
+  const cab = `<div class="card" style="margin-top:12px">
+    <div style="font-size:13px"><strong>ET19:</strong> <span class="mono">${escPror(d.et19)}</span>${d.venc?` · <strong>Vence:</strong> ${escPror(d.venc)}`:''}</div>
+    ${d.zfi6.length?`<div style="margin-top:8px;font-size:16px"><strong>ZFI6 vinculado${d.zfi6.length>1?'s':''}:</strong> <span class="mono">${d.zfi6.map(z=>escPror(z.despacho)).join(' · ')}</span></div>`:''}
+  </div>`;
+
+  const banners = {
+    prorroga: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--rd);background:var(--rbg);color:var(--rd);font-weight:700;font-size:14px">⚠ SE DEBE SOLICITAR LA PRÓRROGA — queda saldo en ${d.itemsConSaldo} ítem${d.itemsConSaldo!==1?'s':''} de ${d.zfi6.length>1?'los ZFI6 vinculados':'el ZFI6 vinculado'}.</div>`,
+    no: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--gr);background:var(--gbg);color:var(--gr);font-weight:700;font-size:14px">✓ NO ES NECESARIA LA PRÓRROGA — todos los ítems de ${d.zfi6.length>1?'los ZFI6 vinculados':'el ZFI6 vinculado'} fueron consumidos.</div>`,
+    revisar: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--yw);background:var(--bg3);color:var(--yw);font-weight:700;font-size:14px">⚠ NO SE PUEDE CONFIRMAR — no encontré ítems en el stock para alguno de los ZFI6 vinculados. Revisá que esté cargado antes de decidir.</div>`,
+    sinvinculo: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--yw);background:var(--bg3);color:var(--yw);font-weight:700;font-size:14px">⚠ No hay ningún ZFI6 vinculado a esta ET19. Si el ZFI6 se cargó antes de que existiera el vínculo, asocialo acá abajo.</div>`
+  };
+
+  const tablas = d.zfi6.map(z=>{
+    const con = z.filas.filter(f=>f.conSaldo).length;
+    return `<div class="mb" style="margin-top:12px">
+      <div class="mh"><div><strong class="mono">${escPror(z.despacho)}</strong>
+        <span class="t2" style="font-size:11px;margin-left:8px">${z.filas.length?`${con} de ${z.filas.length} ítem(s) con saldo`:'sin ítems en el stock'}</span></div></div>
+      ${z.filas.length?`<div class="tw"><table>
+        <thead><tr><th>Ít.</th><th>Sub.</th><th>Insumo</th><th>Original</th><th>Consumido</th><th>Saldo</th><th>Estado</th></tr></thead>
+        <tbody>${z.filas.map(f=>`<tr class="${f.conSaldo?'rsosp':''}">
+          <td style="text-align:center">${f.item}</td><td style="text-align:center">${f.sub}</td>
+          <td>${escPror(f.producto||f.material)}<div class="t2" style="font-size:10px">${escPror(f.material)}</div></td>
+          <td class="mono">${fmt(f.original)} ${f.unidad}</td>
+          <td class="mono">${fmt(f.consumido)} ${f.unidad}</td>
+          <td class="mono" style="font-weight:700;color:${f.conSaldo?'var(--rd)':'var(--gr)'}">${fmt(f.saldo)} ${f.unidad}</td>
+          <td><span class="bdg ${f.conSaldo?'by':'bg'}">${f.conSaldo?'QUEDA SALDO':'NO QUEDA'}</span></td>
+        </tr>`).join('')}</tbody></table></div>`:''}
+    </div>`;
+  }).join('');
+
+  const acciones = d.zfi6.length ? `<div style="margin-top:12px"><button class="btn btnp" onclick="imprimirProrroga()">🖨 Imprimir / PDF</button></div>` : '';
+
+  // Para ZFI6 cargados antes de que existiera el vínculo
+  const zfi6Conocidos = new Set();
+  [...Object.keys(STOCK_BASE), ...Object.keys(stockExtra)].forEach(k=>{
+    [...(STOCK_BASE[k]||[]), ...(stockExtra[k]||[])].forEach(r=>{ if((r.despacho||'').toUpperCase().includes('ZFI6')) zfi6Conocidos.add(r.despacho); });
+  });
+  const vincular = `<div class="card" style="margin-top:12px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px">Vincular un ZFI6 a esta ET19</div>
+    <div class="fr" style="align-items:flex-end">
+      <div class="ff" style="max-width:300px"><label>Nº de ZFI6</label>
+        <input id="pror-zfi6-nuevo" list="pror-zfi6-list" placeholder="ej: 26258ZFI6000012K" style="font-family:var(--mn);font-size:12px"/>
+        <datalist id="pror-zfi6-list">${[...zfi6Conocidos].map(z=>`<option value="${escPror(z)}"></option>`).join('')}</datalist>
+      </div>
+      <button class="btn" onclick="vincularZfi6AEt19Consultada()">🔗 Vincular</button>
+    </div>
+  </div>`;
+
+  cont.innerHTML = cab + (banners[d.veredicto]||'') + tablas + acciones + vincular;
+}
+
+async function vincularZfi6AEt19Consultada(){
+  const d = prorrogaUltima;
+  if(!d) return;
+  const zfi6 = document.getElementById('pror-zfi6-nuevo').value.trim();
+  if(!zfi6){ alert('Escribí el número de ZFI6.'); return; }
+  if(!zfi6.toUpperCase().includes('ZFI6')){ alert('Ese número no parece un ZFI6.'); return; }
+  const previo = zfi6Et19Map[zfi6];
+  if(previo && nzET19(previo.et19)!==nzET19(d.et19)){
+    if(!confirm(`Ese ZFI6 ya está vinculado a la ET19 ${previo.et19}.\n\n¿Querés cambiarlo a ${d.et19}?`)) return;
+  }
+  const who = localStorage.getItem('ga_user_label')||'alguien';
+  try{
+    await sbFetch('zfi6_et19', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({despacho: zfi6, et19: d.et19.trim(), oc_id: d.oc?d.oc.id:null, oc_numero: d.oc?d.oc.numero:null, vinculado_por: who})
+    });
+    await loadZfi6Et19();
+    showToast('✓ ZFI6 vinculado a la ET19.');
+    consultarProrroga();
+  }catch(e){ alert('Error guardando el vínculo: '+e.message); }
+}
+
+function imprimirProrroga(){
+  const d = prorrogaUltima;
+  if(!d || !d.zfi6.length) return;
+  const hoy = new Date().toLocaleDateString('es-AR');
+  const veredictoTxt = {
+    prorroga: `SE DEBE SOLICITAR LA PRÓRROGA — queda saldo en ${d.itemsConSaldo} ítem(s).`,
+    no: 'NO ES NECESARIA LA PRÓRROGA — todos los ítems fueron consumidos.',
+    revisar: 'NO SE PUEDE CONFIRMAR — faltan ítems en el stock para alguno de los ZFI6 vinculados.'
+  }[d.veredicto] || '';
+
+  let p = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Prórroga ET19 '+escPror(d.et19)+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px}'
+    +'h1{font-size:17px}h2{font-size:13px;margin:16px 0 4px}table{width:100%;border-collapse:collapse;margin:6px 0}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:5px 7px;text-align:left}td{border:1px solid #ccc;padding:5px 7px}'
+    +'.queda{font-weight:700}.num{text-align:right;font-family:monospace}'
+    +'.ver{margin-top:16px;padding:10px 12px;border:2px solid #000;font-weight:700;font-size:13px}'
+    +'@media print{@page{size:A4;margin:15mm}}</style></head><body>';
+  p += '<div class="hdr"><div><h1>PRÓRROGA ET19 — SALDO DE ZFI6 VINCULADOS</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
+    +'<div style="text-align:right">Fecha: '+hoy+'</div></div>';
+  p += '<div><strong>ET19:</strong> '+escPror(d.et19)
+    +(d.venc?' &nbsp;|&nbsp; <strong>Vence:</strong> '+escPror(d.venc):'')+'</div>';
+
+  d.zfi6.forEach(z=>{
+    p += '<h2>ZFI6 '+escPror(z.despacho)+'</h2>';
+    if(!z.filas.length){ p += '<div>Sin ítems cargados en el stock.</div>'; return; }
+    p += '<table><thead><tr><th>Ít.</th><th>Sub.</th><th>Insumo</th><th>Original</th><th>Consumido</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>'
+      + z.filas.map(f=>'<tr><td>'+f.item+'</td><td>'+f.sub+'</td><td>'+escPror(f.producto||f.material)+'</td>'
+        +'<td class="num">'+f.original.toLocaleString('es-AR')+' '+f.unidad+'</td>'
+        +'<td class="num">'+f.consumido.toLocaleString('es-AR')+' '+f.unidad+'</td>'
+        +'<td class="num queda">'+f.saldo.toLocaleString('es-AR')+' '+f.unidad+'</td>'
+        +'<td class="queda">'+(f.conSaldo?'QUEDA SALDO':'NO QUEDA')+'</td></tr>').join('')
+      + '</tbody></table>';
+  });
+  p += '<div class="ver">'+veredictoTxt+'</div></body></html>';
+
+  const win = window.open('', '_blank');
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
 }
 
 async function loadStockMercaderia(){
@@ -6209,50 +6395,33 @@ function slugify(txt){
 }
 
 // ── ZFI6 → ET19 en la carga manual ──
-let et19DisponiblesManual = [];
+let et19DisponiblesManual = [];   // órdenes con ET19 (solo para sugerir y guardar el id por detrás)
 
 async function onDespachoManualInput(){
   const desp = document.getElementById('adm-desp').value.toUpperCase();
   const wrap = document.getElementById('adm-et19-wrap');
   const esZFI6 = desp.includes('ZFI6');
   wrap.style.display = esZFI6 ? 'block' : 'none';
-  if(esZFI6 && !et19DisponiblesManual.length) await cargarET19ParaZFI6Manual();
+  if(esZFI6) await cargarET19ParaZFI6Manual();
 }
 
 async function cargarET19ParaZFI6Manual(){
-  const sel = document.getElementById('adm-et19-sel');
-  try{
-    const rows = await sbFetch('ordenes_compra?select=id,numero,proveedor,et19&et19=not.is.null&order=creado_en.desc', {method:'GET', headers:{'Prefer':''}});
-    et19DisponiblesManual = (rows||[]).filter(o=>o.et19 && o.et19.trim());
-  }catch(e){ et19DisponiblesManual = []; }
-  const actual = sel.value;
-  sel.innerHTML = '<option value="">— Elegí la ET19 —</option>'
-    + et19DisponiblesManual.map(o=>`<option value="${o.id}">${o.et19} — ${o.numero} — ${o.proveedor}</option>`).join('')
-    + '<option value="__otra__">Otra ET19 (escribir el número)</option>';
-  sel.value = actual;
-}
-
-function onCambioET19Manual(){
-  document.getElementById('adm-et19-manual').style.display =
-    document.getElementById('adm-et19-sel').value==='__otra__' ? 'block' : 'none';
+  const sugeridas = new Set();
+  et19DisponiblesManual = []; // las órdenes de compra ya no se relacionan con las ET19
+  Object.values(zfi6Et19Map).forEach(v=>{ if(v.et19) sugeridas.add(v.et19.trim()); });
+  document.getElementById('adm-et19-list').innerHTML = [...sugeridas].map(e=>`<option value="${e}"></option>`).join('');
 }
 
 function getET19ManualElegida(){
-  const v = document.getElementById('adm-et19-sel').value;
-  if(!v) return null;
-  if(v==='__otra__'){
-    const n = document.getElementById('adm-et19-manual').value.trim();
-    return n ? {et19:n, oc_id:null, oc_numero:null} : null;
-  }
-  const o = et19DisponiblesManual.find(x=>x.id===v);
-  return o ? {et19:o.et19.trim(), oc_id:o.id, oc_numero:o.numero} : null;
+  const n = (document.getElementById('adm-et19-in').value||'').trim();
+  if(!n) return null;
+  const o = et19DisponiblesManual.find(x=>x.et19.trim().toUpperCase()===n.toUpperCase());
+  return {et19:n, oc_id:o?o.id:null, oc_numero:o?o.numero:null};
 }
 
 function resetET19Manual(){
-  const sel = document.getElementById('adm-et19-sel');
-  if(sel) sel.value='';
-  const man = document.getElementById('adm-et19-manual');
-  if(man){ man.value=''; man.style.display='none'; }
+  const inp = document.getElementById('adm-et19-in');
+  if(inp) inp.value='';
   const wrap = document.getElementById('adm-et19-wrap');
   if(wrap) wrap.style.display='none';
 }
