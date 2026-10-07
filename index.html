@@ -139,7 +139,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   .hdr .nav-submenu{padding:2px 0 2px 10px!important;gap:0!important}
   .hdr .nav-submenu .nb{padding:5px 8px;font-size:9.5px}
   .hdr #presence-badge.presence-roster{flex-direction:column;align-items:flex-start;gap:4px;margin-top:auto;width:100%;padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
-  #update-banner,#minimo-banner{top:0}
+  #update-banner,#minimo-banner,#et19-consumida-banner{top:0}
 }
 /* Colaboración: presencia, banner de novedades, toast, modal de nombre */
 .presence-roster{display:flex;gap:8px;font-family:var(--mn);font-size:11px}
@@ -198,7 +198,12 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">✓ Compra Realizada</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('prorroga',this)">⏳ Prórroga ET19</button>
+    </div>
+
+    <button class="nb net19menu" onclick="toggleNavMenu('et19-submenu')">📑 ET19 ▾</button>
+    <div id="et19-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('et19vinc',this)">🔗 Vincular</button>
+      <button class="nb" style="font-size:12px;opacity:.9" id="nb-et19-exp" onclick="cerrarSubmenusNav();showSec('et19exp',this)">🔍 Explorar</button>
     </div>
 
     <button class="nb" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
@@ -221,6 +226,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <span class="p-user" id="p-carina">Carina</span>
   </div>
 </div>
+<div id="et19-consumida-banner" class="update-banner" style="background:var(--gbg);border-bottom-color:var(--gbr);color:var(--gr)"></div>
 <div id="update-banner" class="update-banner">
   <span>🔄 Hay novedades cargadas por otra persona</span>
   <button onclick="location.reload()">Actualizar ahora</button>
@@ -562,22 +568,50 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
 </div>
 
-<!-- PRÓRROGA ET19 -->
-<div id="sec-prorroga" class="sec">
-  <div class="stit" style="display:flex;align-items:center;gap:8px">Prórroga de ET19 — ¿queda saldo en el ZFI6?
-    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="initProrroga(true)" title="Actualizar datos">↻</button>
+<!-- ET19: VINCULAR -->
+<div id="sec-et19vinc" class="sec">
+  <div class="stit">Vincular una ET19 con su ZFI6</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Elegí la ET19 y el ZFI6 que le corresponde. Una ET19 puede tener más de un ZFI6: repetí la operación con la misma ET19.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:300px"><label>Nº de ET19</label>
+        <input id="vinc-et19" list="vinc-et19-list" oninput="onVincET19Input()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px"/>
+        <datalist id="vinc-et19-list"></datalist>
+      </div>
+      <div class="ff" style="max-width:300px"><label>Nº de ZFI6</label>
+        <input id="vinc-zfi6" list="vinc-zfi6-list" placeholder="ej: 26258ZFI6000012K" style="font-family:var(--mn);font-size:13px"/>
+        <datalist id="vinc-zfi6-list"></datalist>
+      </div>
+    </div>
+    <div class="fr" style="margin-top:6px">
+      <div class="ff" style="max-width:200px"><label>Fecha de oficialización de la ET19</label><input id="vinc-ofic" type="date"/></div>
+      <div class="ff" style="max-width:200px"><label>Plazo autorizado</label>
+        <select id="vinc-meses"><option value="22" selected>22 meses (estándar)</option><option value="12">12 meses</option><option value="24">24 meses</option></select>
+      </div>
+    </div>
+    <div id="vinc-fechas-msg" class="t2" style="font-size:11px;margin:4px 0 10px"></div>
+    <button class="btn btnp" onclick="vincularET19ZFI6()">🔗 Vincular</button>
+    <div id="vinc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+  <div id="vinc-actuales"></div>
+</div>
+
+<!-- ET19: EXPLORAR -->
+<div id="sec-et19exp" class="sec">
+  <div class="stit" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Explorar ET19
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="refrescarET19Datos()" title="Actualizar ahora">↻</button>
+    <span id="et19-actualizado" class="t2" style="font-size:11px;font-weight:400"></span>
   </div>
   <div class="card">
-    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Escribí el número de la ET19: te muestra el ZFI6 que tiene vinculado, cada ítem con lo que queda y lo que no, y si corresponde pedir la prórroga.</div>
     <div class="fr" style="align-items:flex-end">
-      <div class="ff" style="max-width:320px"><label>Nº de ET19</label>
-        <input id="pror-et19" list="pror-et19-list" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px" onkeyup="if(event.key==='Enter')consultarProrroga()"/>
-        <datalist id="pror-et19-list"></datalist>
+      <div class="ff" style="max-width:300px"><label>Buscar (ET19 o ZFI6)</label>
+        <input id="et19-filtro" oninput="onFiltroET19()" placeholder="opcional" style="font-family:var(--mn);font-size:13px"/>
       </div>
-      <button class="btn btnp" onclick="consultarProrroga()">Consultar</button>
     </div>
+    <div id="et19-explorar-resumen" style="font-size:12px;margin-top:10px"></div>
+    <div class="t2" style="font-size:11px;margin-top:6px">🟢 Verde: hay que solicitar prórroga (queda saldo en el ZFI6) · 🔴 Rojo: no hace falta (se consumió todo) · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
   </div>
-  <div id="pror-resultado"></div>
+  <div id="et19-explorar-lista" style="margin-top:12px"></div>
 </div>
 
 <!-- SOLICITUD DE INSUMOS IMPORTADOS -->
@@ -985,6 +1019,7 @@ async function loadStockFromSupabase() {
       }
     });
     console.log('Stock cargado desde Supabase:', rows.length, 'registros');
+    try{ programarRefrescoET19(); }catch(_){}
     return true;
   } catch(e) { console.error('Error cargando stock:', e); return false; }
 }
@@ -1132,6 +1167,7 @@ async function initFromSupabase() {
   try{ const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}}); stockMinimos = rows || []; }catch(e){}
   await loadZfi6Et19();
   if(stockOk) { renderStock(); renderSalidaHist(); }
+  chequearET19Consumidas();
 }
 
 // ═══════════════════════════════════════════
@@ -1472,6 +1508,7 @@ function save(){
     localStorage.setItem('ga_cmats',JSON.stringify(customMatsPatch));
     if(salidaActiva && salidaActiva.id) localStorage.setItem('ga_activo_id', String(salidaActiva.id));
     else localStorage.removeItem('ga_activo_id');
+    try{ programarRefrescoET19(); }catch(_){}   // nunca debe romper el guardado
     return true;
   }catch(e){
     console.error('Error al guardar en localStorage:', e);
@@ -1682,7 +1719,8 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
-  if(id==='prorroga') initProrroga(false);
+  if(id==='et19vinc') initVincularET19();
+  if(id==='et19exp') initExplorarET19();
   if(id==='solimp'){ if(!solImpItemIndices.length) agregarLineaSolImp(); if(!document.getElementById('solimp-fecha').value) document.getElementById('solimp-fecha').value = new Date().toISOString().slice(0,10); loadSolicitudesImportados(); }
   if(id==='merc'){ if(!remItemIndices.length) agregarLineaRemito(); if(!document.getElementById('rem-fecha').value) document.getElementById('rem-fecha').value = new Date().toISOString().slice(0,10); loadStockMercaderia(); loadRemitos(); loadSalidasSueltasZFE3().then(poblarDatalistSalidas); }
   if(id==='sal')   renderSalidaHist();
@@ -2997,6 +3035,7 @@ function confirmarSalida(){
 
   salidaBorradores=salidaBorradores.filter(b=>b.id!==salidaActiva?.id);
   salidaActiva=null; salidaCancelaciones=[];
+  chequearET19Consumidas();
   document.getElementById('sal-activa-wrap').style.display='none';
   document.getElementById('sal-nueva-wrap').style.display='block';
   document.getElementById('sal-nro').value='';
@@ -4997,25 +5036,30 @@ function enviarSolicitudImportadosPorMail(id){
 }
 
 // ═══════════════════════════════════════════
-// PRÓRROGA DE ET19 — ¿queda saldo en los ZFI6 vinculados?
+// ET19 — registro, vincular con ZFI6, explorar y alerta de consumo
 // ═══════════════════════════════════════════
-let prorrogaOrdenes = [];   // órdenes de compra que tienen ET19 (para mostrar vencimiento)
-let prorrogaUltima = null;  // último resultado consultado (lo usa Imprimir)
+let et19Registro = {};            // CLAVE_NORMALIZADA -> {et19, fecha_oficializacion, meses}
+let et19Abiertas = new Set();     // ET19 con el detalle desplegado en Explorar (sobrevive a las actualizaciones)
+let et19Filtro = '';
+let et19Filas = [];               // lo último que se dibujó en Explorar (los botones usan el índice)
+let prorrogaUltima = null;        // para Imprimir
+let et19ConsumidasPendientes = [];
+let et19Timer = null;
+let et19RefrescoLocal = null;
+const ET19_VISTAS_KEY = 'ga_et19_consumidas_vistas';
 
 function escPror(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function nzET19(s){ return (s||'').trim().toUpperCase(); }
+function isoAFecha(iso){ const [y,m,d] = String(iso).slice(0,10).split('-'); return `${d}/${m}/${y}`; }
+function sumarMesesISO(iso, meses){ const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); return new Date(Date.UTC(y, m-1+meses, d)); }
+function fmtFechaDate(dt){ return String(dt.getUTCDate()).padStart(2,'0')+'/'+String(dt.getUTCMonth()+1).padStart(2,'0')+'/'+dt.getUTCFullYear(); }
 
-async function initProrroga(forzar){
-  // Se recarga todo: de este dato depende una decisión (pedir o no la prórroga)
-  try{ await loadStockFromSupabase(); }catch(e){}
-  await loadZfi6Et19();
-  prorrogaOrdenes = []; // las órdenes de compra ya no se relacionan con las ET19
-  const conocidas = new Set();
-  prorrogaOrdenes.forEach(o=>conocidas.add(o.et19.trim()));
-  Object.values(zfi6Et19Map).forEach(v=>{ if(v.et19) conocidas.add(v.et19.trim()); });
-  const dl = document.getElementById('pror-et19-list');
-  if(dl) dl.innerHTML = [...conocidas].map(e=>`<option value="${escPror(e)}"></option>`).join('');
-  if(forzar && document.getElementById('pror-et19').value.trim()) consultarProrroga();
+async function loadET19Registro(){
+  try{
+    const rows = await sbFetch('et19_registro?select=*', {method:'GET', headers:{'Prefer':''}});
+    et19Registro = {};
+    (rows||[]).forEach(r=>{ if(r.et19) et19Registro[nzET19(r.et19)] = r; });
+  }catch(e){ /* si la tabla todavía no existe, Explorar funciona igual pero sin fechas */ }
 }
 
 // Todas las filas de stock (con o sin saldo) de un despacho, en cualquier categoría
@@ -5038,109 +5082,222 @@ function filasDeDespacho(despacho){
   return out.sort((a,b)=> (a.item-b.item) || (a.sub-b.sub));
 }
 
-function consultarProrroga(){
-  const et19 = document.getElementById('pror-et19').value.trim();
-  const cont = document.getElementById('pror-resultado');
-  if(!et19){ cont.innerHTML = '<div class="empty">Escribí el número de la ET19.</div>'; return; }
+// Une las ET19 registradas con las que solo aparecen en algún vínculo ZFI6
+function listarET19(){
+  const mapa = {};
+  Object.values(et19Registro).forEach(r=>{ mapa[nzET19(r.et19)] = {et19: r.et19.trim(), zfi6: [], reg: r}; });
+  Object.values(zfi6Et19Map).forEach(v=>{
+    const k = nzET19(v.et19); if(!k) return;
+    (mapa[k] = mapa[k] || {et19: v.et19.trim(), zfi6: [], reg: null}).zfi6.push(v.despacho);
+  });
+  return Object.values(mapa);
+}
 
-  const oc = prorrogaOrdenes.find(o=>nzET19(o.et19)===nzET19(et19)) || null;
-  const venc = oc && oc.et19_fecha ? fmtFechaET19Orden(oc) : null;
-  const vinculos = Object.values(zfi6Et19Map).filter(v=>nzET19(v.et19)===nzET19(et19));
-
-  const zfi6 = vinculos.map(v=>({despacho: v.despacho, filas: filasDeDespacho(v.despacho)}));
+// Decide, para una ET19, si hay que pedir prórroga (queda saldo en algún ZFI6 vinculado)
+function evaluarET19(g){
+  const reg = g.reg;
+  const oficISO = reg && reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : null;
+  const meses = reg && reg.meses ? reg.meses : 22;
+  const vencDate = oficISO ? sumarMesesISO(oficISO, meses) : null;
+  const zfi6 = g.zfi6.map(d=>({despacho: d, filas: filasDeDespacho(d)}));
   const itemsConSaldo = zfi6.reduce((s,z)=>s+z.filas.filter(f=>f.conSaldo).length, 0);
-  const algunoSinStock = zfi6.some(z=>!z.filas.length);
-
   let veredicto;
   if(!zfi6.length) veredicto = 'sinvinculo';
   else if(itemsConSaldo>0) veredicto = 'prorroga';
-  else if(algunoSinStock) veredicto = 'revisar';
+  else if(zfi6.some(z=>!z.filas.length)) veredicto = 'revisar';   // no se puede afirmar que se consumió: falta cargar el ZFI6
   else veredicto = 'no';
-
-  prorrogaUltima = {et19, oc, venc, zfi6, itemsConSaldo, veredicto};
-  renderProrroga();
+  return {et19: g.et19, ofic: oficISO?isoAFecha(oficISO):null, venc: vencDate?fmtFechaDate(vencDate):null, vencDate,
+          zfi6, itemsConSaldo, veredicto};
 }
 
-function renderProrroga(){
-  const cont = document.getElementById('pror-resultado');
-  const d = prorrogaUltima;
-  if(!d){ cont.innerHTML=''; return; }
+// ── EXPLORAR ─────────────────────────────────────────────────────────────────
+// Colores pedidos: VERDE = hay que solicitar prórroga · ROJO = no hace falta (se consumió todo)
+const ET19_ESTILO = {
+  prorroga:   {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 PEDIR PRÓRROGA', orden:0},
+  revisar:    {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ REVISAR — ZFI6 sin ítems en stock', orden:1},
+  sinvinculo: {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ SIN ZFI6 VINCULADO', orden:1},
+  no:         {color:'var(--rd)', fondo:'var(--rbg)', chip:'🔴 NO REQUIERE PRÓRROGA', orden:2}
+};
 
-  const cab = `<div class="card" style="margin-top:12px">
-    <div style="font-size:13px"><strong>ET19:</strong> <span class="mono">${escPror(d.et19)}</span>${d.venc?` · <strong>Vence:</strong> ${escPror(d.venc)}`:''}</div>
-    ${d.zfi6.length?`<div style="margin-top:8px;font-size:16px"><strong>ZFI6 vinculado${d.zfi6.length>1?'s':''}:</strong> <span class="mono">${d.zfi6.map(z=>escPror(z.despacho)).join(' · ')}</span></div>`:''}
-  </div>`;
+function renderExplorarET19(){
+  const cont = document.getElementById('et19-explorar-lista');
+  if(!cont) return;
+  const filtro = nzET19(et19Filtro);
 
-  const banners = {
-    prorroga: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--rd);background:var(--rbg);color:var(--rd);font-weight:700;font-size:14px">⚠ SE DEBE SOLICITAR LA PRÓRROGA — queda saldo en ${d.itemsConSaldo} ítem${d.itemsConSaldo!==1?'s':''} de ${d.zfi6.length>1?'los ZFI6 vinculados':'el ZFI6 vinculado'}.</div>`,
-    no: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--gr);background:var(--gbg);color:var(--gr);font-weight:700;font-size:14px">✓ NO ES NECESARIA LA PRÓRROGA — todos los ítems de ${d.zfi6.length>1?'los ZFI6 vinculados':'el ZFI6 vinculado'} fueron consumidos.</div>`,
-    revisar: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--yw);background:var(--bg3);color:var(--yw);font-weight:700;font-size:14px">⚠ NO SE PUEDE CONFIRMAR — no encontré ítems en el stock para alguno de los ZFI6 vinculados. Revisá que esté cargado antes de decidir.</div>`,
-    sinvinculo: `<div style="margin-top:12px;padding:12px 14px;border:2px solid var(--yw);background:var(--bg3);color:var(--yw);font-weight:700;font-size:14px">⚠ No hay ningún ZFI6 vinculado a esta ET19. Si el ZFI6 se cargó antes de que existiera el vínculo, asocialo acá abajo.</div>`
-  };
+  let filas = listarET19().map(evaluarET19);
+  if(filtro) filas = filas.filter(f=> nzET19(f.et19).includes(filtro) || f.zfi6.some(z=>nzET19(z.despacho).includes(filtro)));
+  // Primero lo que requiere acción; dentro de cada grupo, el que vence antes
+  filas.sort((a,b)=> (ET19_ESTILO[a.veredicto].orden - ET19_ESTILO[b.veredicto].orden)
+      || ((a.vencDate?a.vencDate.getTime():Infinity) - (b.vencDate?b.vencDate.getTime():Infinity)));
+  et19Filas = filas;
 
-  const tablas = d.zfi6.map(z=>{
-    const con = z.filas.filter(f=>f.conSaldo).length;
-    return `<div class="mb" style="margin-top:12px">
-      <div class="mh"><div><strong class="mono">${escPror(z.despacho)}</strong>
-        <span class="t2" style="font-size:11px;margin-left:8px">${z.filas.length?`${con} de ${z.filas.length} ítem(s) con saldo`:'sin ítems en el stock'}</span></div></div>
-      ${z.filas.length?`<div class="tw"><table>
-        <thead><tr><th>Ít.</th><th>Sub.</th><th>Insumo</th><th>Original</th><th>Consumido</th><th>Saldo</th><th>Estado</th></tr></thead>
-        <tbody>${z.filas.map(f=>`<tr class="${f.conSaldo?'rsosp':''}">
-          <td style="text-align:center">${f.item}</td><td style="text-align:center">${f.sub}</td>
-          <td>${escPror(f.producto||f.material)}<div class="t2" style="font-size:10px">${escPror(f.material)}</div></td>
-          <td class="mono">${fmt(f.original)} ${f.unidad}</td>
-          <td class="mono">${fmt(f.consumido)} ${f.unidad}</td>
-          <td class="mono" style="font-weight:700;color:${f.conSaldo?'var(--rd)':'var(--gr)'}">${fmt(f.saldo)} ${f.unidad}</td>
-          <td><span class="bdg ${f.conSaldo?'by':'bg'}">${f.conSaldo?'QUEDA SALDO':'NO QUEDA'}</span></td>
-        </tr>`).join('')}</tbody></table></div>`:''}
+  const cuenta = v => filas.filter(f=>f.veredicto===v).length;
+  document.getElementById('et19-explorar-resumen').innerHTML = filas.length
+    ? `<b>${filas.length}</b> ET19 — <span style="color:var(--gr);font-weight:700">${cuenta('prorroga')} para pedir prórroga</span> · <span style="color:var(--rd);font-weight:700">${cuenta('no')} sin necesidad</span> · ${cuenta('revisar')+cuenta('sinvinculo')} sin datos suficientes`
+    : '';
+
+  if(!filas.length){
+    cont.innerHTML = `<div class="empty">${filtro?'Ninguna ET19 coincide con la búsqueda.':'Todavía no hay ET19 cargadas. Se registran al subir su PDF en "Carga Despacho", o desde 🔗 Vincular.'}</div>`;
+    return;
+  }
+
+  cont.innerHTML = `<div class="tw"><table>
+    <thead><tr><th>ET19</th><th>ZFI6 vinculado</th><th>Oficialización</th><th>Vencimiento</th><th>Estado</th></tr></thead>
+    <tbody>${filas.map((f,i)=>{
+      const st = ET19_ESTILO[f.veredicto];
+      const abierta = et19Abiertas.has(nzET19(f.et19));
+      return `<tr onclick="toggleDetalleET19(${i})" style="cursor:pointer;background:${st.fondo};border-left:6px solid ${st.color}">
+        <td class="mono" style="font-weight:700">${abierta?'▾':'▸'} ${escPror(f.et19)}</td>
+        <td class="mono">${f.zfi6.length?f.zfi6.map(z=>escPror(z.despacho)).join('<br>'):'<span class="t2">—</span>'}</td>
+        <td class="mono">${f.ofic||'<span class="t2">—</span>'}</td>
+        <td class="mono">${f.venc||'<span class="t2">—</span>'}</td>
+        <td><span style="font-weight:700;font-size:11px;color:${st.color}">${st.chip}</span></td>
+      </tr>${abierta?`<tr><td colspan="5" style="background:var(--bg2);padding:10px 14px">${detalleET19Html(f,i)}</td></tr>`:''}`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function detalleET19Html(f,i){
+  if(!f.zfi6.length) return '<div class="t2">Esta ET19 todavía no tiene un ZFI6 vinculado. Vinculalo desde 📑 ET19 → 🔗 Vincular.</div>';
+  const tablas = f.zfi6.map(z=>{
+    const con = z.filas.filter(x=>x.conSaldo).length;
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:12px;margin-bottom:4px"><strong class="mono">${escPror(z.despacho)}</strong>
+        <span class="t2" style="margin-left:8px">${z.filas.length?`${con} de ${z.filas.length} ítem(s) con saldo`:'sin ítems en el stock'}</span></div>
+      ${z.filas.length?`<table><thead><tr><th>Ít.</th><th>Sub.</th><th>Insumo</th><th>Original</th><th>Consumido</th><th>Saldo</th><th>Estado</th></tr></thead>
+        <tbody>${z.filas.map(x=>`<tr>
+          <td style="text-align:center">${x.item}</td><td style="text-align:center">${x.sub}</td>
+          <td>${escPror(x.producto||x.material)}<div class="t2" style="font-size:10px">${escPror(x.material)}</div></td>
+          <td class="mono">${fmt(x.original)} ${x.unidad}</td>
+          <td class="mono">${fmt(x.consumido)} ${x.unidad}</td>
+          <td class="mono" style="font-weight:700">${fmt(x.saldo)} ${x.unidad}</td>
+          <td><span class="bdg ${x.conSaldo?'bg':'br'}">${x.conSaldo?'QUEDA SALDO':'NO QUEDA'}</span></td>
+        </tr>`).join('')}</tbody></table>`:''}
     </div>`;
   }).join('');
-
-  const acciones = d.zfi6.length ? `<div style="margin-top:12px"><button class="btn btnp" onclick="imprimirProrroga()">🖨 Imprimir / PDF</button></div>` : '';
-
-  // Para ZFI6 cargados antes de que existiera el vínculo
-  const zfi6Conocidos = new Set();
-  [...Object.keys(STOCK_BASE), ...Object.keys(stockExtra)].forEach(k=>{
-    [...(STOCK_BASE[k]||[]), ...(stockExtra[k]||[])].forEach(r=>{ if((r.despacho||'').toUpperCase().includes('ZFI6')) zfi6Conocidos.add(r.despacho); });
-  });
-  const vincular = `<div class="card" style="margin-top:12px">
-    <div style="font-size:12px;font-weight:600;margin-bottom:6px">Vincular un ZFI6 a esta ET19</div>
-    <div class="fr" style="align-items:flex-end">
-      <div class="ff" style="max-width:300px"><label>Nº de ZFI6</label>
-        <input id="pror-zfi6-nuevo" list="pror-zfi6-list" placeholder="ej: 26258ZFI6000012K" style="font-family:var(--mn);font-size:12px"/>
-        <datalist id="pror-zfi6-list">${[...zfi6Conocidos].map(z=>`<option value="${escPror(z)}"></option>`).join('')}</datalist>
-      </div>
-      <button class="btn" onclick="vincularZfi6AEt19Consultada()">🔗 Vincular</button>
-    </div>
-  </div>`;
-
-  cont.innerHTML = cab + (banners[d.veredicto]||'') + tablas + acciones + vincular;
+  return tablas + `<button class="btn" onclick="event.stopPropagation();imprimirET19(${i})">🖨 Imprimir / PDF</button>`;
 }
 
-async function vincularZfi6AEt19Consultada(){
-  const d = prorrogaUltima;
-  if(!d) return;
-  const zfi6 = document.getElementById('pror-zfi6-nuevo').value.trim();
-  if(!zfi6){ alert('Escribí el número de ZFI6.'); return; }
-  if(!zfi6.toUpperCase().includes('ZFI6')){ alert('Ese número no parece un ZFI6.'); return; }
-  const previo = zfi6Et19Map[zfi6];
-  if(previo && nzET19(previo.et19)!==nzET19(d.et19)){
-    if(!confirm(`Ese ZFI6 ya está vinculado a la ET19 ${previo.et19}.\n\n¿Querés cambiarlo a ${d.et19}?`)) return;
+function toggleDetalleET19(i){
+  const f = et19Filas[i]; if(!f) return;
+  const k = nzET19(f.et19);
+  if(et19Abiertas.has(k)) et19Abiertas.delete(k); else et19Abiertas.add(k);
+  renderExplorarET19();
+}
+
+function onFiltroET19(){ et19Filtro = document.getElementById('et19-filtro').value; renderExplorarET19(); }
+
+// Recarga TODO desde Supabase (stock, vínculos y fechas) y vuelve a dibujar
+async function refrescarET19Datos(){
+  try{ await loadStockFromSupabase(); }catch(e){}
+  await Promise.all([loadZfi6Et19(), loadET19Registro()]);
+  renderExplorarET19();
+  chequearET19Consumidas();
+  const el = document.getElementById('et19-actualizado');
+  if(el) el.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-AR');
+}
+
+async function initExplorarET19(){
+  renderExplorarET19();            // primero lo que ya está en memoria, así abre al instante
+  await refrescarET19Datos();
+  // Mientras Explorar esté abierto, se vuelve a cargar solo (así se ven las cancelaciones de otras pantallas o personas)
+  if(!et19Timer) et19Timer = setInterval(()=>{
+    const sec = document.getElementById('sec-et19exp');
+    if(sec && sec.classList.contains('active') && !document.hidden) refrescarET19Datos();
+  }, 30000);
+}
+
+// Se llama cada vez que cambia algo localmente (actualizar stock, confirmar una salida, etc.)
+function programarRefrescoET19(){
+  clearTimeout(et19RefrescoLocal);
+  et19RefrescoLocal = setTimeout(()=>{
+    try{
+      chequearET19Consumidas();
+      const sec = document.getElementById('sec-et19exp');
+      if(sec && sec.classList.contains('active')) renderExplorarET19();
+    }catch(e){ /* todavía no cargó todo: no pasa nada */ }
+  }, 250);
+}
+
+// ── VINCULAR ─────────────────────────────────────────────────────────────────
+async function initVincularET19(){
+  await Promise.all([loadZfi6Et19(), loadET19Registro()]);
+  const ets = new Set();
+  Object.values(et19Registro).forEach(r=>ets.add(r.et19.trim()));
+  Object.values(zfi6Et19Map).forEach(v=>{ if(v.et19) ets.add(v.et19.trim()); });
+  document.getElementById('vinc-et19-list').innerHTML = [...ets].map(e=>`<option value="${escPror(e)}"></option>`).join('');
+  const zs = new Set();
+  [...Object.keys(STOCK_BASE), ...Object.keys(stockExtra)].forEach(k=>{
+    [...(STOCK_BASE[k]||[]), ...(stockExtra[k]||[])].forEach(r=>{ if((r.despacho||'').toUpperCase().includes('ZFI6')) zs.add(r.despacho); });
+  });
+  document.getElementById('vinc-zfi6-list').innerHTML = [...zs].map(z=>`<option value="${escPror(z)}"></option>`).join('');
+  onVincET19Input();
+}
+
+// Al escribir la ET19: si ya está registrada trae sus fechas, y muestra los ZFI6 que ya tiene
+function onVincET19Input(){
+  const k = nzET19(document.getElementById('vinc-et19').value);
+  const reg = k ? et19Registro[k] : null;
+  const msg = document.getElementById('vinc-fechas-msg');
+  if(reg){
+    document.getElementById('vinc-ofic').value = reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : '';
+    document.getElementById('vinc-meses').value = String(reg.meses||22);
+    msg.textContent = 'ET19 ya registrada — si hace falta, podés corregir las fechas.';
+  } else {
+    msg.textContent = k ? 'ET19 nueva: cargá la fecha de oficialización (figura en el PDF de la ET19).' : '';
   }
+  const vinc = k ? Object.values(zfi6Et19Map).filter(v=>nzET19(v.et19)===k) : [];
+  document.getElementById('vinc-actuales').innerHTML = k
+    ? `<div class="card" style="margin-top:12px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">ZFI6 ya vinculados a esta ET19</div>
+        ${vinc.length?vinc.map(v=>`<div class="mono" style="font-size:13px">• ${escPror(v.despacho)}</div>`).join(''):'<div class="t2">Ninguno todavía.</div>'}</div>`
+    : '';
+}
+
+async function vincularET19ZFI6(){
+  const msg = document.getElementById('vinc-msg');
+  msg.style.display = 'block';
+  const et19 = document.getElementById('vinc-et19').value.trim().toUpperCase();
+  const zfi6 = document.getElementById('vinc-zfi6').value.trim();
+  const ofic = document.getElementById('vinc-ofic').value;
+  const meses = parseInt(document.getElementById('vinc-meses').value) || 22;
+  const falla = t=>{ msg.style.color='var(--rd)'; msg.textContent=t; };
+
+  if(!et19) return falla('Escribí el número de la ET19.');
+  if(!zfi6) return falla('Escribí el número del ZFI6 que querés vincular.');
+  if(!zfi6.toUpperCase().includes('ZFI6')) return falla('Ese número no parece un ZFI6.');
+  const reg = et19Registro[nzET19(et19)];
+  if(!reg && !ofic) return falla('Es una ET19 nueva: falta la fecha de oficialización.');
+
+  const previo = zfi6Et19Map[zfi6];
+  if(previo && nzET19(previo.et19)!==nzET19(et19) &&
+     !confirm(`Ese ZFI6 ya está vinculado a la ET19 ${previo.et19}.\n\n¿Querés cambiarlo a ${et19}?`)) return;
+
   const who = localStorage.getItem('ga_user_label')||'alguien';
   try{
+    // Primero la ET19 (si falla, no se vincula nada a medias)
+    if(ofic || reg){
+      await sbFetch('et19_registro', {
+        method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({et19, fecha_oficializacion: ofic || (reg && String(reg.fecha_oficializacion).slice(0,10)) || null, meses, creado_por: who})
+      });
+    }
     await sbFetch('zfi6_et19', {
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({despacho: zfi6, et19: d.et19.trim(), oc_id: d.oc?d.oc.id:null, oc_numero: d.oc?d.oc.numero:null, vinculado_por: who})
+      body: JSON.stringify({despacho: zfi6, et19, oc_id: null, oc_numero: null, vinculado_por: who})
     });
-    await loadZfi6Et19();
-    showToast('✓ ZFI6 vinculado a la ET19.');
-    consultarProrroga();
-  }catch(e){ alert('Error guardando el vínculo: '+e.message); }
+    await Promise.all([loadZfi6Et19(), loadET19Registro()]);
+    msg.style.color = 'var(--gr)';
+    msg.textContent = `✓ ZFI6 ${zfi6} vinculado a la ET19 ${et19}. Podés vincular otro ZFI6 a la misma ET19.`;
+    document.getElementById('vinc-zfi6').value = '';
+    onVincET19Input();
+    chequearET19Consumidas();
+  }catch(e){
+    falla('⚠ No se pudo guardar: '+e.message + (String(e.message).includes('et19_registro') ? ' — falta correr el SQL "et19_registro_setup.sql" en Supabase.' : ''));
+  }
 }
 
-function imprimirProrroga(){
-  const d = prorrogaUltima;
+// ── IMPRIMIR ─────────────────────────────────────────────────────────────────
+function imprimirET19(i){
+  const d = et19Filas[i];
   if(!d || !d.zfi6.length) return;
   const hoy = new Date().toLocaleDateString('es-AR');
   const veredictoTxt = {
@@ -5160,7 +5317,8 @@ function imprimirProrroga(){
   p += '<div class="hdr"><div><h1>PRÓRROGA ET19 — SALDO DE ZFI6 VINCULADOS</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div>'
     +'<div style="text-align:right">Fecha: '+hoy+'</div></div>';
   p += '<div><strong>ET19:</strong> '+escPror(d.et19)
-    +(d.venc?' &nbsp;|&nbsp; <strong>Vence:</strong> '+escPror(d.venc):'')+'</div>';
+    +(d.ofic?' &nbsp;|&nbsp; <strong>Oficialización:</strong> '+d.ofic:'')
+    +(d.venc?' &nbsp;|&nbsp; <strong>Vencimiento:</strong> '+d.venc:'')+'</div>';
 
   d.zfi6.forEach(z=>{
     p += '<h2>ZFI6 '+escPror(z.despacho)+'</h2>';
@@ -5179,6 +5337,49 @@ function imprimirProrroga(){
   win.document.write(p);
   win.document.close();
   setTimeout(()=>win.print(), 300);
+}
+
+// ── ALERTA: ET19 cuyo ZFI6 vinculado se consumió en su totalidad ─────────────
+function leerET19Vistas(){ try{ return JSON.parse(localStorage.getItem(ET19_VISTAS_KEY)||'[]'); }catch(e){ return []; } }
+
+function chequearET19Consumidas(){
+  const banner = document.getElementById('et19-consumida-banner');
+  if(!banner) return;
+  const consumidas = listarET19().map(evaluarET19).filter(f=>f.veredicto==='no');
+
+  // Si una ET19 vuelve a tener saldo (ej: una corrección de stock), se la olvida,
+  // para que avise de nuevo cuando se consuma otra vez.
+  const claves = consumidas.map(g=>nzET19(g.et19));
+  const vistas = leerET19Vistas().filter(k=>claves.includes(k));
+  localStorage.setItem(ET19_VISTAS_KEY, JSON.stringify(vistas));
+
+  et19ConsumidasPendientes = consumidas.filter(g=>!vistas.includes(nzET19(g.et19)));
+  if(!et19ConsumidasPendientes.length){ banner.style.display='none'; return; }
+
+  banner.innerHTML = `<span>✅ ${et19ConsumidasPendientes.map(g=>
+      `ET19 <b>${escPror(g.et19)}</b>: su ZFI6 (${g.zfi6.map(z=>escPror(z.despacho)).join(', ')}) se consumió en su totalidad — no hace falta pedir prórroga`).join(' &nbsp;·&nbsp; ')}</span>
+    <button onclick="verET19Consumida()" style="background:var(--gr);border-color:var(--gr)">Ver</button>
+    <button onclick="marcarET19ConsumidasVistas()" style="background:none;border-color:var(--tx3);color:var(--tx3)">Entendido</button>`;
+  banner.style.display = 'flex';
+}
+
+function marcarET19ConsumidasVistas(){
+  const vistas = new Set(leerET19Vistas());
+  et19ConsumidasPendientes.forEach(g=>vistas.add(nzET19(g.et19)));
+  localStorage.setItem(ET19_VISTAS_KEY, JSON.stringify([...vistas]));
+  document.getElementById('et19-consumida-banner').style.display = 'none';
+  et19ConsumidasPendientes = [];
+}
+
+// Abre Explorar ya filtrado en esa ET19 y con el detalle desplegado (no la marca como vista: eso es "Entendido")
+function verET19Consumida(){
+  const g = et19ConsumidasPendientes[0];
+  if(!g) return;
+  showSec('et19exp', document.getElementById('nb-et19-exp'));
+  et19Filtro = g.et19;
+  document.getElementById('et19-filtro').value = g.et19;
+  et19Abiertas.add(nzET19(g.et19));
+  renderExplorarET19();
 }
 
 async function loadStockMercaderia(){
@@ -6626,7 +6827,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;

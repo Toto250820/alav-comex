@@ -140,6 +140,7 @@ input.narrow{width:80px}
       <div class="hi"><label>Vencimiento</label><b id="et-venc" style="color:var(--rd)">—</b></div>
     </div>
     <div class="sub">Este ET19 tiene que reimportarse como ZFI6 antes de la fecha de vencimiento. Si te autorizaron un plazo distinto al estándar, elegilo arriba antes de agregar el recordatorio. Agregalo al calendario para que los 3 tengan el aviso.</div>
+    <div id="et-registro-msg" class="sub" style="margin-top:8px"></div>
     <div class="actions" style="justify-content:flex-start">
       <a id="et-cal-link" class="btn btnp" style="text-decoration:none" href="#" target="_blank">📅 Agregar a Google Calendar (los 3 invitados)</a>
       <button class="btn" onclick="resetTool()">Cargar otro PDF</button>
@@ -467,6 +468,27 @@ function recalcularVencimientoET19(){
   const add = encodeURIComponent(CALENDAR_GUESTS.join(','));
   const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&add=${add}`;
   document.getElementById('et-cal-link').href = url;
+  programarRegistroET19();
+}
+
+// Deja la ET19 registrada en el sistema (número, fecha de oficialización y plazo), para verla en ET19 → Explorar.
+// Se vuelve a guardar si cambiás el plazo (la fecha de vencimiento se calcula con esos dos datos).
+let registroET19Timer = null;
+function programarRegistroET19(){ clearTimeout(registroET19Timer); registroET19Timer = setTimeout(registrarET19EnSistema, 400); }
+async function registrarET19EnSistema(){
+  if(!currentET19) return;
+  const msg = document.getElementById('et-registro-msg');
+  const meses = parseInt(document.getElementById('et-meses').value) || 22;
+  try{
+    await sbFetch('et19_registro', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({et19: currentET19.despacho.trim().toUpperCase(), fecha_oficializacion: currentET19.fecha, meses,
+                            creado_por: localStorage.getItem('ga_user_label')||'alguien'})
+    });
+    msg.innerHTML = `<span style="color:var(--gr)">✓ ET19 registrada en el sistema (plazo de ${meses} meses). Ya figura en ET19 → Explorar.</span>`;
+  }catch(e){
+    msg.innerHTML = `<span style="color:var(--rd)">⚠ No se pudo registrar la ET19 en el sistema: ${e.message}</span>`;
+  }
 }
 
 async function renderZFE3(p){
@@ -715,6 +737,7 @@ function resetTool(){
   currentET19 = null;
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
+  document.getElementById('et-registro-msg').innerHTML='';
   document.getElementById('zfe3-box').style.display='none';
   document.getElementById('zfi6-et19-box').style.display='none';
   document.getElementById('zfi6-et19-in').value='';
