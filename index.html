@@ -572,25 +572,26 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <div id="sec-et19vinc" class="sec">
   <div class="stit">Vincular una ET19 con su ZFI6</div>
   <div class="card">
-    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Elegí la ET19 y el ZFI6 que le corresponde. Una ET19 puede tener más de un ZFI6: repetí la operación con la misma ET19.</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cargá la ET19 con su fecha de oficialización: el vencimiento se calcula solo (oficialización + 22 meses). Si querés, vinculale también un ZFI6; una ET19 puede tener más de uno: repetí la operación con la misma ET19.</div>
     <div class="fr">
       <div class="ff" style="max-width:300px"><label>Nº de ET19</label>
         <input id="vinc-et19" list="vinc-et19-list" oninput="onVincET19Input()" placeholder="ej: 26090ET19000145J" style="font-family:var(--mn);font-size:13px"/>
         <datalist id="vinc-et19-list"></datalist>
       </div>
-      <div class="ff" style="max-width:300px"><label>Nº de ZFI6</label>
+      <div class="ff" style="max-width:300px"><label>Nº de ZFI6 <span class="t2">(opcional)</span></label>
         <input id="vinc-zfi6" list="vinc-zfi6-list" placeholder="ej: 26258ZFI6000012K" style="font-family:var(--mn);font-size:13px"/>
         <datalist id="vinc-zfi6-list"></datalist>
       </div>
     </div>
     <div class="fr" style="margin-top:6px">
-      <div class="ff" style="max-width:200px"><label>Fecha de oficialización de la ET19</label><input id="vinc-ofic" type="date"/></div>
+      <div class="ff" style="max-width:200px"><label>Fecha de oficialización de la ET19</label><input id="vinc-ofic" type="date" oninput="onVincFechasInput()"/></div>
       <div class="ff" style="max-width:200px"><label>Plazo autorizado</label>
-        <select id="vinc-meses"><option value="22" selected>22 meses (estándar)</option><option value="12">12 meses</option><option value="24">24 meses</option></select>
+        <select id="vinc-meses" onchange="onVincFechasInput()"><option value="22" selected>22 meses (interno, para llegar a pedir prórroga)</option><option value="12">12 meses</option><option value="24">24 meses</option></select>
       </div>
     </div>
+    <div id="vinc-venc-calc" style="font-size:13px;font-weight:700;margin:6px 0 2px"></div>
     <div id="vinc-fechas-msg" class="t2" style="font-size:11px;margin:4px 0 10px"></div>
-    <button class="btn btnp" onclick="vincularET19ZFI6()">🔗 Vincular</button>
+    <button class="btn btnp" onclick="vincularET19ZFI6()">🔗 Vincular / guardar</button>
     <div id="vinc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
   <div id="vinc-actuales"></div>
@@ -5051,7 +5052,7 @@ const ET19_VISTAS_KEY = 'ga_et19_consumidas_vistas';
 function escPror(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function nzET19(s){ return (s||'').trim().toUpperCase(); }
 function isoAFecha(iso){ const [y,m,d] = String(iso).slice(0,10).split('-'); return `${d}/${m}/${y}`; }
-function sumarMesesISO(iso, meses){ const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); return new Date(Date.UTC(y, m-1+meses, d)); }
+function sumarMesesISO(iso, meses){ const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); const ult = new Date(Date.UTC(y, m+meses, 0)).getUTCDate(); return new Date(Date.UTC(y, m-1+meses, Math.min(d,ult))); }
 function fmtFechaDate(dt){ return String(dt.getUTCDate()).padStart(2,'0')+'/'+String(dt.getUTCMonth()+1).padStart(2,'0')+'/'+dt.getUTCFullYear(); }
 
 async function loadET19Registro(){
@@ -5094,6 +5095,12 @@ function listarET19(){
 }
 
 // Decide, para una ET19, si hay que pedir prórroga (queda saldo en algún ZFI6 vinculado)
+function diasRestantesTxt(d){
+  if(!d) return '';
+  const hoy = new Date(); const h0 = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const n = Math.round((d.getTime()-h0)/86400000);
+  return n<0 ? 'venció hace '+(-n)+' d' : n===0 ? 'vence hoy' : 'faltan '+n+' d';
+}
 function evaluarET19(g){
   const reg = g.reg;
   const oficISO = reg && reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : null;
@@ -5106,7 +5113,7 @@ function evaluarET19(g){
   else if(itemsConSaldo>0) veredicto = 'prorroga';
   else if(zfi6.some(z=>!z.filas.length)) veredicto = 'revisar';   // no se puede afirmar que se consumió: falta cargar el ZFI6
   else veredicto = 'no';
-  return {et19: g.et19, ofic: oficISO?isoAFecha(oficISO):null, venc: vencDate?fmtFechaDate(vencDate):null, vencDate,
+  return {et19: g.et19, meses, ofic: oficISO?isoAFecha(oficISO):null, venc: vencDate?fmtFechaDate(vencDate):null, vencDate,
           zfi6, itemsConSaldo, veredicto};
 }
 
@@ -5150,7 +5157,7 @@ function renderExplorarET19(){
         <td class="mono" style="font-weight:700">${abierta?'▾':'▸'} ${escPror(f.et19)}</td>
         <td class="mono">${f.zfi6.length?f.zfi6.map(z=>escPror(z.despacho)).join('<br>'):'<span class="t2">—</span>'}</td>
         <td class="mono">${f.ofic||'<span class="t2">—</span>'}</td>
-        <td class="mono">${f.venc||'<span class="t2">—</span>'}</td>
+        <td class="mono">${f.venc?f.venc+'<div class="t2" style="font-size:10px;font-family:inherit">'+f.meses+' meses · '+diasRestantesTxt(f.vencDate)+'</div>':'<span class="t2">—</span>'}</td>
         <td><span style="font-weight:700;font-size:11px;color:${st.color}">${st.chip}</span></td>
       </tr>${abierta?`<tr><td colspan="5" style="background:var(--bg2);padding:10px 14px">${detalleET19Html(f,i)}</td></tr>`:''}`;
     }).join('')}</tbody></table></div>`;
@@ -5233,6 +5240,17 @@ async function initVincularET19(){
   onVincET19Input();
 }
 
+// Vista previa del vencimiento mientras se escribe la fecha
+function onVincFechasInput(){
+  const el = document.getElementById('vinc-venc-calc'); if(!el) return;
+  const ofic = document.getElementById('vinc-ofic').value;
+  const meses = parseInt(document.getElementById('vinc-meses').value) || 22;
+  if(!ofic){ el.textContent=''; return; }
+  const v = sumarMesesISO(ofic, meses);
+  el.style.color = 'var(--gr)';
+  el.textContent = 'Vence: ' + fmtFechaDate(v) + ' (oficialización + ' + meses + ' meses)';
+}
+
 // Al escribir la ET19: si ya está registrada trae sus fechas, y muestra los ZFI6 que ya tiene
 function onVincET19Input(){
   const k = nzET19(document.getElementById('vinc-et19').value);
@@ -5245,6 +5263,7 @@ function onVincET19Input(){
   } else {
     msg.textContent = k ? 'ET19 nueva: cargá la fecha de oficialización (figura en el PDF de la ET19).' : '';
   }
+  onVincFechasInput();
   const vinc = k ? Object.values(zfi6Et19Map).filter(v=>nzET19(v.et19)===k) : [];
   document.getElementById('vinc-actuales').innerHTML = k
     ? `<div class="card" style="margin-top:12px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">ZFI6 ya vinculados a esta ET19</div>
@@ -5262,31 +5281,36 @@ async function vincularET19ZFI6(){
   const falla = t=>{ msg.style.color='var(--rd)'; msg.textContent=t; };
 
   if(!et19) return falla('Escribí el número de la ET19.');
-  if(!zfi6) return falla('Escribí el número del ZFI6 que querés vincular.');
-  if(!zfi6.toUpperCase().includes('ZFI6')) return falla('Ese número no parece un ZFI6.');
+  if(zfi6 && !zfi6.toUpperCase().includes('ZFI6')) return falla('Ese número no parece un ZFI6.');
   const reg = et19Registro[nzET19(et19)];
   if(!reg && !ofic) return falla('Es una ET19 nueva: falta la fecha de oficialización.');
+  if(!zfi6 && !ofic) return falla('No hay nada para guardar: cargá la fecha de oficialización o un ZFI6.');
 
-  const previo = zfi6Et19Map[zfi6];
-  if(previo && nzET19(previo.et19)!==nzET19(et19) &&
-     !confirm(`Ese ZFI6 ya está vinculado a la ET19 ${previo.et19}.\n\n¿Querés cambiarlo a ${et19}?`)) return;
+  if(zfi6){
+    const previo = zfi6Et19Map[zfi6];
+    if(previo && nzET19(previo.et19)!==nzET19(et19) &&
+       !confirm(`Ese ZFI6 ya está vinculado a la ET19 ${previo.et19}.\n\n¿Querés cambiarlo a ${et19}?`)) return;
+  }
 
   const who = localStorage.getItem('ga_user_label')||'alguien';
+  const oficFinal = ofic || (reg && reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : null);
   try{
     // Primero la ET19 (si falla, no se vincula nada a medias)
-    if(ofic || reg){
-      await sbFetch('et19_registro', {
+    await sbFetch('et19_registro', {
+      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({et19, fecha_oficializacion: oficFinal, meses, creado_por: who})
+    });
+    if(zfi6){
+      await sbFetch('zfi6_et19', {
         method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-        body: JSON.stringify({et19, fecha_oficializacion: ofic || (reg && String(reg.fecha_oficializacion).slice(0,10)) || null, meses, creado_por: who})
+        body: JSON.stringify({despacho: zfi6, et19, oc_id: null, oc_numero: null, vinculado_por: who})
       });
     }
-    await sbFetch('zfi6_et19', {
-      method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({despacho: zfi6, et19, oc_id: null, oc_numero: null, vinculado_por: who})
-    });
     await Promise.all([loadZfi6Et19(), loadET19Registro()]);
+    const venc = oficFinal ? fmtFechaDate(sumarMesesISO(oficFinal, meses)) : null;
     msg.style.color = 'var(--gr)';
-    msg.textContent = `✓ ZFI6 ${zfi6} vinculado a la ET19 ${et19}. Podés vincular otro ZFI6 a la misma ET19.`;
+    msg.textContent = '✓ ET19 ' + et19 + ' guardada' + (venc ? ' — vence el ' + venc : '')
+      + (zfi6 ? ' · ZFI6 ' + zfi6 + ' vinculado.' : '.') + ' Podés cargar otra.';
     document.getElementById('vinc-zfi6').value = '';
     onVincET19Input();
     chequearET19Consumidas();
@@ -5318,7 +5342,7 @@ function imprimirET19(i){
     +'<div style="text-align:right">Fecha: '+hoy+'</div></div>';
   p += '<div><strong>ET19:</strong> '+escPror(d.et19)
     +(d.ofic?' &nbsp;|&nbsp; <strong>Oficialización:</strong> '+d.ofic:'')
-    +(d.venc?' &nbsp;|&nbsp; <strong>Vencimiento:</strong> '+d.venc:'')+'</div>';
+    +(d.venc?' &nbsp;|&nbsp; <strong>Vencimiento ('+d.meses+' meses):</strong> '+d.venc:'')+'</div>';
 
   d.zfi6.forEach(z=>{
     p += '<h2>ZFI6 '+escPror(z.despacho)+'</h2>';
