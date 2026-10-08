@@ -5268,7 +5268,7 @@ function onVincET19Input(){
   const vinc = k ? Object.values(zfi6Et19Map).filter(v=>nzET19(v.et19)===k) : [];
   document.getElementById('vinc-actuales').innerHTML = k
     ? `<div class="card" style="margin-top:12px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">ZFI6 ya vinculados a esta ET19</div>
-        ${vinc.length?vinc.map(v=>`<div class="mono" style="font-size:13px">• ${escPror(v.despacho)}</div>`).join(''):'<div class="t2">Ninguno todavía.</div>'}</div>`
+        ${vinc.length?vinc.map(v=>`<div class="mono" style="font-size:13px;display:flex;align-items:center;gap:10px;margin:3px 0">• ${escPror(v.despacho)} <button class="btn" style="padding:1px 8px;font-size:11px" onclick="desvincularZFI6(this.dataset.d)" data-d="${escPror(v.despacho)}" title="Quitar este vínculo">✕ desvincular</button></div>`).join(''):'<div class="t2">Ninguno todavía.</div>'}</div>`
     : '';
 }
 
@@ -5359,6 +5359,24 @@ function imprimirPlanillaET19(){
   win.document.write(p);
   win.document.close();
   setTimeout(()=>win.print(), 300);
+}
+
+// Quita el vínculo de un ZFI6 con su ET19 (no borra el ZFI6 ni la ET19)
+async function desvincularZFI6(despacho){
+  const v = zfi6Et19Map[despacho];
+  if(!v) return;
+  if(!confirm(`¿Desvincular el ZFI6 ${despacho} de la ET19 ${v.et19}?\n\nEl ZFI6 y la ET19 quedan guardados; solo se quita el vínculo.`)) return;
+  const msg = document.getElementById('vinc-msg');
+  try{
+    await sbFetch('zfi6_et19?despacho=eq.'+encodeURIComponent(despacho), {method:'DELETE', headers:{'Prefer':'return=minimal'}});
+    await loadZfi6Et19();
+    onVincET19Input();
+    if(msg){ msg.style.display='block'; msg.style.color='var(--gr)'; msg.textContent='✓ ZFI6 '+despacho+' desvinculado de la ET19 '+v.et19+'.'; }
+    chequearET19Consumidas();
+    renderExplorarET19();
+  }catch(e){
+    if(msg){ msg.style.display='block'; msg.style.color='var(--rd)'; msg.textContent='⚠ No se pudo desvincular: '+e.message; }
+  }
 }
 
 // ── IMPRIMIR ─────────────────────────────────────────────────────────────────
