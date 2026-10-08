@@ -608,6 +608,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <div class="ff" style="max-width:300px"><label>Buscar (ET19 o ZFI6)</label>
         <input id="et19-filtro" oninput="onFiltroET19()" placeholder="opcional" style="font-family:var(--mn);font-size:13px"/>
       </div>
+      <button class="btn btnp" onclick="imprimirPlanillaET19()">📄 Descargar planilla PDF</button>
     </div>
     <div id="et19-explorar-resumen" style="font-size:12px;margin-top:10px"></div>
     <div class="t2" style="font-size:11px;margin-top:6px">🟢 Verde: hay que solicitar prórroga (queda saldo en el ZFI6) · 🔴 Rojo: no hace falta (se consumió todo) · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
@@ -5317,6 +5318,47 @@ async function vincularET19ZFI6(){
   }catch(e){
     falla('⚠ No se pudo guardar: '+e.message + (String(e.message).includes('et19_registro') ? ' — falta correr el SQL "et19_registro_setup.sql" en Supabase.' : ''));
   }
+}
+
+// Planilla resumen de todas las ET19 (lo que se ve en Explorar) para imprimir o guardar como PDF
+function imprimirPlanillaET19(){
+  const filas = et19Filas || [];
+  if(!filas.length){ alert('No hay ET19 para imprimir.'); return; }
+  const hoy = new Date().toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'});
+  const cuenta = v => filas.filter(f=>f.veredicto===v).length;
+  const est = {
+    prorroga:{t:'PEDIR PRÓRROGA', bg:'#d9f2dd', bd:'#1e8e3e'},
+    no:{t:'NO REQUIERE PRÓRROGA', bg:'#fbdcdc', bd:'#c62828'},
+    revisar:{t:'REVISAR — ZFI6 sin ítems en stock', bg:'#eee', bd:'#888'},
+    sinvinculo:{t:'SIN ZFI6 VINCULADO', bg:'#eee', bd:'#888'}
+  };
+  const rows = filas.map(f=>{
+    const s = est[f.veredicto]||est.revisar;
+    const saldo = f.zfi6.length ? f.itemsConSaldo+' ítem(s) con saldo' : '—';
+    return '<tr style="background:'+s.bg+';border-left:6px solid '+s.bd+'">'
+      +'<td class="m b">'+escPror(f.et19)+'</td>'
+      +'<td class="m">'+(f.zfi6.length?f.zfi6.map(z=>escPror(z.despacho)).join('<br>'):'—')+'</td>'
+      +'<td class="m">'+(f.ofic||'—')+'</td>'
+      +'<td class="m">'+(f.venc?f.venc+'<div class="s">'+f.meses+' meses · '+diasRestantesTxt(f.vencDate)+'</div>':'—')+'</td>'
+      +'<td>'+saldo+'</td>'
+      +'<td class="b">'+s.t+'</td></tr>';
+  }).join('');
+  const p = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Planilla ET19 - '+hoy+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:11px;color:#000;padding:18px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:10px}h1{font-size:16px}'
+    +'.res{margin:6px 0 10px;font-size:12px}table{width:100%;border-collapse:collapse}'
+    +'th{background:#e8e8e8;border:1px solid #999;padding:5px 6px;text-align:left}td{border:1px solid #bbb;padding:5px 6px;vertical-align:top}'
+    +'.m{font-family:monospace}.b{font-weight:700}.s{font-size:9px;color:#444;font-family:Arial,sans-serif}tr{page-break-inside:avoid}'
+    +'@media print{@page{size:A4 landscape;margin:12mm}}</style></head><body>'
+    +'<div class="hdr"><div><h1>PLANILLA DE ESTADO DE ET19</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div><div style="text-align:right">Emitida: '+hoy+'</div></div>'
+    +'<div class="res"><b>'+filas.length+'</b> ET19 — <b>'+cuenta('prorroga')+'</b> para pedir prórroga · <b>'+cuenta('no')+'</b> sin necesidad · <b>'+(cuenta('revisar')+cuenta('sinvinculo'))+'</b> sin datos suficientes</div>'
+    +'<table><thead><tr><th>ET19</th><th>ZFI6 vinculado</th><th>Oficialización</th><th>Vencimiento</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'</body></html>';
+  const win = window.open('', '_blank');
+  if(!win){ alert('El navegador bloqueó la ventana. Permití las ventanas emergentes para esta página.'); return; }
+  win.document.write(p);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
 }
 
 // ── IMPRIMIR ─────────────────────────────────────────────────────────────────
