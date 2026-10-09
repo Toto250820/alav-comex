@@ -781,6 +781,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div class="fr"><div class="ff"><label>Detalle</label><input id="adm-det" placeholder="ej: TELA 300GSM 260cm"/></div></div>
         <div style="font-size:10px;color:var(--tx3);margin:2px 0 8px;font-style:italic">La cantidad que cargues acá arranca 100% disponible — se va descontando sola a medida que confirmás salidas o cargás un ZFE3, no hace falta indicar cuánto ya se usó.</div>
         <button class="btn btnp" id="adm-submit-btn" onclick="addStock()">+ Agregar</button>
+        <button class="btn" id="adm-submit-seguir-btn" onclick="addStockYSeguir()" title="Guarda este ítem y deja listo el formulario para el siguiente ítem del mismo despacho">➕ Agregar y cargar otro ítem</button>
         <button class="btn" id="adm-cancel-edit-btn" onclick="cancelarEdicionStock()" style="display:none">✕ Cancelar edición</button>
         <div id="adm-msg" style="margin-top:8px;font-size:12px;display:none"></div>
       </div>
@@ -6227,6 +6228,7 @@ function editAdmStock(mat, i){
   document.getElementById('adm-det').value = r.detalle||'';
 
   document.getElementById('adm-submit-btn').textContent = '✓ Guardar cambios';
+  { const sb=document.getElementById('adm-submit-seguir-btn'); if(sb) sb.style.display='none'; }
   document.getElementById('adm-cancel-edit-btn').style.display = 'inline-block';
   const msg=document.getElementById('adm-msg');
   msg.style.display='block'; msg.style.color='var(--ac)';
@@ -6242,6 +6244,7 @@ function cancelarEdicionStock(){
   document.getElementById('adm-mat').value='';
   resetET19Manual();
   document.getElementById('adm-submit-btn').textContent = '+ Agregar';
+  { const sb=document.getElementById('adm-submit-seguir-btn'); if(sb) sb.style.display=''; }
   document.getElementById('adm-cancel-edit-btn').style.display = 'none';
   document.getElementById('adm-msg').style.display='none';
 }
@@ -6771,7 +6774,10 @@ function resetET19Manual(){
   if(wrap) wrap.style.display='none';
 }
 
+let admSeguir = false;
+async function addStockYSeguir(){ admSeguir = true; await addStock(); }
 async function addStock(){
+  const seguirConOtro = admSeguir; admSeguir = false;
   const matSel=document.getElementById('adm-mat').value;
   const nombreInsumo=document.getElementById('adm-nombre').value.trim();
   const desp=document.getElementById('adm-desp').value.trim();
@@ -6907,6 +6913,11 @@ async function addStock(){
   document.getElementById('adm-mat').value='';
   resetET19Manual();
   btn.disabled=false; btn.textContent=btnTextoOriginal;
+  if(seguirConOtro && subio.ok){
+    const ok = msg.textContent;
+    await agregarOtroItemMismoDespacho();
+    msg.textContent = '✓ ' + ultimoItemCargado.desp + ' ítem ' + ultimoItemCargado.item + ' guardado. Ahora cargá el ítem ' + (ultimoItemCargado.item+1) + ' (se pueden cambiar el ítem y subítem).';
+  }
 }
 
 // Busca un despacho/ítem/subítem en TODO el stock (STOCK_BASE + stockExtra), sea cual sea el material.
