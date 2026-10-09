@@ -226,7 +226,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <span class="p-user" id="p-carina">Carina</span>
   </div>
 </div>
-<div id="et19-consumida-banner" class="update-banner" style="background:var(--gbg);border-bottom-color:var(--gbr);color:var(--gr)"></div>
+<div id="et19-consumida-banner" class="update-banner"></div>
 <div id="update-banner" class="update-banner">
   <span>🔄 Hay novedades cargadas por otra persona</span>
   <button onclick="location.reload()">Actualizar ahora</button>
@@ -5423,41 +5423,56 @@ function imprimirET19(i){
   setTimeout(()=>win.print(), 300);
 }
 
-// ── ALERTA: ET19 cuyo ZFI6 vinculado se consumió en su totalidad ─────────────
-function leerET19Vistas(){ try{ return JSON.parse(localStorage.getItem(ET19_VISTAS_KEY)||'[]'); }catch(e){ return []; } }
+// ── ALERTA: ET19 próxima a vencer (y que todavía tiene saldo) ────────────────
+// Solo avisa cuando falta poco para el vencimiento (oficialización + 22 meses) y queda
+// mercadería en algún ZFI6 vinculado. Las ET19 consumidas o lejanas no muestran nada.
+const ET19_AVISO_DIAS = 90;                 // cuántos días antes empieza a avisar
+const ET19_SNOOZE_KEY = 'ga_et19_venc_snooze';
+let et19PorVencerPend = [];
 
-function chequearET19Consumidas(){
+function leerET19Snooze(){ try{ return JSON.parse(localStorage.getItem(ET19_SNOOZE_KEY)||'{}'); }catch(e){ return {}; } }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function diasHastaFecha(dt){ const h=new Date(); return Math.round((dt.getTime()-Date.UTC(h.getFullYear(),h.getMonth(),h.getDate()))/86400000); }
+
+// (se sigue llamando así desde varios lugares de la app)
+function chequearET19Consumidas(){ chequearET19PorVencer(); }
+
+function chequearET19PorVencer(){
   const banner = document.getElementById('et19-consumida-banner');
   if(!banner) return;
-  const consumidas = listarET19().map(evaluarET19).filter(f=>f.veredicto==='no');
+  const snooze = leerET19Snooze(), hoy = hoyISO();
+  et19PorVencerPend = listarET19().map(evaluarET19)
+    .filter(f=> f.veredicto==='prorroga' && f.vencDate)
+    .map(f=> Object.assign({dias: diasHastaFecha(f.vencDate)}, f))
+    .filter(f=> f.dias <= ET19_AVISO_DIAS && snooze[nzET19(f.et19)]!==hoy)
+    .sort((x,y)=>x.dias-y.dias);
+  if(!et19PorVencerPend.length){ banner.style.display='none'; return; }
 
-  // Si una ET19 vuelve a tener saldo (ej: una corrección de stock), se la olvida,
-  // para que avise de nuevo cuando se consuma otra vez.
-  const claves = consumidas.map(g=>nzET19(g.et19));
-  const vistas = leerET19Vistas().filter(k=>claves.includes(k));
-  localStorage.setItem(ET19_VISTAS_KEY, JSON.stringify(vistas));
-
-  et19ConsumidasPendientes = consumidas.filter(g=>!vistas.includes(nzET19(g.et19)));
-  if(!et19ConsumidasPendientes.length){ banner.style.display='none'; return; }
-
-  banner.innerHTML = `<span>✅ ${et19ConsumidasPendientes.map(g=>
-      `ET19 <b>${escPror(g.et19)}</b>: su ZFI6 (${g.zfi6.map(z=>escPror(z.despacho)).join(', ')}) se consumió en su totalidad — no hace falta pedir prórroga`).join(' &nbsp;·&nbsp; ')}</span>
-    <button onclick="verET19Consumida()" style="background:var(--gr);border-color:var(--gr)">Ver</button>
-    <button onclick="marcarET19ConsumidasVistas()" style="background:none;border-color:var(--tx3);color:var(--tx3)">Entendido</button>`;
+  const urgente = et19PorVencerPend[0].dias <= 30;
+  banner.style.background = urgente ? 'var(--rbg)' : 'var(--ybg)';
+  banner.style.color = urgente ? 'var(--rd)' : 'var(--yw)';
+  banner.style.borderBottomColor = urgente ? 'var(--rd)' : 'var(--yw)';
+  const txt = f => f.dias<0 ? `VENCIDA hace ${-f.dias} d` : f.dias===0 ? 'vence HOY' : `vence en ${f.dias} d`;
+  const vis = et19PorVencerPend.slice(0,3);
+  const mas = et19PorVencerPend.length - vis.length;
+  banner.innerHTML = `<span>⏰ Pedir prórroga — ${vis.map(f=>`ET19 <b>${escPror(f.et19)}</b> ${txt(f)} (${f.venc}), con saldo en ${f.itemsConSaldo} ítem(s)`).join(' &nbsp;·&nbsp; ')}${mas>0?` &nbsp;·&nbsp; y ${mas} más`:''}</span>
+    <button onclick="verET19PorVencer()">Ver</button>
+    <button onclick="posponerET19PorVencer()" style="background:none;border-color:currentColor;color:inherit">Recordar mañana</button>`;
   banner.style.display = 'flex';
 }
 
-function marcarET19ConsumidasVistas(){
-  const vistas = new Set(leerET19Vistas());
-  et19ConsumidasPendientes.forEach(g=>vistas.add(nzET19(g.et19)));
-  localStorage.setItem(ET19_VISTAS_KEY, JSON.stringify([...vistas]));
+// Oculta el aviso por hoy; mañana vuelve a aparecer mientras la ET19 siga próxima a vencer con saldo
+function posponerET19PorVencer(){
+  const s = leerET19Snooze(), hoy = hoyISO();
+  et19PorVencerPend.forEach(f=>{ s[nzET19(f.et19)] = hoy; });
+  localStorage.setItem(ET19_SNOOZE_KEY, JSON.stringify(s));
   document.getElementById('et19-consumida-banner').style.display = 'none';
-  et19ConsumidasPendientes = [];
+  et19PorVencerPend = [];
 }
 
-// Abre Explorar ya filtrado en esa ET19 y con el detalle desplegado (no la marca como vista: eso es "Entendido")
-function verET19Consumida(){
-  const g = et19ConsumidasPendientes[0];
+// Abre Explorar ya filtrado en esa ET19 y con el detalle desplegado
+function verET19PorVencer(){
+  const g = et19PorVencerPend[0];
   if(!g) return;
   showSec('et19exp', document.getElementById('nb-et19-exp'));
   et19Filtro = g.et19;
