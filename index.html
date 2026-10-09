@@ -6721,6 +6721,27 @@ function slugify(txt){
 // ── ZFI6 → ET19 en la carga manual ──
 let et19DisponiblesManual = [];   // órdenes con ET19 (solo para sugerir y guardar el id por detrás)
 
+// Después de cargar un ítem: deja listo el formulario para el siguiente ítem del MISMO despacho
+// (conserva despacho, fecha, FOB del despacho, flete, seguro y ET19; limpia lo propio del ítem).
+let ultimoItemCargado = null;
+async function agregarOtroItemMismoDespacho(){
+  const u = ultimoItemCargado; if(!u) return;
+  document.getElementById('adm-desp').value = u.desp;
+  document.getElementById('adm-item').value = (u.item||1) + 1;
+  document.getElementById('adm-sub').value = '0';
+  document.getElementById('adm-fecha').value = u.fecha || '';
+  document.getElementById('adm-fobdesp').value = u.fobDesp || '';
+  document.getElementById('adm-flete').value = u.flete || 0;
+  document.getElementById('adm-seguro').value = u.seguro || 0;
+  ['adm-cant','adm-total-declarar','adm-fob','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('adm-mat').value = '';
+  await onDespachoManualInput();
+  const msg = document.getElementById('adm-msg');
+  msg.style.display='block'; msg.style.color='var(--ac)';
+  msg.textContent = `Despacho ${u.desp}: cargá el ítem ${(u.item||1)+1} (el número de ítem y subítem se pueden cambiar).`;
+  const nom = document.getElementById('adm-nombre'); if(nom) nom.focus();
+}
+
 async function onDespachoManualInput(){
   const desp = document.getElementById('adm-desp').value.toUpperCase();
   const wrap = document.getElementById('adm-et19-wrap');
@@ -6872,6 +6893,14 @@ async function addStock(){
   msg.textContent = subio.ok
     ? `✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible. Ya está sincronizado, lo va a ver Marina/Carina y el lector de ZFE3 también.`
     : `⚠ ${desp} agregado localmente, pero falló la sincronización con Supabase: ${subio.error}`;
+  if(subio.ok){
+    ultimoItemCargado = {desp, item, fecha, fobDesp, flete, seguro};
+    const b = document.createElement('button');
+    b.className = 'btn'; b.style.cssText = 'margin-left:10px;padding:3px 10px;font-size:12px';
+    b.textContent = '➕ Agregar otro ítem de este despacho';
+    b.onclick = agregarOtroItemMismoDespacho;
+    msg.appendChild(b);
+  }
   ['adm-desp','adm-cant','adm-total-declarar','adm-fob','adm-fobdesp','adm-det','adm-nombre','adm-ncm','adm-derecho'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('adm-item').value='1'; document.getElementById('adm-sub').value='0';
   document.getElementById('adm-flete').value='0'; document.getElementById('adm-seguro').value='0';
