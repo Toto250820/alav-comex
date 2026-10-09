@@ -738,7 +738,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
         <div class="ct">Agregar despacho</div>
         <div class="fr">
           <div class="ff" style="max-width:190px"><label>Categoría (opcional — si no elegís, se crea una según el nombre)</label>
-            <select id="adm-mat">
+            <select id="adm-mat" onchange="onAdmMatChange()">
               <option value="" selected>🆕 Nueva, según el nombre del insumo</option>
               <option value="guata">Guata</option><option value="hilo">Hilo de coser</option>
               <option value="tnt">Tejido TNT</option><option value="bies">Bies / Vivo</option>
@@ -1164,6 +1164,7 @@ function zfi6DeET19(et19){
 
 async function initFromSupabase() {
   await loadCustomCategoriasFromSupabase();
+  poblarSelectMatAdm();
   const stockOk = await loadStockFromSupabase();
   await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
   try{ const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}}); stockMinimos = rows || []; }catch(e){}
@@ -1572,6 +1573,7 @@ function load(){
       MAT_LABELS[slug]=info.label;
       CANCEL_UNIT[slug]=info.unit;
     });
+    try{ poblarSelectMatAdm(); }catch(_){}
     // Aplicar el patch de cantidades canceladas sobre STOCK_BASE al cargar
     Object.keys(cancelQtyPatch).forEach(dk=>{
       Object.keys(STOCK_BASE).forEach(k=>{
@@ -6172,6 +6174,28 @@ function cambiarPin(){
   msg.style.color='var(--gr)'; msg.textContent='PIN actualizado.';
   ['pa','pn','pc'].forEach(id=>document.getElementById(id).value='');
 }
+// Arma la lista de categorías del formulario "Agregar despacho" con TODAS las que existen
+// (las fijas y las que se fueron creando por nombre), para poder elegirlas y no reescribirlas.
+function poblarSelectMatAdm(){
+  const sel = document.getElementById('adm-mat'); if(!sel) return;
+  const actual = sel.value;
+  const opts = Object.entries(MAT_LABELS).sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'es'));
+  sel.innerHTML = '<option value="">🆕 Nueva, según el nombre del insumo</option>'
+    + opts.map(([k,l])=>`<option value="${escPror(k)}">${escPror(l)}${CANCEL_UNIT[k]?' ('+CANCEL_UNIT[k]+')':''}</option>`).join('');
+  sel.value = MAT_LABELS[actual] ? actual : '';
+}
+
+// Al elegir una categoría ya existente: completa el nombre y la unidad si están vacíos
+function onAdmMatChange(){
+  const k = document.getElementById('adm-mat').value;
+  if(!k) return;
+  const nom = document.getElementById('adm-nombre');
+  if(nom && !nom.value.trim()) nom.value = MAT_LABELS[k] || '';
+  const u = {kg:'KILOGRAMO', m:'METRO', u:'UNIDAD'}[CANCEL_UNIT[k]];
+  const us = document.getElementById('adm-unidad');
+  if(u && us) us.value = u;
+}
+
 let editandoStock = null; // {mat, index} cuando se está editando un registro existente, null si no
 
 function editAdmStock(mat, i){
@@ -6181,7 +6205,7 @@ function editAdmStock(mat, i){
 
   // Si la categoría es una fija conocida (no una creada por nombre), la preseleccionamos; sino, dejamos "🆕 Nueva"
   const matSelect = document.getElementById('adm-mat');
-  const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','micro80','alma','poliamida'].includes(mat);
+  const esFija = !!MAT_LABELS[mat];
   matSelect.value = esFija ? mat : '';
 
   document.getElementById('adm-nombre').value = r.producto||'';
@@ -6269,7 +6293,7 @@ async function sincronizarTodoStockExtra(){
   let ok=0, fail=0; const errores=[];
   for(const mat of mats){
     // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
-    const esFija = ['guata','hilo','tnt','bies','pvc','cord','cord160','terc300','terc360','terc400','insert','funda','bubble','manta','micro90','micro100','micro140','micro80','alma','poliamida'].includes(mat);
+    const esFija = !!MAT_LABELS[mat];
     if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
     for(const row of stockExtra[mat]){
       const res = await pushStockRowToSupabase(mat, row);
@@ -6803,7 +6827,7 @@ async function addStock(){
     }
   }
 
-  if(esCategoriaNueva) await pushCustomCategoriaToSupabase(mat, nombreInsumo, cu);
+  if(esCategoriaNueva){ await pushCustomCategoriaToSupabase(mat, nombreInsumo, cu); poblarSelectMatAdm(); }
 
   let nuevaFila;
   if(editandoStock){
