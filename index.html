@@ -5571,6 +5571,13 @@ async function loadTerminados(){
   try{
     termBase = await sbFetch('terminados_base?select=*&order=despacho.asc,item.asc,subitem.asc',{method:'GET',headers:{'Prefer':''}}) || [];
     termSalidas = await sbFetch('zfe1_salidas?select=*&order=created_at.desc',{method:'GET',headers:{'Prefer':''}}) || [];
+    // congelar los % de derecho de ZFE1 confirmados que no los tengan (p. ej. cargados por PDF)
+    for(const s of termSalidas){
+      if(s.estado!=='confirmado') continue;
+      const t = {...(s.tasas||{})}; let cambio=false;
+      (s.items||[]).forEach(it=>{ const k=termNcm8(it.ncm); if(t[k]==null){ t[k]=termTasaDefault(k); cambio=true; } });
+      if(cambio){ try{ await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(s.id),{method:'PATCH',body:JSON.stringify({tasas:t})}); s.tasas=t; }catch(e){} }
+    }
     msg.style.display='none';
   }catch(e){
     msg.style.display='block';
@@ -5840,13 +5847,16 @@ async function termConfirmar(sid, silencioso){
       const cur = await sbFetch('terminados_base?select=cancel_qty&id=eq.'+encodeURIComponent(it.tid),{method:'GET',headers:{'Prefer':''}});
       await sbFetch('terminados_base?id=eq.'+encodeURIComponent(it.tid),{method:'PATCH',body:JSON.stringify({cancel_qty:(Number(cur[0].cancel_qty)||0)+Number(it.cant)})});
     }
-    await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'PATCH',body:JSON.stringify({estado:'confirmado'})});
-    s.estado='confirmado';
+    const tasasFijas = {...(s.tasas||{})};
+    (s.items||[]).forEach(it=>{ const k=termNcm8(it.ncm); if(tasasFijas[k]==null) tasasFijas[k]=termTasaDefault(k); });
+    await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'PATCH',body:JSON.stringify({estado:'confirmado', tasas:tasasFijas})});
+    s.estado='confirmado'; s.tasas=tasasFijas;
     if(!silencioso) await loadTerminados();
   }catch(e){ alert('⚠ No se pudo confirmar: '+e.message); if(silencioso) throw e; }
 }
 async function termRevertir(sid){
   const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  alert('Un ZFE1 confirmado no se puede modificar ni revertir.'); return;
   if(!confirm('¿Volver este ZFE1 a borrador? Se devuelve el saldo a los ZFI5 (queda reservado hasta que lo borres o confirmes de nuevo).')) return;
   try{
     for(const it of s.items){
@@ -5859,12 +5869,13 @@ async function termRevertir(sid){
 }
 async function termEliminar(sid){
   const s = termSalidas.find(x=>x.id===sid); if(!s) return;
-  if(s.estado==='confirmado'){ alert('Primero pasalo a borrador (↩) para devolver el saldo.'); return; }
+  if(s.estado==='confirmado'){ alert('Un ZFE1 confirmado no se puede eliminar.'); return; }
   if(!confirm('¿Eliminar este borrador de ZFE1?')) return;
   try{ await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'DELETE'}); await loadTerminados(); }catch(e){ alert('⚠ '+e.message); }
 }
 async function termGuardarParams(sid){
   const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  if(s.estado==='confirmado'){ alert('Un ZFE1 confirmado no se puede modificar.'); return; }
   const tasas={}; document.querySelectorAll('#tz-'+sid+' input[data-ncm]').forEach(i=>tasas[i.dataset.ncm]=parseFloat(i.value)||0);
   const iva = parseFloat(document.querySelector('#tz-'+sid+' input[data-f="iva"]').value)||0;
   const sim = parseFloat(document.querySelector('#tz-'+sid+' input[data-f="sim"]').value)||0;
@@ -5882,7 +5893,8 @@ function renderTermHistorial(){
   cont.innerHTML = termSalidas.map(s=>{
     const liq = termLiqDeSalida(s);
     const conf = s.estado==='confirmado';
-    const tasasIn = Object.keys(liq.porNcm).map(k=>`<div class="ff" style="max-width:150px"><label>Derecho % ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${liq.porNcm[k].tasa}"/></div>`).join('');
+    const ro = conf ? ' disabled' : '';
+    const tasasIn = Object.keys(liq.porNcm).map(k=>`<div class="ff" style="max-width:150px"><label>Derecho % ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${liq.porNcm[k].tasa}"${ro}/></div>`).join('');
     return `<div class="card" id="tz-${escPror(s.id)}" style="margin-top:10px">
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
         <div><b>ZFE1 ${s.numero?escPror(s.numero):'(sin número)'}</b>${s.tipo?' · '+escPror(s.tipo):''}${s.descripcion?' — '+escPror(s.descripcion):''} · ${escPror(s.fecha||'')} ·
@@ -5891,15 +5903,15 @@ function renderTermHistorial(){
           ${conf?'':`<button class="btn btnp" onclick="termAbrir('${escPror(s.id)}')">✏ Continuar</button><button class="btn btng" onclick="termConfirmar('${escPror(s.id)}')">✅ Confirmar</button>`}
           <button class="btn" onclick="termImprimirCancelar('${escPror(s.id)}')">🖨 ZFI5 a cancelar</button>
           <button class="btn" onclick="termImprimirLiq('${escPror(s.id)}')">🖨 Liquidación</button>
-          ${conf?`<button class="btn" onclick="termRevertir('${escPror(s.id)}')">↩ Pasar a borrador</button>`:`<button class="btn" onclick="termEliminar('${escPror(s.id)}')">🗑</button>`}
+          ${conf?'<span class="t2" style="font-size:11px;align-self:center">🔒 confirmado: no se puede modificar</span>':`<button class="btn" onclick="termEliminar('${escPror(s.id)}')">🗑</button>`}
         </div>
       </div>
       <div class="fr" style="margin:8px 0">
-        <div class="ff" style="max-width:190px"><label>Nº ZFE1</label><input data-f="numero" value="${escPror(s.numero||'')}" placeholder="26258ZFE1…"/></div>
+        <div class="ff" style="max-width:190px"><label>Nº ZFE1</label><input data-f="numero" value="${escPror(s.numero||'')}" placeholder="26258ZFE1…"${ro}/></div>
         ${tasasIn}
-        <div class="ff" style="max-width:110px"><label>IVA %</label><input type="number" step="0.01" data-f="iva" value="${Number(s.iva)}"/></div>
-        <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input type="number" step="0.01" data-f="sim" value="${Number(s.sim)}"/></div>
-        <div class="ff" style="max-width:120px;justify-content:flex-end"><button class="btn" onclick="termGuardarParams('${escPror(s.id)}')">Guardar cambios</button></div>
+        <div class="ff" style="max-width:110px"><label>IVA %</label><input type="number" step="0.01" data-f="iva" value="${Number(s.iva)}"${ro}/></div>
+        <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input type="number" step="0.01" data-f="sim" value="${Number(s.sim)}"${ro}/></div>
+        ${conf?'':`<div class="ff" style="max-width:120px;justify-content:flex-end"><button class="btn" onclick="termGuardarParams('${escPror(s.id)}')">Guardar cambios</button></div>`}
       </div>
       ${termLiqHTML(liq)}
     </div>`;
