@@ -616,8 +616,12 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="stit" style="margin-top:14px">Salidas ZFE1</div>
   <div id="term-historial"></div>
 
-  <div class="stit" style="margin-top:14px">Saldos de ZFI5 cargados</div>
-  <div class="card"><div id="term-saldos"></div></div>
+  <div class="stit" style="margin-top:14px">ZFI5 cargados — historial y disponible</div>
+  <div class="card">
+    <div style="margin-bottom:8px;font-size:12px">Mostrar: <select id="term-filtro-saldo" onchange="renderTerminados()" style="width:auto"><option value="todos">todos los ZFI5</option><option value="disp">solo con saldo disponible</option></select>
+      <button class="btn" style="margin-left:8px" onclick="termImprimirSaldos()">🖨 Imprimir</button></div>
+    <div id="term-saldos"></div>
+  </div>
 </div>
 
 <div id="sec-et19vinc" class="sec">
@@ -5554,6 +5558,7 @@ function termReservado(id, exceptSalidaId){
   return r;
 }
 function termSaldo(row){ return (Number(row.cantidad)||0) - (Number(row.cancel_qty)||0) - termReservado(row.id, typeof termActiva!=='undefined'?termActiva:null); }
+function termSaldo2(row){ return (Number(row.cantidad)||0) - (Number(row.cancel_qty)||0) - termReservado(row.id); }
 function termTasaDefault(ncm){
   const k = termNcm8(ncm);
   const prev = termSalidas.filter(s=>s.tasas && s.tasas[k]!=null).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
@@ -5623,13 +5628,53 @@ function renderTerminados(){
   if(!termBase.length){
     sb.innerHTML = '<div class="t2" style="font-size:12px">Todavía no hay ZFI5 cargados. Subí el PDF del ZFI5 desde <b>Cargar despacho (PDF)</b> y aparece acá.</div>';
   } else {
-    sb.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>Tipo</th><th>NCM</th><th>Original</th><th>Cancelado</th><th>Reservado</th><th>Saldo</th></tr></thead><tbody>'
-    + termBase.map(r=>`<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
-      <td>${escPror(r.producto)}</td>
-      <td><input list="term-tipos-dl" value="${escPror(r.tipo||'')}" placeholder="sin clasificar" style="width:130px" onchange="termSetTipo('${escPror(r.id)}',this.value)"/></td>
-      <td class="mono" style="font-size:11px">${escPror(r.ncm)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
-      <td class="mono">${termN(termReservado(r.id),0)}</td><td class="mono"><b>${termN((Number(r.cantidad)||0)-(Number(r.cancel_qty)||0)-termReservado(r.id),0)}</b></td></tr>`).join('')
-    + '</tbody></table></div><datalist id="term-tipos-dl">'+termTipos().map(t=>`<option value="${escPror(t)}">`).join('')+'</datalist>';
+    const grupos = {};
+    termBase.forEach(r=>{ (grupos[r.despacho]=grupos[r.despacho]||[]).push(r); });
+    const movs = id => {
+      const out=[];
+      termSalidas.forEach(s=>{ (s.items||[]).forEach(it=>{ if(it.tid===id) out.push({s, cant:Number(it.cant)||0}); }); });
+      return out.sort((x,y)=>String(x.s.fecha||'').localeCompare(String(y.s.fecha||'')));
+    };
+    const filtro = (document.getElementById('term-filtro-saldo')||{}).value || 'todos';
+    const fobSal = s => (s.items||[]).reduce((a,it)=>a+(Number(it.cant)||0)*(Number(it.precioUnit)||0),0);
+    const confs = termSalidas.filter(s=>s.estado==='confirmado' && fobSal(s)>0);
+    const fobProm = confs.length ? confs.reduce((a,s)=>a+fobSal(s),0)/confs.length : 0;
+    sb.innerHTML = Object.keys(grupos).sort().reverse().map(d=>{
+      const rows = grupos[d];
+      const orig = rows.reduce((a,r)=>a+(Number(r.cantidad)||0),0);
+      const canc = rows.reduce((a,r)=>a+(Number(r.cancel_qty)||0),0);
+      const resv = rows.reduce((a,r)=>a+termReservado(r.id),0);
+      const saldo = orig-canc-resv;
+      if(filtro==='disp' && saldo<=0.0001) return '';
+      const f = rows[0].fecha;
+      const fobO = rows.reduce((a,r)=>a+(Number(r.fob)||0),0);
+      const fobD = rows.reduce((a,r)=>{ const c0=Number(r.cantidad)||0; return a + (c0>0 ? (Number(r.fob)||0)*Math.max(0,termSaldo2(r))/c0 : 0); },0);
+      const fdesp = Number(rows[0].fob_desp)||fobO, fleteO = Number(rows[0].flete_desp)||0, segO = Number(rows[0].seguro_desp)||0;
+      const fleteD = fdesp>0 ? fleteO*fobD/fdesp : 0, segD = fdesp>0 ? segO*fobD/fdesp : 0;
+      const cifD = fobD+fleteD+segD;
+      const estim = fobProm>0 ? `<div style="font-size:12px;margin-top:4px">≈ <b>${termN(fobD/fobProm,1)}</b> despachos más al promedio de tus ZFE1 (FOB USD ${termN(fobProm)} c/u, sobre ${confs.length} confirmado${confs.length!==1?'s':''})</div>` : '';
+      return `<div style="border:1px solid var(--bd2);border-radius:var(--rs);padding:10px;margin-bottom:10px">
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div><b class="mono">${escPror(d)}</b> <span class="t2" style="font-size:11px">· oficializado ${escPror(f||'')}</span></div>
+          <div style="font-size:12px">Original <b>${termN(orig,0)}</b> · Cancelado <b>${termN(canc,0)}</b> · Reservado <b>${termN(resv,0)}</b> · <span style="font-size:14px">Disponible <b>${termN(saldo,0)}</b></span></div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;margin-bottom:6px;padding:6px 8px;background:var(--bg3);border-radius:var(--rs)">
+          <b>Valores disponibles</b> (USD): FOB <b>${termN(fobD)}</b> de ${termN(fobO)} · Flete <b>${termN(fleteD)}</b> de ${termN(fleteO)} · Seguro <b>${termN(segD)}</b> de ${termN(segO)} · CIF <b>${termN(cifD)}</b> de ${termN(fobO+fleteO+segO)}${estim}
+        </div>
+        <div style="overflow-x:auto"><table><thead><tr><th>Ítem</th><th>Producto</th><th>Tipo</th><th>NCM</th><th>Original</th><th>Cancelado</th><th>Reservado</th><th>Disponible</th><th>FOB disp.</th></tr></thead><tbody>`
+      + rows.map(r=>{
+        const m = movs(r.id);
+        const conf = m.filter(x=>x.s.estado==='confirmado').reduce((a,x)=>a+x.cant,0);
+        const dif = (Number(r.cancel_qty)||0) - conf;
+        const detalle = m.map(x=>`<div style="font-size:11px;color:var(--tx2)">↳ ZFE1 ${escPror(x.s.numero||'(sin nº)')} · ${escPror(x.s.fecha||'')} · <b>${termN(x.cant,0)}</b> u. · ${x.s.estado==='confirmado'?'✓ confirmado':'borrador (reserva)'}</div>`).join('')
+          + (Math.abs(dif)>0.0001 ? `<div style="font-size:11px;color:var(--am,#b8860b)">↳ ajuste/otros descuentos no registrados en una salida: ${termN(dif,0)} u.</div>` : '');
+        return `<tr><td class="mono" style="font-size:11px">${escPror(r.item)}/${escPror(r.subitem)}</td>
+          <td>${escPror(r.producto)}${detalle?'<div style="margin-top:3px">'+detalle+'</div>':''}</td>
+          <td><input list="term-tipos-dl" value="${escPror(r.tipo||'')}" placeholder="sin clasificar" style="width:120px" onchange="termSetTipo('${escPror(r.id)}',this.value)"/></td>
+          <td class="mono" style="font-size:11px">${escPror(r.ncm)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
+          <td class="mono">${termN(termReservado(r.id),0)}</td><td class="mono"><b>${termN((Number(r.cantidad)||0)-(Number(r.cancel_qty)||0)-termReservado(r.id),0)}</b></td><td class="mono">${termN((Number(r.cantidad)>0)?(Number(r.fob)||0)*Math.max(0,termSaldo2(r))/Number(r.cantidad):0)}</td></tr>`;
+      }).join('') + '</tbody></table></div></div>';
+    }).join('') + '<datalist id="term-tipos-dl">'+termTipos().map(t=>`<option value="${escPror(t)}">`).join('')+'</datalist>';
   }
   // ---- salida activa ----
   if(act){
@@ -5843,6 +5888,12 @@ function termAbrirImpresion(titulo, cuerpo){
   if(!win){ alert('El navegador bloqueó la ventana de impresión.'); return; }
   win.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #888;padding:5px 8px;text-align:left}td.r,th.r{text-align:right}h2{margin:0 0 4px}</style></head><body>${cuerpo}</body></html>`);
   win.document.close(); win.focus(); setTimeout(()=>win.print(),300);
+}
+function termImprimirSaldos(){
+  const grupos={}; termBase.forEach(r=>{(grupos[r.despacho]=grupos[r.despacho]||[]).push(r);});
+  const cuerpo = Object.keys(grupos).sort().map(d=>`<h3>${escPror(d)}</h3><table><thead><tr><th>Ítem</th><th>Producto</th><th>NCM</th><th class="r">Original</th><th class="r">Cancelado</th><th class="r">Reservado</th><th class="r">Disponible</th><th class="r">FOB disp. USD</th></tr></thead><tbody>`
+   + grupos[d].map(r=>`<tr><td>${escPror(r.item)}/${escPror(r.subitem)}</td><td>${escPror(r.producto)}</td><td>${escPror(r.ncm)}</td><td class="r">${termN(r.cantidad,0)}</td><td class="r">${termN(r.cancel_qty,0)}</td><td class="r">${termN(termReservado(r.id),0)}</td><td class="r">${termN(termSaldo2(r),0)}</td><td class="r">${termN((Number(r.cantidad)>0)?(Number(r.fob)||0)*Math.max(0,termSaldo2(r))/Number(r.cantidad):0)}</td></tr>`).join('')+'</tbody></table>').join('');
+  termAbrirImpresion('Saldos ZFI5', '<h2>Insumos terminados — saldos de ZFI5</h2><div>Al '+new Date().toLocaleDateString('es-AR')+'</div>'+cuerpo);
 }
 function termImprimirCancelar(sid){
   const s = termSalidas.find(x=>x.id===sid); if(!s) return;
