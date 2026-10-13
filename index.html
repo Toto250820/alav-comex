@@ -619,6 +619,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="stit" style="margin-top:14px">ZFI5 cargados — historial y disponible</div>
   <div class="card">
     <div style="margin-bottom:8px;font-size:12px">Mostrar: <select id="term-filtro-saldo" onchange="renderTerminados()" style="width:auto"><option value="todos">todos los ZFI5</option><option value="disp">solo con saldo disponible</option></select>
+      <select id="term-filtro-zfi5" onchange="renderTerminados()" style="width:auto;margin-left:8px"><option value="">— elegir un ZFI5 —</option></select>
       <button class="btn" style="margin-left:8px" onclick="termImprimirSaldos()">🖨 Imprimir</button></div>
     <div id="term-saldos"></div>
   </div>
@@ -5636,10 +5637,31 @@ function renderTerminados(){
       return out.sort((x,y)=>String(x.s.fecha||'').localeCompare(String(y.s.fecha||'')));
     };
     const filtro = (document.getElementById('term-filtro-saldo')||{}).value || 'todos';
+    const selZ = document.getElementById('term-filtro-zfi5');
+    const zSel = selZ.value;
+    selZ.innerHTML = '<option value="">— todos / elegir un ZFI5 —</option>' + Object.keys(grupos).sort().reverse().map(d=>`<option value="${escPror(d)}">${escPror(d)}</option>`).join('');
+    selZ.value = grupos[zSel] ? zSel : '';
+    const zElegido = selZ.value;
+    let resumenZ = '';
+    if(zElegido){
+      const ids = new Set(grupos[zElegido].map(r=>r.id));
+      const lista = termSalidas.filter(s=>(s.items||[]).some(it=>ids.has(it.tid)))
+        .sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||'')));
+      resumenZ = `<div style="margin-bottom:12px"><div style="font-weight:700;margin-bottom:4px">ZFE1 que usaron ${escPror(zElegido)}</div>`
+        + (lista.length ? '<div style="overflow-x:auto"><table><thead><tr><th>ZFE1</th><th>Fecha</th><th>Estado</th><th>Detalle por ítem</th><th>Unidades</th></tr></thead><tbody>'
+        + lista.map(s=>{
+            const its = (s.items||[]).filter(it=>ids.has(it.tid));
+            return `<tr><td class="mono">${escPror(s.numero||'(sin nº)')}</td><td>${escPror(s.fecha||'')}</td><td>${s.estado==='confirmado'?'✓ confirmado':'borrador'}</td>
+              <td style="font-size:11px">${its.map(it=>`ítem ${escPror(it.item)}/${escPror(it.subitem)} ${escPror(it.producto)}: <b>${termN(it.cant,0)}</b>`).join('<br>')}</td>
+              <td class="mono"><b>${termN(its.reduce((a,it)=>a+(Number(it.cant)||0),0),0)}</b></td></tr>`;
+          }).join('') + '</tbody></table></div>'
+        : '<div class="t2" style="font-size:12px">Todavía ningún ZFE1 usó este ZFI5.</div>') + '</div>';
+    }
     const fobSal = s => (s.items||[]).reduce((a,it)=>a+(Number(it.cant)||0)*(Number(it.precioUnit)||0),0);
     const confs = termSalidas.filter(s=>s.estado==='confirmado' && fobSal(s)>0);
     const fobProm = confs.length ? confs.reduce((a,s)=>a+fobSal(s),0)/confs.length : 0;
-    sb.innerHTML = Object.keys(grupos).sort().reverse().map(d=>{
+    sb.innerHTML = resumenZ + Object.keys(grupos).sort().reverse().map(d=>{
+      if(zElegido && d!==zElegido) return '';
       const rows = grupos[d];
       const orig = rows.reduce((a,r)=>a+(Number(r.cantidad)||0),0);
       const canc = rows.reduce((a,r)=>a+(Number(r.cancel_qty)||0),0);
