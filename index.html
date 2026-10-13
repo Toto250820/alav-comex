@@ -573,26 +573,51 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <div id="sec-term" class="sec">
   <div class="stit">🥫 Insumos terminados — ZFI5 → ZFE1</div>
   <div id="term-msg" style="display:none;margin-bottom:10px;padding:10px 14px;background:var(--rbg);border:1px solid var(--rd);border-radius:var(--rs);color:var(--rd);font-size:12px"></div>
-  <div class="card">
-    <div style="font-weight:700;margin-bottom:4px">Armar un ZFE1</div>
-    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Estos son los ZFI5 cargados con su saldo. Poné cuánto usar de cada ítem y abajo se arma la liquidación. El borrador reserva las cantidades; al confirmar se descuentan del saldo.</div>
-    <div id="term-armado"></div>
-    <div class="fr" style="margin-top:12px">
-      <div class="ff" style="max-width:170px"><label>Fecha</label><input id="term-fecha" type="date"/></div>
-      <div class="ff" style="max-width:220px"><label>Nº ZFE1 <span class="t2">(opcional)</span></label><input id="term-numero" placeholder="26258ZFE1…"/></div>
-      <div id="term-tasas" style="display:flex;gap:10px;flex-wrap:wrap"></div>
-      <div class="ff" style="max-width:100px"><label>IVA %</label><input id="term-iva" type="number" step="0.01" value="21" oninput="renderTermPreview()"/></div>
-      <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input id="term-sim" type="number" step="0.01" value="10" oninput="renderTermPreview()"/></div>
+
+  <div id="term-nueva-wrap">
+    <div class="card">
+      <div class="ct">Nueva salida (ZFE1)</div>
+      <div class="fr">
+        <div class="ff" style="max-width:200px"><label>Número de salida</label><input id="term-nro" placeholder="ej: 175A" style="font-family:var(--mn);font-size:13px"/></div>
+        <div class="ff" style="max-width:200px"><label>Nº de remito <span class="t2">(opcional)</span></label><input id="term-remito" placeholder="R-0001-…" style="font-family:var(--mn);font-size:13px"/></div>
+        <div class="ff" style="max-width:220px"><label>¿Qué se saca?</label><select id="term-tipo"></select></div>
+        <div class="ff"><label>Descripción (opcional)</label><input id="term-desc" placeholder="ej: latas Cacharel"/></div>
+      </div>
+      <button class="btn btno" onclick="termCrear()">+ Crear salida</button>
+      <div id="term-crear-msg" style="display:none;margin-top:8px;font-size:12px"></div>
     </div>
-    <div id="term-preview" style="margin:10px 0"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="termGuardar(false)">💾 Guardar borrador</button>
-      <button class="btn btnp" onclick="termGuardar(true)">✅ Guardar y confirmar</button>
-    </div>
-    <div id="term-guardar-msg" style="display:none;margin-top:8px;font-size:12px"></div>
   </div>
-  <div class="stit" style="margin-top:14px">Historial de ZFE1</div>
+
+  <div id="term-activa-wrap" style="display:none">
+    <div class="card" style="border-color:var(--or)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <div><span class="bdg bo">EN CURSO</span> <span id="term-activa-titulo" style="margin-left:8px;font-size:14px"></span></div>
+        <button class="btn" onclick="termCerrar()">← Volver (queda guardado)</button>
+      </div>
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Estos son los ZFI5 que tenés cargados con su saldo. Poné cuánto usar de cada ítem; abajo se arma la liquidación.</div>
+      <label style="font-size:12px"><input type="checkbox" id="term-ver-otros" onchange="renderTerminados()"/> mostrar todos los tipos</label>
+      <div id="term-armado" style="margin-top:6px"></div>
+      <div class="fr" style="margin-top:12px">
+        <div class="ff" style="max-width:170px"><label>Fecha</label><input id="term-fecha" type="date"/></div>
+        <div id="term-tasas" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+        <div class="ff" style="max-width:100px"><label>IVA %</label><input id="term-iva" type="number" step="0.01" value="21" oninput="renderTermPreview()"/></div>
+        <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input id="term-sim" type="number" step="0.01" value="10" oninput="renderTermPreview()"/></div>
+      </div>
+      <div id="term-preview" style="margin:10px 0"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" onclick="termGuardar(false)">💾 Guardar borrador</button>
+        <button class="btn btnp" onclick="termGuardar(true)">✅ Guardar y confirmar (descuenta saldo)</button>
+        <button class="btn btnd" onclick="termEliminarActiva()">🗑 Eliminar borrador</button>
+      </div>
+      <div id="term-guardar-msg" style="display:none;margin-top:8px;font-size:12px"></div>
+    </div>
+  </div>
+
+  <div class="stit" style="margin-top:14px">Salidas ZFE1</div>
   <div id="term-historial"></div>
+
+  <div class="stit" style="margin-top:14px">Saldos de ZFI5 cargados</div>
+  <div class="card"><div id="term-saldos"></div></div>
 </div>
 
 <div id="sec-et19vinc" class="sec">
@@ -5528,7 +5553,7 @@ function termReservado(id, exceptSalidaId){
   });
   return r;
 }
-function termSaldo(row){ return (Number(row.cantidad)||0) - (Number(row.cancel_qty)||0) - termReservado(row.id); }
+function termSaldo(row){ return (Number(row.cantidad)||0) - (Number(row.cancel_qty)||0) - termReservado(row.id, typeof termActiva!=='undefined'?termActiva:null); }
 function termTasaDefault(ncm){
   const k = termNcm8(ncm);
   const prev = termSalidas.filter(s=>s.tasas && s.tasas[k]!=null).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
@@ -5574,28 +5599,63 @@ function termCalcLiq(items, tasas, iva, sim){
 function termItemsDeSalida(s){
   return (s.items||[]).map(it=>({...it}));
 }
+const TERM_TIPOS_DEF = ['Latas','Sábanas','Fundas de almohada','Otros'];
+let termActiva = null; // id del ZFE1 borrador que se está armando
+function termTipos(){
+  const s = new Set(TERM_TIPOS_DEF);
+  termBase.forEach(r=>{ if(r.tipo) s.add(r.tipo); });
+  termSalidas.forEach(r=>{ if(r.tipo) s.add(r.tipo); });
+  return [...s];
+}
+function termSalActiva(){ return termSalidas.find(x=>x.id===termActiva) || null; }
 function renderTerminados(){
-  // ---- armado ----
-  const box = document.getElementById('term-armado');
-  const filas = termBase.filter(r=>termSaldo(r)>0.0001);
+  const act = termSalActiva();
+  if(termActiva && !act) termActiva=null;
+  // tipos para el alta
+  const sel = document.getElementById('term-tipo');
+  const prevTipo = sel.value;
+  sel.innerHTML = termTipos().map(t=>`<option value="${escPror(t)}">${escPror(t)}</option>`).join('');
+  if(prevTipo) sel.value = prevTipo;
+  document.getElementById('term-nueva-wrap').style.display = act ? 'none' : 'block';
+  document.getElementById('term-activa-wrap').style.display = act ? 'block' : 'none';
+  // ---- saldos generales (siempre) ----
+  const sb = document.getElementById('term-saldos');
   if(!termBase.length){
-    box.innerHTML = '<div class="t2" style="font-size:12px">Todavía no hay ZFI5 cargados. Subí el PDF del ZFI5 desde <b>Cargar despacho (PDF)</b> y aparece acá.</div>';
-  } else if(!filas.length){
-    box.innerHTML = '<div class="t2" style="font-size:12px">Todos los ítems de los ZFI5 cargados están sin saldo disponible.</div>';
+    sb.innerHTML = '<div class="t2" style="font-size:12px">Todavía no hay ZFI5 cargados. Subí el PDF del ZFI5 desde <b>Cargar despacho (PDF)</b> y aparece acá.</div>';
   } else {
-    box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th>USD unit.</th><th>Original</th><th>Cancelado</th><th>Reservado</th><th>Saldo</th><th>Usar</th></tr></thead><tbody>'
-    + filas.map(r=>{
-      const pu = (Number(r.fob)||0)/(Number(r.cantidad)||1);
-      const saldo = termSaldo(r);
-      return `<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
-        <td>${escPror(r.producto)}</td><td class="mono" style="font-size:11px">${escPror(r.ncm)}</td>
-        <td class="mono">${termN(pu,4)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
-        <td class="mono">${termN(termReservado(r.id),0)}</td><td class="mono"><b>${termN(saldo,0)}</b></td>
-        <td><input type="number" min="0" max="${saldo}" step="1" style="width:90px" value="${termQty[r.id]||''}" oninput="termQtyChange('${escPror(r.id)}',this.value,${saldo})"/></td></tr>`;
-    }).join('') + '</tbody></table></div>';
+    sb.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>Tipo</th><th>NCM</th><th>Original</th><th>Cancelado</th><th>Reservado</th><th>Saldo</th></tr></thead><tbody>'
+    + termBase.map(r=>`<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
+      <td>${escPror(r.producto)}</td>
+      <td><input list="term-tipos-dl" value="${escPror(r.tipo||'')}" placeholder="sin clasificar" style="width:130px" onchange="termSetTipo('${escPror(r.id)}',this.value)"/></td>
+      <td class="mono" style="font-size:11px">${escPror(r.ncm)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
+      <td class="mono">${termN(termReservado(r.id),0)}</td><td class="mono"><b>${termN((Number(r.cantidad)||0)-(Number(r.cancel_qty)||0)-termReservado(r.id),0)}</b></td></tr>`).join('')
+    + '</tbody></table></div><datalist id="term-tipos-dl">'+termTipos().map(t=>`<option value="${escPror(t)}">`).join('')+'</datalist>';
   }
-  if(!document.getElementById('term-fecha').value) document.getElementById('term-fecha').value = new Date().toISOString().slice(0,10);
-  renderTermPreview();
+  // ---- salida activa ----
+  if(act){
+    document.getElementById('term-activa-titulo').innerHTML = `ZFE1 <b>${escPror(act.numero||'(sin número)')}</b> · ${escPror(act.tipo||'')}${act.descripcion?' — '+escPror(act.descripcion):''}`;
+    const verOtros = document.getElementById('term-ver-otros').checked;
+    const box = document.getElementById('term-armado');
+    const filas = termBase.filter(r=>termSaldo(r)>0.0001 && (verOtros || !act.tipo || r.tipo===act.tipo || termQty[r.id]));
+    if(!filas.length){
+      box.innerHTML = `<div class="t2" style="font-size:12px">No hay ZFI5 con saldo del tipo <b>${escPror(act.tipo||'')}</b>. Si tus ZFI5 están sin clasificar, asignales el tipo en la tabla de saldos de abajo, o tildá "mostrar todos los tipos".</div>`;
+    } else {
+      box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th>USD unit.</th><th>Original</th><th>Cancelado</th><th>Reservado (otras)</th><th>Saldo</th><th>Usar</th></tr></thead><tbody>'
+      + filas.map(r=>{
+        const pu = (Number(r.fob)||0)/(Number(r.cantidad)||1), saldo = termSaldo(r);
+        return `<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
+          <td>${escPror(r.producto)}</td><td class="mono" style="font-size:11px">${escPror(r.ncm)}</td>
+          <td class="mono">${termN(pu,4)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
+          <td class="mono">${termN(termReservado(r.id,termActiva),0)}</td><td class="mono"><b>${termN(saldo,0)}</b></td>
+          <td><input type="number" min="0" max="${saldo}" step="1" style="width:90px" value="${termQty[r.id]||''}" oninput="termQtyChange('${escPror(r.id)}',this.value,${saldo})"/></td></tr>`;
+      }).join('') + '</tbody></table></div>';
+    }
+    if(!document.getElementById('term-fecha').value) document.getElementById('term-fecha').value = act.fecha || new Date().toISOString().slice(0,10);
+    document.getElementById('term-iva').value = act.iva!=null?act.iva:21;
+    document.getElementById('term-sim').value = act.sim!=null?act.sim:10;
+    document.getElementById('term-tasas').dataset.ncms='';
+    renderTermPreview(act.tasas);
+  }
   renderTermHistorial();
 }
 function termQtyChange(id, v, saldo){
@@ -5604,6 +5664,10 @@ function termQtyChange(id, v, saldo){
   if(n>saldo+0.0001){ n=saldo; }
   if(n>0) termQty[id]=n; else delete termQty[id];
   renderTermPreview();
+}
+async function termSetTipo(id, v){
+  try{ await sbFetch('terminados_base?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({tipo:(v||'').trim()||null})}); const r=termBase.find(x=>x.id===id); if(r) r.tipo=(v||'').trim()||null; renderTerminados(); }
+  catch(e){ alert('⚠ '+e.message+(/tipo/.test(e.message)?' — falta correr terminados_tipo.sql en Supabase.':'')); }
 }
 function termItemsSeleccionados(){
   const out=[];
@@ -5628,42 +5692,72 @@ function termLiqHTML(liq){
   + Object.keys(liq.porNcm).map(k=>`Derecho de importación ${termN(liq.porNcm[k].tasa)}% s/ CIF ${termN(liq.porNcm[k].cif)} (NCM ${escPror(k)}): <b>USD ${termN(liq.porNcm[k].derecho)}</b><br>`).join('')
   + `IVA: <b>USD ${termN(liq.iva)}</b> · Arancel SIM: <b>USD ${termN(liq.sim)}</b><br><span style="font-size:15px;font-weight:700">Total a pagar: USD ${termN(liq.total)}</span></div>`;
 }
-function renderTermPreview(){
+function renderTermPreview(tasasIniciales){
   const sel = termItemsSeleccionados();
   const cont = document.getElementById('term-preview');
   const tasasBox = document.getElementById('term-tasas');
-  if(!sel.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Poné cantidades en la columna "Usar" para ver la liquidación.</div>'; tasasBox.innerHTML=''; return; }
-  // inputs de tasa por NCM (se conservan si ya existen)
+  if(!sel.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Poné cantidades en la columna "Usar" para ver la liquidación.</div>'; tasasBox.innerHTML=''; tasasBox.dataset.ncms=''; return; }
   const prev = {}; tasasBox.querySelectorAll('input[data-ncm]').forEach(i=>prev[i.dataset.ncm]=i.value);
   const ncms = [...new Set(sel.map(s=>termNcm8(s.ncm)))];
-  const actuales = ncms.join('|');
-  if(tasasBox.dataset.ncms !== actuales){
-    tasasBox.dataset.ncms = actuales;
-    tasasBox.innerHTML = ncms.map(k=>`<div class="ff" style="max-width:190px"><label>Derecho % · NCM ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${prev[k]!=null?prev[k]:termTasaDefault(k)}" oninput="renderTermPreview()"/></div>`).join('');
+  if(tasasBox.dataset.ncms !== ncms.join('|')){
+    tasasBox.dataset.ncms = ncms.join('|');
+    tasasBox.innerHTML = ncms.map(k=>{
+      const v = prev[k]!=null ? prev[k] : (tasasIniciales && tasasIniciales[k]!=null ? tasasIniciales[k] : termTasaDefault(k));
+      return `<div class="ff" style="max-width:190px"><label>Derecho % · NCM ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${v}" oninput="renderTermPreview()"/></div>`;
+    }).join('');
   }
   const p = termLeerParams();
   cont.innerHTML = termLiqHTML(termCalcLiq(sel, p.tasas, p.iva, p.sim));
 }
+async function termCrear(){
+  const nro = (document.getElementById('term-nro').value||'').trim();
+  const tipo = document.getElementById('term-tipo').value;
+  const msg = document.getElementById('term-crear-msg');
+  msg.style.display='block'; msg.style.color='var(--rd)';
+  if(!nro){ msg.textContent='Ingresá el número de salida.'; return; }
+  if(termSalidas.some(s=>s.numero===nro && s.estado!=='anulado')){ msg.textContent='Ya existe un ZFE1 con ese número.'; return; }
+  const rec = {id:'zfe1_'+Date.now(), numero:nro, tipo, descripcion:(document.getElementById('term-desc').value||'').trim()||null,
+    remito:(document.getElementById('term-remito').value||'').trim()||null, fecha:new Date().toISOString().slice(0,10),
+    estado:'borrador', items:[], tasas:{}, iva:21, sim:10, origen:'app'};
+  try{
+    await sbFetch('zfe1_salidas',{method:'POST',body:JSON.stringify(rec)});
+    termSalidas.unshift(rec); termActiva=rec.id; termQty={};
+    ['term-nro','term-desc','term-remito'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('term-fecha').value=rec.fecha;
+    msg.style.display='none';
+    renderTerminados();
+  }catch(e){ msg.textContent='⚠ '+e.message+(/tipo|descripcion|remito/.test(e.message)?' — falta correr terminados_tipo.sql en Supabase.':''); }
+}
+function termAbrir(id){
+  const s = termSalidas.find(x=>x.id===id); if(!s||s.estado!=='borrador') return;
+  termActiva=id; termQty={};
+  (s.items||[]).forEach(it=>{ termQty[it.tid]=Number(it.cant); });
+  document.getElementById('term-fecha').value = s.fecha||'';
+  renderTerminados();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function termCerrar(){ termActiva=null; termQty={}; renderTerminados(); }
 async function termGuardar(confirmar){
-  const sel = termItemsSeleccionados();
+  const act = termSalActiva(); if(!act) return;
   const msg = document.getElementById('term-guardar-msg');
   msg.style.display='block'; msg.style.color='var(--tx2)';
+  const sel = termItemsSeleccionados();
   if(!sel.length){ msg.style.color='var(--rd)'; msg.textContent='Elegí al menos un ítem con cantidad.'; return; }
   const p = termLeerParams();
-  const rec = {
-    id: 'zfe1_'+Date.now(), numero: (document.getElementById('term-numero').value||'').trim() || null,
-    fecha: document.getElementById('term-fecha').value, estado:'borrador',
-    items: sel, tasas: p.tasas, iva: p.iva, sim: p.sim, origen:'app'
-  };
+  const upd = {items:sel, tasas:p.tasas, iva:p.iva, sim:p.sim, fecha:document.getElementById('term-fecha').value};
   try{
     msg.textContent='Guardando…';
-    await sbFetch('zfe1_salidas',{method:'POST',body:JSON.stringify(rec)});
-    termQty={}; document.getElementById('term-numero').value='';
-    document.getElementById('term-tasas').dataset.ncms='';
-    if(confirmar){ termSalidas.unshift(rec); await termConfirmar(rec.id,true); }
-    msg.style.color='var(--gn,green)'; msg.textContent = confirmar ? '✓ Guardado y confirmado (saldo descontado).' : '✓ Borrador guardado (cantidades reservadas).';
+    await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(act.id),{method:'PATCH',body:JSON.stringify(upd)});
+    Object.assign(act, upd);
+    if(confirmar) await termConfirmar(act.id,true);
+    termActiva=null; termQty={};
     await loadTerminados();
   }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ '+e.message; }
+}
+async function termEliminarActiva(){
+  const act = termSalActiva(); if(!act) return;
+  if(!confirm('¿Eliminar este borrador de ZFE1?')) return;
+  try{ await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(act.id),{method:'DELETE'}); termActiva=null; termQty={}; await loadTerminados(); }catch(e){ alert('⚠ '+e.message); }
 }
 async function termConfirmar(sid, silencioso){
   const s = termSalidas.find(x=>x.id===sid); if(!s || s.estado==='confirmado') return;
@@ -5724,10 +5818,10 @@ function renderTermHistorial(){
     const tasasIn = Object.keys(liq.porNcm).map(k=>`<div class="ff" style="max-width:150px"><label>Derecho % ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${liq.porNcm[k].tasa}"/></div>`).join('');
     return `<div class="card" id="tz-${escPror(s.id)}" style="margin-top:10px">
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
-        <div><b>ZFE1 ${s.numero?escPror(s.numero):'(sin número)'}</b> · ${escPror(s.fecha||'')} ·
+        <div><b>ZFE1 ${s.numero?escPror(s.numero):'(sin número)'}</b>${s.tipo?' · '+escPror(s.tipo):''}${s.descripcion?' — '+escPror(s.descripcion):''} · ${escPror(s.fecha||'')} ·
         <span style="color:${conf?'var(--gn,green)':'var(--am,#b8860b)'};font-weight:700">${conf?'✓ confirmado':'borrador (reserva saldo)'}</span>${s.origen==='pdf'?' · <span class="t2">desde PDF</span>':''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${conf?'':`<button class="btn btng" onclick="termConfirmar('${escPror(s.id)}')">✅ Confirmar</button>`}
+          ${conf?'':`<button class="btn btnp" onclick="termAbrir('${escPror(s.id)}')">✏ Continuar</button><button class="btn btng" onclick="termConfirmar('${escPror(s.id)}')">✅ Confirmar</button>`}
           <button class="btn" onclick="termImprimirCancelar('${escPror(s.id)}')">🖨 ZFI5 a cancelar</button>
           <button class="btn" onclick="termImprimirLiq('${escPror(s.id)}')">🖨 Liquidación</button>
           ${conf?`<button class="btn" onclick="termRevertir('${escPror(s.id)}')">↩ Pasar a borrador</button>`:`<button class="btn" onclick="termEliminar('${escPror(s.id)}')">🗑</button>`}

@@ -683,7 +683,7 @@ async function renderZFE1(p){
     base = await sbFetch('terminados_base?select=*&id=in.('+encodeURIComponent(ids.join(',')).replace(/%2C/g,',')+')', {method:'GET', headers:{'Prefer':''}}) || [];
     salidas = await sbFetch('zfe1_salidas?select=*', {method:'GET', headers:{'Prefer':''}}) || [];
   }catch(e){
-    const falta = /terminados_base|zfe1_salidas|schema cache|does not exist/i.test(e.message) ? ' — falta correr el SQL "terminados_setup.sql" en Supabase.' : '';
+    const falta = /terminados_base|zfe1_salidas|schema cache|does not exist/i.test(e.message) ? ' — falta correr el SQL "terminados_setup.sql" (y terminados_tipo.sql) en Supabase.' : '';
     throw new Error('Error consultando Insumos terminados: '+e.message+falta);
   }
   const byId = {}; base.forEach(r=>byId[r.id]=r);
@@ -775,7 +775,7 @@ async function renderReview(p){
   const esZFI5 = p.tipo === 'ZFI5';
   const dupBox = document.getElementById('dup-warning');
   dupBox.innerHTML = esZFI5
-    ? '<div class="dupwarn" style="background:#e8f1fb;border-color:#9ec0e8;color:#1d4b7a">🥫 <b>ZFI5 — mercadería terminada.</b> Se carga en <b>Proyección → Insumos terminados</b> (no en el stock de insumos). Ponele a cada ítem el nombre del producto en la columna "Detalle", así los distinguís al armar un ZFE1.</div>'
+    ? '<div class="dupwarn" style="background:#e8f1fb;border-color:#9ec0e8;color:#1d4b7a">🥫 <b>ZFI5 — mercadería terminada.</b> Se carga en <b>Proyección → Insumos terminados</b> (no en el stock de insumos). Ponele a cada ítem el nombre del producto en la columna "Detalle", así los distinguís al armar un ZFE1.<br><br>Tipo de producto: <input id="zfi5-tipo" list="zfi5-tipos-dl" placeholder="ej: Latas, Sábanas, Fundas de almohada" style="width:260px"/><datalist id="zfi5-tipos-dl"><option value="Latas"><option value="Sábanas"><option value="Fundas de almohada"><option value="Otros"></datalist> <span style="font-size:11px">(sirve para que, al crear la salida, te muestre solo los de ese tipo)</span></div>'
     : '';
   try{
     const tabla = esZFI5 ? 'terminados_base' : 'stock_base';
@@ -893,6 +893,7 @@ async function confirmarCargaZFI5(){
   btn.disabled = true; btn.textContent = 'Cargando...';
   const p = currentParsed;
   const rows = [];
+  const tipoZ = ((document.getElementById('zfi5-tipo')||{}).value||'').trim();
   p.items.forEach((it,i)=>{
     if(!document.getElementById('inc-'+i).checked) return;
     rows.push({
@@ -906,7 +907,8 @@ async function confirmarCargaZFI5(){
       fob: parseFloat(document.getElementById('fob-'+i).value)||0,
       cif: parseFloat(document.getElementById('cif-'+i).value)||0,
       fecha: p.fecha,
-      fob_desp: p.fob_desp, flete_desp: p.flete_desp, seguro_desp: p.seguro_desp
+      fob_desp: p.fob_desp, flete_desp: p.flete_desp, seguro_desp: p.seguro_desp,
+      ...(tipoZ ? {tipo: tipoZ} : {})
       // cancel_qty NO se manda: si el ZFI5 ya existía, lo cancelado se conserva
     });
   });
@@ -920,7 +922,7 @@ async function confirmarCargaZFI5(){
     document.getElementById('success-box').innerHTML = `<div class="ok">✓ ZFI5 <b>${p.despacho}</b> cargado en <b>Insumos terminados</b> (${rows.length} ítem${rows.length!==1?'s':''}) por ${who}. Ya lo podés usar para armar un ZFE1 desde Proyección → Insumos terminados.</div>`;
     document.getElementById('review-box').style.display='none';
   }catch(e){
-    const falta = /terminados_base|schema cache|does not exist/i.test(e.message) ? ' — falta correr el SQL "terminados_setup.sql" en Supabase.' : '';
+    const falta = /terminados_base|schema cache|does not exist/i.test(e.message) ? ' — falta correr el SQL "terminados_setup.sql" (y terminados_tipo.sql) en Supabase.' : '';
     document.getElementById('error-box').innerHTML = `<div class="err">⚠️ Error al guardar en Supabase: ${e.message}${falta}</div>`;
     btn.disabled = false; btn.textContent = '✓ Confirmar y cargar a stock';
   }
