@@ -183,6 +183,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">📊 Stock General</button>
       <button class="nb nliq" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">$ Liquidación</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-sabanas')">🛏️ CTZF Sábanas</button>
+      <button class="nb nterm" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">🥫 Insumos terminados</button>
     </div>
 
     <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">📦 Stock ▾</button>
@@ -569,6 +570,31 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 </div>
 
 <!-- ET19: VINCULAR -->
+<div id="sec-term" class="sec">
+  <div class="stit">🥫 Insumos terminados — ZFI5 → ZFE1</div>
+  <div id="term-msg" style="display:none;margin-bottom:10px;padding:10px 14px;background:var(--rbg);border:1px solid var(--rd);border-radius:var(--rs);color:var(--rd);font-size:12px"></div>
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:4px">Armar un ZFE1</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Estos son los ZFI5 cargados con su saldo. Poné cuánto usar de cada ítem y abajo se arma la liquidación. El borrador reserva las cantidades; al confirmar se descuentan del saldo.</div>
+    <div id="term-armado"></div>
+    <div class="fr" style="margin-top:12px">
+      <div class="ff" style="max-width:170px"><label>Fecha</label><input id="term-fecha" type="date"/></div>
+      <div class="ff" style="max-width:220px"><label>Nº ZFE1 <span class="t2">(opcional)</span></label><input id="term-numero" placeholder="26258ZFE1…"/></div>
+      <div id="term-tasas" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+      <div class="ff" style="max-width:100px"><label>IVA %</label><input id="term-iva" type="number" step="0.01" value="21" oninput="renderTermPreview()"/></div>
+      <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input id="term-sim" type="number" step="0.01" value="10" oninput="renderTermPreview()"/></div>
+    </div>
+    <div id="term-preview" style="margin:10px 0"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="termGuardar(false)">💾 Guardar borrador</button>
+      <button class="btn btnp" onclick="termGuardar(true)">✅ Guardar y confirmar</button>
+    </div>
+    <div id="term-guardar-msg" style="display:none;margin-top:8px;font-size:12px"></div>
+  </div>
+  <div class="stit" style="margin-top:14px">Historial de ZFE1</div>
+  <div id="term-historial"></div>
+</div>
+
 <div id="sec-et19vinc" class="sec">
   <div class="stit">Vincular una ET19 con su ZFI6</div>
   <div class="card">
@@ -1724,6 +1750,7 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
+  if(id==='term') loadTerminados();
   if(id==='et19vinc') initVincularET19();
   if(id==='et19exp') initExplorarET19();
   if(id==='solimp'){ if(!solImpItemIndices.length) agregarLineaSolImp(); if(!document.getElementById('solimp-fecha').value) document.getElementById('solimp-fecha').value = new Date().toISOString().slice(0,10); loadSolicitudesImportados(); }
@@ -5484,6 +5511,260 @@ function verET19PorVencer(){
   renderExplorarET19();
 }
 
+// ═══════════════════════════════════════════
+// INSUMOS TERMINADOS (ZFI5 → ZFE1)
+// ═══════════════════════════════════════════
+let termBase = [];       // filas de terminados_base
+let termSalidas = [];    // filas de zfe1_salidas
+let termQty = {};        // cantidades tipeadas en el armado {id: n}
+const TERM_TASA_DEF = {'7310.21.90':12.6};
+function termN(n,d=2){ return (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function termNcm8(ncm){ return String(ncm||'').split('.').slice(0,3).join('.'); }
+function termReservado(id, exceptSalidaId){
+  let r = 0;
+  termSalidas.forEach(s=>{
+    if(s.estado!=='borrador' || s.id===exceptSalidaId) return;
+    (s.items||[]).forEach(it=>{ if(it.tid===id) r += Number(it.cant)||0; });
+  });
+  return r;
+}
+function termSaldo(row){ return (Number(row.cantidad)||0) - (Number(row.cancel_qty)||0) - termReservado(row.id); }
+function termTasaDefault(ncm){
+  const k = termNcm8(ncm);
+  const prev = termSalidas.filter(s=>s.tasas && s.tasas[k]!=null).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  if(prev.length) return Number(prev[0].tasas[k]);
+  return TERM_TASA_DEF[k]!=null ? TERM_TASA_DEF[k] : 0;
+}
+async function loadTerminados(){
+  const msg = document.getElementById('term-msg');
+  try{
+    termBase = await sbFetch('terminados_base?select=*&order=despacho.asc,item.asc,subitem.asc',{method:'GET',headers:{'Prefer':''}}) || [];
+    termSalidas = await sbFetch('zfe1_salidas?select=*&order=created_at.desc',{method:'GET',headers:{'Prefer':''}}) || [];
+    msg.style.display='none';
+  }catch(e){
+    msg.style.display='block';
+    msg.innerHTML = '⚠ No se pudo leer: '+escPror(e.message)+(/terminados_base|zfe1_salidas|schema cache|does not exist/i.test(e.message)?' — falta correr el SQL <b>terminados_setup.sql</b> en Supabase.':'');
+    termBase=[]; termSalidas=[];
+  }
+  renderTerminados();
+}
+// Liquidación de un conjunto de ítems {cant, precioUnit, fob_desp, flete_desp, seguro_desp, ncm}
+function termCalcLiq(items, tasas, iva, sim){
+  const filas = items.map(it=>{
+    const fobProp = (Number(it.cant)||0) * (Number(it.precioUnit)||0);
+    const fd = Number(it.fob_desp)||0;
+    const flete = fd>0 ? (Number(it.flete_desp)||0)*fobProp/fd : 0;
+    const seguro = fd>0 ? (Number(it.seguro_desp)||0)*fobProp/fd : 0;
+    return {...it, fobProp, flete, seguro, cif: fobProp+flete+seguro};
+  });
+  const porNcm = {};
+  filas.forEach(f=>{ const k=termNcm8(f.ncm); porNcm[k]=(porNcm[k]||0)+f.cif; });
+  let derechos = 0;
+  Object.keys(porNcm).forEach(k=>{
+    const t = tasas && tasas[k]!=null ? Number(tasas[k]) : termTasaDefault(k);
+    porNcm[k] = {cif:porNcm[k], tasa:t, derecho: Math.round(porNcm[k]*t)/100};
+    derechos += porNcm[k].derecho;
+  });
+  const sum = k=>filas.reduce((a,f)=>a+f[k],0);
+  const cifT = Math.round(sum('cif')*100)/100;
+  const ivaMonto = Math.round((cifT+derechos)*(Number(iva)||0))/100;
+  const simU = Number(sim)||0;
+  return {filas, porNcm, fob:sum('fobProp'), flete:sum('flete'), seguro:sum('seguro'), cif:cifT, derechos, iva:ivaMonto, sim:simU, total: derechos+ivaMonto+simU};
+}
+function termItemsDeSalida(s){
+  return (s.items||[]).map(it=>({...it}));
+}
+function renderTerminados(){
+  // ---- armado ----
+  const box = document.getElementById('term-armado');
+  const filas = termBase.filter(r=>termSaldo(r)>0.0001);
+  if(!termBase.length){
+    box.innerHTML = '<div class="t2" style="font-size:12px">Todavía no hay ZFI5 cargados. Subí el PDF del ZFI5 desde <b>Cargar despacho (PDF)</b> y aparece acá.</div>';
+  } else if(!filas.length){
+    box.innerHTML = '<div class="t2" style="font-size:12px">Todos los ítems de los ZFI5 cargados están sin saldo disponible.</div>';
+  } else {
+    box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th>USD unit.</th><th>Original</th><th>Cancelado</th><th>Reservado</th><th>Saldo</th><th>Usar</th></tr></thead><tbody>'
+    + filas.map(r=>{
+      const pu = (Number(r.fob)||0)/(Number(r.cantidad)||1);
+      const saldo = termSaldo(r);
+      return `<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
+        <td>${escPror(r.producto)}</td><td class="mono" style="font-size:11px">${escPror(r.ncm)}</td>
+        <td class="mono">${termN(pu,4)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
+        <td class="mono">${termN(termReservado(r.id),0)}</td><td class="mono"><b>${termN(saldo,0)}</b></td>
+        <td><input type="number" min="0" max="${saldo}" step="1" style="width:90px" value="${termQty[r.id]||''}" oninput="termQtyChange('${escPror(r.id)}',this.value,${saldo})"/></td></tr>`;
+    }).join('') + '</tbody></table></div>';
+  }
+  if(!document.getElementById('term-fecha').value) document.getElementById('term-fecha').value = new Date().toISOString().slice(0,10);
+  renderTermPreview();
+  renderTermHistorial();
+}
+function termQtyChange(id, v, saldo){
+  let n = parseFloat(v)||0;
+  if(n<0) n=0;
+  if(n>saldo+0.0001){ n=saldo; }
+  if(n>0) termQty[id]=n; else delete termQty[id];
+  renderTermPreview();
+}
+function termItemsSeleccionados(){
+  const out=[];
+  Object.keys(termQty).forEach(id=>{
+    const r = termBase.find(x=>x.id===id); if(!r) return;
+    out.push({tid:r.id, despacho:r.despacho, item:r.item, subitem:r.subitem, producto:r.producto, ncm:r.ncm,
+      cant:termQty[id], precioUnit:(Number(r.fob)||0)/(Number(r.cantidad)||1),
+      fob_desp:Number(r.fob_desp)||0, flete_desp:Number(r.flete_desp)||0, seguro_desp:Number(r.seguro_desp)||0});
+  });
+  return out;
+}
+function termLeerParams(){
+  const tasas={};
+  document.querySelectorAll('#term-tasas input[data-ncm]').forEach(i=>{ tasas[i.dataset.ncm]=parseFloat(i.value)||0; });
+  return {tasas, iva:parseFloat(document.getElementById('term-iva').value)||0, sim:parseFloat(document.getElementById('term-sim').value)||0};
+}
+function termLiqHTML(liq){
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Ítem</th><th>Cant.</th><th>FOB</th><th>Flete</th><th>Seguro</th><th>CIF</th></tr></thead><tbody>`
+  + liq.filas.map(f=>`<tr><td class="mono" style="font-size:11px">${escPror(f.despacho)} ${escPror(f.item)}/${escPror(f.subitem)}<br>${escPror(f.producto)}</td><td class="mono">${termN(f.cant,0)}</td><td class="mono">${termN(f.fobProp)}</td><td class="mono">${termN(f.flete)}</td><td class="mono">${termN(f.seguro)}</td><td class="mono">${termN(f.cif)}</td></tr>`).join('')
+  + `<tr style="font-weight:700"><td>Total</td><td></td><td class="mono">${termN(liq.fob)}</td><td class="mono">${termN(liq.flete)}</td><td class="mono">${termN(liq.seguro)}</td><td class="mono">${termN(liq.cif)}</td></tr></tbody></table></div>`
+  + `<div style="margin-top:8px;font-size:13px;line-height:1.7">`
+  + Object.keys(liq.porNcm).map(k=>`Derecho de importación ${termN(liq.porNcm[k].tasa)}% s/ CIF ${termN(liq.porNcm[k].cif)} (NCM ${escPror(k)}): <b>USD ${termN(liq.porNcm[k].derecho)}</b><br>`).join('')
+  + `IVA: <b>USD ${termN(liq.iva)}</b> · Arancel SIM: <b>USD ${termN(liq.sim)}</b><br><span style="font-size:15px;font-weight:700">Total a pagar: USD ${termN(liq.total)}</span></div>`;
+}
+function renderTermPreview(){
+  const sel = termItemsSeleccionados();
+  const cont = document.getElementById('term-preview');
+  const tasasBox = document.getElementById('term-tasas');
+  if(!sel.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Poné cantidades en la columna "Usar" para ver la liquidación.</div>'; tasasBox.innerHTML=''; return; }
+  // inputs de tasa por NCM (se conservan si ya existen)
+  const prev = {}; tasasBox.querySelectorAll('input[data-ncm]').forEach(i=>prev[i.dataset.ncm]=i.value);
+  const ncms = [...new Set(sel.map(s=>termNcm8(s.ncm)))];
+  const actuales = ncms.join('|');
+  if(tasasBox.dataset.ncms !== actuales){
+    tasasBox.dataset.ncms = actuales;
+    tasasBox.innerHTML = ncms.map(k=>`<div class="ff" style="max-width:190px"><label>Derecho % · NCM ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${prev[k]!=null?prev[k]:termTasaDefault(k)}" oninput="renderTermPreview()"/></div>`).join('');
+  }
+  const p = termLeerParams();
+  cont.innerHTML = termLiqHTML(termCalcLiq(sel, p.tasas, p.iva, p.sim));
+}
+async function termGuardar(confirmar){
+  const sel = termItemsSeleccionados();
+  const msg = document.getElementById('term-guardar-msg');
+  msg.style.display='block'; msg.style.color='var(--tx2)';
+  if(!sel.length){ msg.style.color='var(--rd)'; msg.textContent='Elegí al menos un ítem con cantidad.'; return; }
+  const p = termLeerParams();
+  const rec = {
+    id: 'zfe1_'+Date.now(), numero: (document.getElementById('term-numero').value||'').trim() || null,
+    fecha: document.getElementById('term-fecha').value, estado:'borrador',
+    items: sel, tasas: p.tasas, iva: p.iva, sim: p.sim, origen:'app'
+  };
+  try{
+    msg.textContent='Guardando…';
+    await sbFetch('zfe1_salidas',{method:'POST',body:JSON.stringify(rec)});
+    termQty={}; document.getElementById('term-numero').value='';
+    document.getElementById('term-tasas').dataset.ncms='';
+    if(confirmar){ termSalidas.unshift(rec); await termConfirmar(rec.id,true); }
+    msg.style.color='var(--gn,green)'; msg.textContent = confirmar ? '✓ Guardado y confirmado (saldo descontado).' : '✓ Borrador guardado (cantidades reservadas).';
+    await loadTerminados();
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ '+e.message; }
+}
+async function termConfirmar(sid, silencioso){
+  const s = termSalidas.find(x=>x.id===sid); if(!s || s.estado==='confirmado') return;
+  try{
+    // 1) verificar saldos reales
+    for(const it of s.items){
+      const cur = await sbFetch('terminados_base?select=cantidad,cancel_qty&id=eq.'+encodeURIComponent(it.tid),{method:'GET',headers:{'Prefer':''}});
+      if(!cur||!cur.length) throw new Error('No existe el ítem '+it.tid);
+      if((Number(cur[0].cantidad)||0)-(Number(cur[0].cancel_qty)||0) < it.cant-0.0001) throw new Error('No alcanza el saldo de '+it.tid);
+    }
+    // 2) descontar
+    for(const it of s.items){
+      const cur = await sbFetch('terminados_base?select=cancel_qty&id=eq.'+encodeURIComponent(it.tid),{method:'GET',headers:{'Prefer':''}});
+      await sbFetch('terminados_base?id=eq.'+encodeURIComponent(it.tid),{method:'PATCH',body:JSON.stringify({cancel_qty:(Number(cur[0].cancel_qty)||0)+Number(it.cant)})});
+    }
+    await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'PATCH',body:JSON.stringify({estado:'confirmado'})});
+    s.estado='confirmado';
+    if(!silencioso) await loadTerminados();
+  }catch(e){ alert('⚠ No se pudo confirmar: '+e.message); if(silencioso) throw e; }
+}
+async function termRevertir(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  if(!confirm('¿Volver este ZFE1 a borrador? Se devuelve el saldo a los ZFI5 (queda reservado hasta que lo borres o confirmes de nuevo).')) return;
+  try{
+    for(const it of s.items){
+      const cur = await sbFetch('terminados_base?select=cancel_qty&id=eq.'+encodeURIComponent(it.tid),{method:'GET',headers:{'Prefer':''}});
+      if(cur&&cur.length) await sbFetch('terminados_base?id=eq.'+encodeURIComponent(it.tid),{method:'PATCH',body:JSON.stringify({cancel_qty:Math.max(0,(Number(cur[0].cancel_qty)||0)-Number(it.cant))})});
+    }
+    await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'PATCH',body:JSON.stringify({estado:'borrador'})});
+    await loadTerminados();
+  }catch(e){ alert('⚠ '+e.message); }
+}
+async function termEliminar(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  if(s.estado==='confirmado'){ alert('Primero pasalo a borrador (↩) para devolver el saldo.'); return; }
+  if(!confirm('¿Eliminar este borrador de ZFE1?')) return;
+  try{ await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'DELETE'}); await loadTerminados(); }catch(e){ alert('⚠ '+e.message); }
+}
+async function termGuardarParams(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  const tasas={}; document.querySelectorAll('#tz-'+sid+' input[data-ncm]').forEach(i=>tasas[i.dataset.ncm]=parseFloat(i.value)||0);
+  const iva = parseFloat(document.querySelector('#tz-'+sid+' input[data-f="iva"]').value)||0;
+  const sim = parseFloat(document.querySelector('#tz-'+sid+' input[data-f="sim"]').value)||0;
+  const numero = (document.querySelector('#tz-'+sid+' input[data-f="numero"]').value||'').trim()||null;
+  try{ await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(sid),{method:'PATCH',body:JSON.stringify({tasas,iva,sim,numero})}); await loadTerminados(); }catch(e){ alert('⚠ '+e.message); }
+}
+function termLiqDeSalida(s){
+  const tasas = {...(s.tasas||{})};
+  (s.items||[]).forEach(it=>{ const k=termNcm8(it.ncm); if(tasas[k]==null) tasas[k]=termTasaDefault(k); });
+  return termCalcLiq(termItemsDeSalida(s), tasas, s.iva, s.sim);
+}
+function renderTermHistorial(){
+  const cont = document.getElementById('term-historial');
+  if(!termSalidas.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Todavía no hay ZFE1 armados.</div>'; return; }
+  cont.innerHTML = termSalidas.map(s=>{
+    const liq = termLiqDeSalida(s);
+    const conf = s.estado==='confirmado';
+    const tasasIn = Object.keys(liq.porNcm).map(k=>`<div class="ff" style="max-width:150px"><label>Derecho % ${escPror(k)}</label><input type="number" step="0.01" data-ncm="${escPror(k)}" value="${liq.porNcm[k].tasa}"/></div>`).join('');
+    return `<div class="card" id="tz-${escPror(s.id)}" style="margin-top:10px">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+        <div><b>ZFE1 ${s.numero?escPror(s.numero):'(sin número)'}</b> · ${escPror(s.fecha||'')} ·
+        <span style="color:${conf?'var(--gn,green)':'var(--am,#b8860b)'};font-weight:700">${conf?'✓ confirmado':'borrador (reserva saldo)'}</span>${s.origen==='pdf'?' · <span class="t2">desde PDF</span>':''}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${conf?'':`<button class="btn btng" onclick="termConfirmar('${escPror(s.id)}')">✅ Confirmar</button>`}
+          <button class="btn" onclick="termImprimirCancelar('${escPror(s.id)}')">🖨 ZFI5 a cancelar</button>
+          <button class="btn" onclick="termImprimirLiq('${escPror(s.id)}')">🖨 Liquidación</button>
+          ${conf?`<button class="btn" onclick="termRevertir('${escPror(s.id)}')">↩ Pasar a borrador</button>`:`<button class="btn" onclick="termEliminar('${escPror(s.id)}')">🗑</button>`}
+        </div>
+      </div>
+      <div class="fr" style="margin:8px 0">
+        <div class="ff" style="max-width:190px"><label>Nº ZFE1</label><input data-f="numero" value="${escPror(s.numero||'')}" placeholder="26258ZFE1…"/></div>
+        ${tasasIn}
+        <div class="ff" style="max-width:110px"><label>IVA %</label><input type="number" step="0.01" data-f="iva" value="${Number(s.iva)}"/></div>
+        <div class="ff" style="max-width:130px"><label>Arancel SIM USD</label><input type="number" step="0.01" data-f="sim" value="${Number(s.sim)}"/></div>
+        <div class="ff" style="max-width:120px;justify-content:flex-end"><button class="btn" onclick="termGuardarParams('${escPror(s.id)}')">Guardar cambios</button></div>
+      </div>
+      ${termLiqHTML(liq)}
+    </div>`;
+  }).join('');
+}
+function termAbrirImpresion(titulo, cuerpo){
+  const win = window.open('','_blank');
+  if(!win){ alert('El navegador bloqueó la ventana de impresión.'); return; }
+  win.document.write(`<html><head><title>${titulo}</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #888;padding:5px 8px;text-align:left}td.r,th.r{text-align:right}h2{margin:0 0 4px}</style></head><body>${cuerpo}</body></html>`);
+  win.document.close(); win.focus(); setTimeout(()=>win.print(),300);
+}
+function termImprimirCancelar(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  const filas = (s.items||[]).map(it=>`<tr><td>${escPror(it.despacho)}</td><td>${escPror(it.ncm)}</td><td>${String(it.item).padStart(4,'0')}</td><td>${String(it.subitem).padStart(4,'0')}</td><td class="r">${termN(it.cant,6)}</td><td>${escPror(it.producto)}</td></tr>`).join('');
+  termAbrirImpresion('ZFI5 a cancelar', `<h2>ZFE1 ${s.numero?escPror(s.numero):''} — ZFI5 a cancelar</h2><div>Fecha: ${escPror(s.fecha||'')}</div><table><thead><tr><th>Destinación a cancelar</th><th>NCM</th><th>Ítem</th><th>Subítem</th><th class="r">Cantidad</th><th>Producto</th></tr></thead><tbody>${filas}</tbody></table>`);
+}
+function termImprimirLiq(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  const liq = termLiqDeSalida(s);
+  const f = liq.filas.map(x=>`<tr><td>${escPror(x.despacho)} ${escPror(x.item)}/${escPror(x.subitem)}<br>${escPror(x.producto)}</td><td class="r">${termN(x.cant,0)}</td><td class="r">${termN(x.fobProp)}</td><td class="r">${termN(x.flete)}</td><td class="r">${termN(x.seguro)}</td><td class="r">${termN(x.cif)}</td></tr>`).join('');
+  const d = Object.keys(liq.porNcm).map(k=>`<tr><td>Derecho de importación ${termN(liq.porNcm[k].tasa)}% (NCM ${escPror(k)}) s/ CIF ${termN(liq.porNcm[k].cif)}</td><td class="r">${termN(liq.porNcm[k].derecho)}</td></tr>`).join('');
+  termAbrirImpresion('Liquidación ZFE1', `<h2>Liquidación ZFE1 ${s.numero?escPror(s.numero):''}</h2><div>Fecha: ${escPror(s.fecha||'')}</div>
+  <table><thead><tr><th>Ítem</th><th class="r">Cant.</th><th class="r">FOB</th><th class="r">Flete</th><th class="r">Seguro</th><th class="r">CIF</th></tr></thead><tbody>${f}<tr><th>Total</th><th></th><th class="r">${termN(liq.fob)}</th><th class="r">${termN(liq.flete)}</th><th class="r">${termN(liq.seguro)}</th><th class="r">${termN(liq.cif)}</th></tr></tbody></table>
+  <table><tbody>${d}<tr><td>IVA ${termN(s.iva)}% s/ (CIF + derechos)</td><td class="r">${termN(liq.iva)}</td></tr><tr><td>Arancel SIM</td><td class="r">${termN(liq.sim)}</td></tr><tr><th>TOTAL A PAGAR (USD)</th><th class="r">${termN(liq.total)}</th></tr></tbody></table>`);
+}
+
 async function loadStockMercaderia(){
   const el = document.getElementById('merc-lista');
   try{
@@ -6990,7 +7271,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'Insumos terminados', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;
