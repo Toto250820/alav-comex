@@ -5547,7 +5547,7 @@ function verET19PorVencer(){
 let termBase = [];       // filas de terminados_base
 let termSalidas = [];    // filas de zfe1_salidas
 let termQty = {};        // cantidades tipeadas en el armado {id: n}
-const TERM_TASA_DEF = {'7310.21.90':12.6};
+const TERM_TASA_DEF = {'7310.21.90':12.6,'6302.32.00':20,'6302.22.00':20};
 function termN(n,d=2){ return (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function termNcm8(ncm){ return String(ncm||'').split('.').slice(0,3).join('.'); }
 function termReservado(id, exceptSalidaId){

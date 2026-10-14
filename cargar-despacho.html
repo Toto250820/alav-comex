@@ -340,7 +340,19 @@ function parseDespacho(fullPagesText) {
         consumosMap[key].cantidad += cant;
       }
     });
-    return {despacho, tipo, fecha, consumos: Object.values(consumosMap)};
+    // Derecho de importación (%) y arancel SIM leídos del propio despacho (solo ZFE1)
+    const tasas = {}; let sim = null;
+    if(tipo === 'ZFE1'){
+      fullPagesText.forEach(raw=>{
+        const text = raw.replace(/\|/g,' ').replace(/\s+/g,' ');
+        const re = /Posici[oó]n SIM \/ C[oó]digo AFIP\s+([\d.]+)[A-Z]?[\s\S]{0,6000}?([\d.]+,\d+)\s+P\s+([\d.]+,\d+)\s+\(\s*010\s*\)\s*DERECHOS IMPORTACION/g;
+        let m;
+        while((m = re.exec(text))){ tasas[m[1].split('.').slice(0,3).join('.')] = num(m[2]); }
+        const sm = text.match(/\(\s*500\s*\)\s*ARANCEL SIM IMPO\s+P\s+([\d.]+,\d+)/);
+        if(sm) sim = num(sm[1]);
+      });
+    }
+    return {despacho, tipo, fecha, consumos: Object.values(consumosMap), tasas, sim};
   }
 
   const items = [];
@@ -376,6 +388,13 @@ function parseDespacho(fullPagesText) {
 }
 
 // ── UI: drag & drop ──────────────────────────────────────────────────────────
+// Botón "Cargar otro PDF" en cada mensaje de éxito
+new MutationObserver(()=>{
+  const sb = document.getElementById('success-box');
+  if(sb.innerHTML.trim() && !sb.querySelector('#btn-otro-pdf')){
+    sb.insertAdjacentHTML('beforeend','<div style="margin-top:8px"><button class="btn btnp" id="btn-otro-pdf" onclick="resetTool();document.getElementById(\'file-inp\').click()">📄 Cargar otro PDF</button></div>');
+  }
+}).observe(document.getElementById('success-box'),{childList:true});
 const dropEl = document.getElementById('drop');
 ['dragenter','dragover'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.remove('drag');}));
@@ -634,6 +653,13 @@ async function confirmarZFE3(){
 
 async function handleFile(file){
   if(!file) return;
+  // soltar el archivo del input para que se pueda elegir otro (o el mismo) enseguida
+  try{ document.getElementById('file-inp').value=''; }catch(e){}
+  try{ document.getElementById('zfi6-et19-box').style.display='none'; document.getElementById('zfi6-et19-in').value=''; }catch(e){}
+  currentParsed = null;
+  { const b=document.getElementById('btn-confirm'); b.textContent='✓ Confirmar y cargar a stock'; b.disabled=true;
+    const b3=document.getElementById('btn-confirm-zfe3'); b3.textContent='✓ Confirmar y descontar stock'; b3.disabled=true;
+    const b1=document.getElementById('btn-confirm-zfe1'); b1.textContent='✓ Confirmar'; b1.disabled=true; }
   document.getElementById('error-box').innerHTML='';
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
@@ -733,14 +759,14 @@ async function confirmarZFE1(){
         ok++;
       }
       if(plan.mode==='borrador'){
-        await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(plan.rec.id), {method:'PATCH', body:JSON.stringify({estado:'confirmado', numero:p.despacho, fecha:p.fecha})});
+        await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(plan.rec.id), {method:'PATCH', body:JSON.stringify({estado:'confirmado', numero:p.despacho, fecha:p.fecha, ...(Object.keys(p.tasas||{}).length?{tasas:p.tasas}:{}), ...(p.sim!=null?{sim:p.sim}:{})})});
       } else {
         const items = p.consumos.map((x,i)=>{
           const r = plan.byId[plan.ids[i]];
           return {tid:r.id, despacho:r.despacho, item:r.item, subitem:r.subitem, producto:r.producto, ncm:r.ncm, cant:x.cantidad,
             precioUnit:(Number(r.fob)||0)/(Number(r.cantidad)||1), fob_desp:Number(r.fob_desp)||0, flete_desp:Number(r.flete_desp)||0, seguro_desp:Number(r.seguro_desp)||0};
         });
-        await sbFetch('zfe1_salidas', {method:'POST', body:JSON.stringify({id:'zfe1_'+Date.now(), numero:p.despacho, fecha:p.fecha, estado:'confirmado', items, tasas:{}, iva:21, sim:10, origen:'pdf'})});
+        await sbFetch('zfe1_salidas', {method:'POST', body:JSON.stringify({id:'zfe1_'+Date.now(), numero:p.despacho, fecha:p.fecha, estado:'confirmado', items, tasas:(p.tasas||{}), iva:21, sim:(p.sim!=null?p.sim:10), origen:'pdf'})});
       }
     }
     document.getElementById('success-box').innerHTML = `<div class="ok">✓ ZFE1 <b>${p.despacho}</b> registrado${plan.mode==='link'?' (vinculado, sin descontar de nuevo)':' y saldo de Insumos terminados descontado'}.</div>`;
