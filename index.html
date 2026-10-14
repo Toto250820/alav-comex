@@ -54,9 +54,6 @@ body{font-family:var(--sn);background-color:var(--bg);background-image:repeating
 .nb{font-size:11px;font-weight:600;padding:6px 14px;border:none;background:none;color:#a8b3c2;cursor:pointer;border-radius:var(--rs);transition:all .15s;white-space:nowrap;font-family:var(--sn);letter-spacing:.05em;text-transform:uppercase}
 .nb:hover{background:rgba(255,255,255,.08);color:#fff}
 .nb.active{background:var(--ac);color:#fff;box-shadow:0 2px 8px rgba(45,86,134,.4)}
-.nb.nsal{color:#e0a370}.nb.nsal.active{background:var(--or);color:#fff}
-.nb.nliq{color:#b7a3e0}.nb.nliq.active{background:var(--pu);color:#fff}
-.nb.nadm{color:#e0c17a}.nb.nadm.active{background:var(--yw);color:#fff}
 .wrap{max-width:1400px;margin:0 auto;padding:18px}
 .sec{display:none}.sec.active{display:block}
 .stit{font-family:var(--mn);font-size:10px;font-weight:700;color:var(--tx3);letter-spacing:.18em;text-transform:uppercase;margin-bottom:16px;padding-left:10px;border-left:3px solid var(--ac)}
@@ -137,7 +134,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   .hdr .nav{flex-direction:column;flex:none;overflow:visible;gap:1px;width:100%}
   .hdr .nb{text-align:left;width:100%;padding:6px 9px;font-size:10px}
   .hdr .nav-submenu{padding:2px 0 2px 10px!important;gap:0!important}
-  .hdr .nav-submenu .nb{padding:5px 8px;font-size:9.5px}
+  .hdr .nav-submenu .nb{padding:6px 9px;font-size:10px}
   .hdr #presence-badge.presence-roster{flex-direction:column;align-items:flex-start;gap:4px;margin-top:auto;width:100%;padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
   #update-banner,#minimo-banner,#et19-consumida-banner{top:0}
 }
@@ -177,45 +174,43 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 <div class="hdr">
   <div class="logo">ALAV<span>//</span>COMEX</div>
   <div class="nav">
-    <button class="nb nproy" onclick="toggleNavMenu('proy-submenu')">📋 Proyección ▾</button>
+    <button class="nb nproy" onclick="toggleNavMenu('proy-submenu')">Proyección ▾</button>
     <div id="proy-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb nsal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">🛏️ Acolchados/Mantas</button>
-      <button class="nb nterm" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">📦 ZFE1</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-sabanas')">🛏️ Sábanas</button>
-      <button class="nb nliq" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">$ Liquidación</button>
+      <button class="nb nsal" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">Acolchados/Mantas</button>
+      <button class="nb nterm" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">ZFE1</button>
+      <button class="nb" onclick="irAAdminTab('adm-sabanas')">Sábanas</button>
+      <button class="nb nliq" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">Liquidación</button>
     </div>
 
-    <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">📦 Stock ▾</button>
+    <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">Stock ▾</button>
     <div id="stock-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">📊 Stock general</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-stock')">⬆ Cargar</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-ajuste')">🔧 Actualizar</button>
-      <button class="nb nimp" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('insimp',document.querySelector('.nb.nimp'))">🌏 Insumos importados</button>
+      <button class="nb" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">Stock general</button>
+      <button class="nb" onclick="solicitarPinYAbrir('adm-stock')">Cargar</button>
+      <button class="nb" onclick="solicitarPinYAbrir('adm-ajuste')">Actualizar</button>
+      <button class="nb nimp" onclick="cerrarSubmenusNav();showSec('insimp',document.querySelector('.nb.nimp'))">Insumos importados</button>
     </div>
 
-    <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">🛒 Compras ▾</button>
+    <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">Compras ▾</button>
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
-      <button class="nb ncomprasreal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('comprasreal',document.querySelector('.nb.ncomprasreal'))">✓ Compra Realizada</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
+      <button class="nb ncompras" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">Cargar Compra</button>
+      <button class="nb ncomprasreal" onclick="cerrarSubmenusNav();showSec('comprasreal',document.querySelector('.nb.ncomprasreal'))">Compra Realizada</button>
+      <button class="nb" onclick="cerrarSubmenusNav();showSec('solimp',this)">Solicitud Insumos Importados</button>
     </div>
 
-    <button class="nb net19menu" onclick="toggleNavMenu('et19-submenu')">📑 ET19 ▾</button>
+    <button class="nb net19menu" onclick="toggleNavMenu('et19-submenu')">ET19 ▾</button>
     <div id="et19-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('et19vinc',this)">🔗 Vincular</button>
-      <button class="nb" style="font-size:12px;opacity:.9" id="nb-et19-exp" onclick="cerrarSubmenusNav();showSec('et19exp',this)">🔍 Explorar</button>
+      <button class="nb" onclick="cerrarSubmenusNav();showSec('et19vinc',this)">Vincular</button>
+      <button class="nb" id="nb-et19-exp" onclick="cerrarSubmenusNav();showSec('et19exp',this)">Explorar</button>
     </div>
 
-    <button class="nb" onclick="irAAdminTab('adm-avisos')">🔔 Aviso de Carga</button>
+    <button class="nb" onclick="irAAdminTab('adm-avisos')">Aviso de Carga</button>
 
-    <button class="nb nadm" onclick="toggleNavMenu('admin-submenu')">⚙ Admin ▾</button>
-    <div id="admin-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-minimos')">⚠️ Stock Mínimo</button>
-      <a class="nb" href="./cargar-despacho.html" style="text-decoration:none;color:var(--gr);font-size:12px;opacity:.9">📄 Carga Despacho</a>
-    </div>
+    <button class="nb" onclick="irAAdminTab('adm-minimos')">Stock mínimo</button>
+    <a class="nb" href="./cargar-despacho.html" style="text-decoration:none">Carga PDF</a>
 
     <button class="nb" onclick="showSec('hist',this)">Historial</button>
 
+    <button class="nb nadm" style="display:none"></button>
     <button class="nb ncalc" style="display:none" onclick="showSec('calc',this)"></button>
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
@@ -3171,7 +3166,7 @@ function renderSalidaHist(){
           <button class="btn" style="padding:4px 10px;font-size:11px" onclick="toggleDetalleSalida(${si})">🔍 Ver detalle</button>
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--ac);border-color:var(--ac);color:#fff" onclick='imprimirSalida(salidaHistorial[${si}])'>🖨 Salida</button>
           <button class="btn" style="padding:4px 10px;font-size:11px;background:var(--gr);border-color:var(--gr);color:#fff" onclick='imprimirPackingList(salidaHistorial[${si}])'>📦 Packing</button>
-          <button class="btn btnpu" style="padding:4px 10px;font-size:11px" onclick='generarLiqDesdeSalida(salidaHistorial[${si}])'>$ Liquidación</button>
+          <button class="btn btnpu" style="padding:4px 10px;font-size:11px" onclick='generarLiqDesdeSalida(salidaHistorial[${si}])'>Liquidación</button>
           <button class="btn btnd" onclick="eliminarSalida(${si})">✕</button>
         </div>
       </div>
