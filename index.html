@@ -179,25 +179,24 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="nav">
     <button class="nb nproy" onclick="toggleNavMenu('proy-submenu')">📋 Proyección ▾</button>
     <div id="proy-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb nsal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">➕ Salidas</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">📊 Stock General</button>
+      <button class="nb nsal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">🛏️ Acolchados/Mantas</button>
+      <button class="nb nterm" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">📦 ZFE1</button>
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-sabanas')">🛏️ Sábanas</button>
       <button class="nb nliq" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">$ Liquidación</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="irAAdminTab('adm-sabanas')">🛏️ CTZF Sábanas</button>
-      <button class="nb nterm" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">🥫 Insumos terminados</button>
     </div>
 
     <button class="nb nstockmenu" onclick="toggleNavMenu('stock-submenu')">📦 Stock ▾</button>
     <div id="stock-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
+      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('calc',document.querySelector('.nb.ncalc'))">📊 Stock general</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-stock')">⬆ Cargar</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="solicitarPinYAbrir('adm-ajuste')">🔧 Actualizar</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('stock',document.querySelector('.nb.nstockreal'))">📈 Real</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('merc',document.querySelector('.nb.nmerc'))">🏭 Mercadería</button>
+      <button class="nb nimp" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('insimp',document.querySelector('.nb.nimp'))">🌏 Insumos importados</button>
     </div>
 
     <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">🛒 Compras ▾</button>
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
       <button class="nb ncompras" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">➕ Cargar Compra</button>
-      <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">✓ Compra Realizada</button>
+      <button class="nb ncomprasreal" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('comprasreal',document.querySelector('.nb.ncomprasreal'))">✓ Compra Realizada</button>
       <button class="nb" style="font-size:12px;opacity:.9" onclick="cerrarSubmenusNav();showSec('solimp',this)">🌏 Solicitud Insumos Importados</button>
     </div>
 
@@ -563,15 +562,32 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
     <div id="oc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 
-  <div class="stit" style="margin-top:22px;display:flex;align-items:center;gap:8px">Órdenes registradas
+  <div class="stit" style="margin-top:22px;display:flex;align-items:center;gap:8px">Pedidos pendientes de cerrar
     <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadOrdenesCompra()" title="Actualizar">↻</button>
   </div>
   <div id="oc-lista"><div class="empty">Cargando...</div></div>
 </div>
 
+<div id="sec-comprasreal" class="sec">
+  <div class="stit" style="display:flex;align-items:center;gap:8px">Compras realizadas
+    <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadOrdenesCompra()" title="Actualizar">↻</button>
+  </div>
+  <div id="oc-lista-real"><div class="empty">Cargando...</div></div>
+</div>
+
 <!-- ET19: VINCULAR -->
+<div id="sec-insimp" class="sec">
+  <div class="stit">Insumos importados — ZFI5 cargados, stock y consumos</div>
+  <div class="card">
+    <div style="margin-bottom:8px;font-size:12px">Mostrar: <select id="term-filtro-saldo" onchange="renderTerminados()" style="width:auto"><option value="todos">todos los ZFI5</option><option value="disp">solo con saldo disponible</option></select>
+      <select id="term-filtro-zfi5" onchange="renderTerminados()" style="width:auto;margin-left:8px"><option value="">— elegir un ZFI5 —</option></select>
+      <button class="btn" style="margin-left:8px" onclick="termImprimirSaldos()">🖨 Imprimir</button></div>
+    <div id="term-saldos"></div>
+  </div>
+</div>
+
 <div id="sec-term" class="sec">
-  <div class="stit">🥫 Insumos terminados — ZFI5 → ZFE1</div>
+  <div class="stit">📦 ZFE1</div>
   <div id="term-msg" style="display:none;margin-bottom:10px;padding:10px 14px;background:var(--rbg);border:1px solid var(--rd);border-radius:var(--rs);color:var(--rd);font-size:12px"></div>
 
   <div id="term-nueva-wrap">
@@ -616,13 +632,6 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
   <div class="stit" style="margin-top:14px">Salidas ZFE1</div>
   <div id="term-historial"></div>
 
-  <div class="stit" style="margin-top:14px">ZFI5 cargados — historial y disponible</div>
-  <div class="card">
-    <div style="margin-bottom:8px;font-size:12px">Mostrar: <select id="term-filtro-saldo" onchange="renderTerminados()" style="width:auto"><option value="todos">todos los ZFI5</option><option value="disp">solo con saldo disponible</option></select>
-      <select id="term-filtro-zfi5" onchange="renderTerminados()" style="width:auto;margin-left:8px"><option value="">— elegir un ZFI5 —</option></select>
-      <button class="btn" style="margin-left:8px" onclick="termImprimirSaldos()">🖨 Imprimir</button></div>
-    <div id="term-saldos"></div>
-  </div>
 </div>
 
 <div id="sec-et19vinc" class="sec">
@@ -1780,7 +1789,8 @@ function showSec(id,btn){
   if(id==='stock') renderStock();
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
-  if(id==='term') loadTerminados();
+  if(id==='term' || id==='insimp') loadTerminados();
+  if(id==='comprasreal') loadOrdenesCompra();
   if(id==='et19vinc') initVincularET19();
   if(id==='et19exp') initExplorarET19();
   if(id==='solimp'){ if(!solImpItemIndices.length) agregarLineaSolImp(); if(!document.getElementById('solimp-fecha').value) document.getElementById('solimp-fecha').value = new Date().toISOString().slice(0,10); loadSolicitudesImportados(); }
@@ -2014,6 +2024,8 @@ function crearSalida(){
   renderSalidaLineas();
   renderBorradores();
   save();
+  // arranca la salida: te lleva directo al Stock General para ir agregando
+  showSec('calc',document.querySelector('.nb.ncalc'));
 }
 
 // ── SISTEMA DE RESERVA DE STOCK ────────────────────────────────────────────────
@@ -4048,7 +4060,7 @@ function renderStock(){
     };
 
     const minCfg = stockMinimos.find(m=>m.material===k);
-    const bajoMinimo = minCfg && total <= parseFloat(minCfg.minimo);
+    const bajoMinimo = minCfg && parseFloat(minCfg.minimo)>0 && total <= parseFloat(minCfg.minimo);
 
     html+=`<div class="mb"><div class="mh">
       <span class="mn2">${label}${bajoMinimo?' <span class="bdg" style="background:var(--rbg);color:var(--rd);border:1px solid rgba(173,49,49,.3)">⚠ EN MÍNIMO</span>':''}</span>
@@ -4383,7 +4395,8 @@ async function loadOrdenesCompra(){
 function renderOrdenesCompra(){
   const el = document.getElementById('oc-lista');
   if(!el) return;
-  if(!ordenesCompra.length){ el.innerHTML='<div class="empty">Sin órdenes registradas todavía.</div>'; return; }
+  const elReal = document.getElementById('oc-lista-real');
+  if(!ordenesCompra.length){ el.innerHTML='<div class="empty">No hay pedidos pendientes.</div>'; if(elReal) elReal.innerHTML='<div class="empty">Todavía no hay compras realizadas.</div>'; return; }
 
   // 'confirmada' quedó de cuando la orden tenía más pasos: se trata igual que una abierta
   const esPendiente = o => o.estado==='abierta' || o.estado==='confirmada';
@@ -4448,8 +4461,10 @@ function renderOrdenesCompra(){
 
   el.innerHTML =
     `<div class="ct" style="margin:6px 0">Pedidos abiertos (${abiertas.length})</div>`
-    + (abiertas.length ? abiertas.map(tarjeta).join('') : '<div class="empty">No hay pedidos abiertos.</div>')
-    + (historial.length ? `<div class="ct" style="margin:22px 0 6px">Historial de pedidos (${historial.length})</div>` + historial.map(tarjeta).join('') : '');
+    + (abiertas.length ? abiertas.map(tarjeta).join('') : '<div class="empty">No hay pedidos pendientes de cerrar.</div>');
+  if(elReal) elReal.innerHTML = historial.length
+    ? `<div class="ct" style="margin:6px 0">Compras cerradas y canceladas (${historial.length})</div>` + historial.map(tarjeta).join('')
+    : '<div class="empty">Todavía no hay compras realizadas.</div>';
 }
 
 // Guarda lo que se editó de los ítems mientras el pedido sigue abierto
@@ -5927,7 +5942,7 @@ function termImprimirSaldos(){
   const grupos={}; termBase.forEach(r=>{(grupos[r.despacho]=grupos[r.despacho]||[]).push(r);});
   const cuerpo = Object.keys(grupos).sort().map(d=>`<h3>${escPror(d)}</h3><table><thead><tr><th>Ítem</th><th>Producto</th><th>NCM</th><th class="r">Original</th><th class="r">Cancelado</th><th class="r">Reservado</th><th class="r">Disponible</th><th class="r">FOB disp. USD</th></tr></thead><tbody>`
    + grupos[d].map(r=>`<tr><td>${escPror(r.item)}/${escPror(r.subitem)}</td><td>${escPror(r.producto)}</td><td>${escPror(r.ncm)}</td><td class="r">${termN(r.cantidad,0)}</td><td class="r">${termN(r.cancel_qty,0)}</td><td class="r">${termN(termReservado(r.id),0)}</td><td class="r">${termN(termSaldo2(r),0)}</td><td class="r">${termN((Number(r.cantidad)>0)?(Number(r.fob)||0)*Math.max(0,termSaldo2(r))/Number(r.cantidad):0)}</td></tr>`).join('')+'</tbody></table>').join('');
-  termAbrirImpresion('Saldos ZFI5', '<h2>Insumos terminados — saldos de ZFI5</h2><div>Al '+new Date().toLocaleDateString('es-AR')+'</div>'+cuerpo);
+  termAbrirImpresion('Saldos ZFI5', '<h2>Insumos importados — saldos de ZFI5</h2><div>Al '+new Date().toLocaleDateString('es-AR')+'</div>'+cuerpo);
 }
 function termImprimirCancelar(sid){
   const s = termSalidas.find(x=>x.id===sid); if(!s) return;
@@ -6999,13 +7014,13 @@ function renderStockMinimos(){
   const elAlertas = document.getElementById('min-alertas');
   if(!elLista) return;
 
-  if(!stockMinimos.length){
+  if(!stockMinimos.some(m=>parseFloat(m.minimo)>0)){
     elLista.innerHTML = '<div class="empty">Ningún mínimo configurado todavía.</div>';
     if(elAlertas) elAlertas.innerHTML = '<div class="empty">No hay mínimos configurados para revisar.</div>';
     return;
   }
 
-  const conDisponible = stockMinimos.map(m=>({
+  const conDisponible = stockMinimos.filter(m=>parseFloat(m.minimo)>0).map(m=>({
     ...m, disponible: getDisponibleTotal(m.material), label: MAT_LABELS[m.material]||m.material,
     cu: CANCEL_UNIT[m.material]||''
   }));
@@ -7450,7 +7465,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'Insumos terminados', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'ZFE1', insimp:'Insumos importados', comprasreal:'Compras realizadas', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;
