@@ -148,15 +148,17 @@ input.narrow{width:80px}
   </div>
 </div>
 
+<datalist id="zfi5-tipos-dl-static"><option value="Latas"><option value="Sábanas"><option value="Fundas de almohada"><option value="Bolsas"><option value="Otros"></datalist>
 <div id="zfe3-box" style="display:none">
   <div class="card">
     <div class="stit">ZFE3 — Descuento de stock</div>
     <div class="hdrinfo">
-      <div class="hi"><label>Despacho ZFE3</label><b id="zf-despacho">—</b></div>
+      <div class="hi"><label id="zf-tipo-lbl">Despacho ZFE3</label><b id="zf-despacho">—</b></div>
       <div class="hi"><label>Fecha (oficialización)</label><b id="zf-fecha">—</b></div>
       <div class="hi"><label>Ítems a descontar</label><b id="zf-count">—</b></div>
     </div>
     <div id="zf-dup-warning"></div>
+    <div id="zf-tzf5-extra" style="display:none"></div>
   </div>
   <div class="card">
     <div class="stit">Revisá el descuento antes de confirmar</div>
@@ -313,7 +315,7 @@ function classify(ncmShort, aiText, zaGsm){
 
 function parseDespacho(fullPagesText) {
   const page1 = fullPagesText[0].replace(/\|/g,' ').replace(/\s+/g,' ');
-  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d|ET19|ZFE[13])\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
+  const hdrM = page1.match(/Fojas\s+\d+\s+\d+\s+de\s+\d+\s+(\d{2})\s+(\d{3})\s+(ZFI\d|ET19|ZFE[13]|TZF5)\s+(\d{6})\s+([A-Z])\s+(\d{2}\/\d{2}\/\d{4})/);
   if(!hdrM) throw new Error('No se pudo leer el encabezado del despacho. ¿Es un PDF de ARCA (ZFI6/ZFI8/ZFI5/ET19/ZFE3/ZFE1)?');
   const despacho = hdrM[1]+hdrM[2]+hdrM[3]+hdrM[4]+hdrM[5];
   const tipo = hdrM[3];
@@ -321,13 +323,14 @@ function parseDespacho(fullPagesText) {
   const fecha = `${yyyy}-${mm}-${dd}`;
 
   const totM = page1.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+DOL/);
-  const fob_desp = totM ? num(totM[1]) : 0, flete_desp = totM ? num(totM[2]) : 0, seguro_desp = totM ? num(totM[3]) : 0;
+  let fob_desp = totM ? num(totM[1]) : 0, flete_desp = totM ? num(totM[2]) : 0, seguro_desp = totM ? num(totM[3]) : 0;
 
   if(tipo === 'ET19'){
     return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, items: []};
   }
 
-  if(tipo === 'ZFE3' || tipo === 'ZFE1'){
+  let consumosTZ = null;
+  if(tipo === 'ZFE3' || tipo === 'ZFE1' || tipo === 'TZF5'){
     const rowRe = /(\d{2}\d{3}[A-Z0-9]{4}\d{6}[A-Z])\s+([\d.]+[A-Z])\s+(\d{4})\s+(\d{4})\s+([\d.]+,\d+)\s+(\d+)/g;
     const consumosMap = {};
     fullPagesText.forEach(raw=>{
@@ -340,6 +343,8 @@ function parseDespacho(fullPagesText) {
         consumosMap[key].cantidad += cant;
       }
     });
+    if(tipo === 'TZF5'){ consumosTZ = Object.values(consumosMap); }
+    else {
     // Derecho de importación (%) y arancel SIM leídos del propio despacho (solo ZFE1)
     const tasas = {}; let sim = null;
     if(tipo === 'ZFE1'){
@@ -353,6 +358,7 @@ function parseDespacho(fullPagesText) {
       });
     }
     return {despacho, tipo, fecha, consumos: Object.values(consumosMap), tasas, sim};
+    }
   }
 
   const items = [];
@@ -384,7 +390,10 @@ function parseDespacho(fullPagesText) {
     }
   });
   const et19M = fullPagesText.join(' ').replace(/\|/g,' ').replace(/\s+/g,' ').match(/DEST-PROC-TER-AD\s*=\s*(\d{5}ET19\d{6}[A-Z])/);
-  return {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, et19_pdf: et19M ? et19M[1] : null, items};
+  if(tipo === 'TZF5' && !fob_desp) fob_desp = Math.round(items.reduce((a,i)=>a+(i.fob||0),0)*100)/100;
+  const out = {despacho, tipo, fecha, fob_desp, flete_desp, seguro_desp, et19_pdf: et19M ? et19M[1] : null, items};
+  if(consumosTZ) out.consumos = consumosTZ;
+  return out;
 }
 
 // ── UI: drag & drop ──────────────────────────────────────────────────────────
@@ -538,6 +547,18 @@ async function registrarET19EnSistema(){
 }
 
 async function renderZFE3(p){
+  const esTZ = p.tipo === 'TZF5';
+  document.getElementById('zf-tipo-lbl').textContent = 'Despacho ' + (p.tipo||'ZFE3');
+  const ex = document.getElementById('zf-tzf5-extra');
+  if(esTZ){
+    ex.style.display = 'block';
+    ex.innerHTML = `<div class="dupwarn" style="background:#e8f1fb;border-color:#9ec0e8;color:#1d4b7a;margin-top:10px">🔁 <b>TZF5 — tránsito dentro de la zona franca.</b> Al confirmar: (1) se descuenta del stock lo que cancela (tabla de abajo) y (2) los ítems del TZF5 quedan en <b>Stock → Insumos importados</b>, listos para que un ZFE1 los cancele.</div>
+      <div style="overflow-x:auto;margin-top:8px"><table><thead><tr><th>Ítem TZF5</th><th>Producto</th><th>NCM</th><th>Cantidad</th><th>FOB USD</th></tr></thead><tbody>`
+      + p.items.map(it=>`<tr><td class="mono">${p.despacho}_${it.item}_${it.subitem}</td><td>${it.ai||'—'}</td><td class="mono">${it.ncm}</td><td class="mono">${it.cantidad} ${it.unidad||''}</td><td class="mono">${(it.fob||0).toFixed(2)}</td></tr>`).join('')
+      + `</tbody></table></div>
+      <div class="fr" style="margin-top:8px"><div class="ff" style="max-width:300px"><label>Tipo de producto (para filtrar al armar el ZFE1)</label>
+        <input id="tzf5-tipo" list="zfi5-tipos-dl-static" placeholder="ej: Bolsas"/></div></div>`;
+  } else { ex.style.display = 'none'; ex.innerHTML = ''; }
   document.getElementById('zf-despacho').textContent = p.despacho;
   document.getElementById('zf-fecha').textContent = toDDMMYYYY(p.fecha);
   document.getElementById('zf-count').textContent = p.consumos.length;
@@ -548,7 +569,7 @@ async function renderZFE3(p){
     const prev = await sbFetch('zfe3_procesados?select=*&despacho=eq.'+encodeURIComponent(p.despacho), {method:'GET', headers:{'Prefer':''}});
     if(prev && prev.length){
       const r = prev[0];
-      dupBox.innerHTML = `<div class="dupwarn">⚠️ Este ZFE3 (${p.despacho}) ya fue procesado el ${new Date(r.procesado_en).toLocaleString('es-AR')} por ${r.procesado_por}. Si confirmás igual, el stock se va a descontar OTRA VEZ — asegurate de que no sea un duplicado antes de continuar.</div>`;
+      dupBox.innerHTML = `<div class="dupwarn">⚠️ Este despacho (${p.despacho}) ya fue procesado el ${new Date(r.procesado_en).toLocaleString('es-AR')} por ${r.procesado_por}. Si confirmás igual, el stock se va a descontar OTRA VEZ — asegurate de que no sea un duplicado antes de continuar.</div>`;
     }
   }catch(e){ /* si la tabla no existe todavía, seguimos sin bloquear */ }
 
@@ -644,9 +665,31 @@ async function confirmarZFE3(){
     });
   }catch(e){ /* si la tabla no existe, no bloqueamos el resto */ }
 
+  let tzMsg = '';
+  if(p.tipo === 'TZF5'){
+    const tipoT = ((document.getElementById('tzf5-tipo')||{}).value||'').trim();
+    const origen = p.consumos.map(x=>`${x.despacho} ítem ${x.item}/${x.subitem} (${x.cantidad})`).join(' · ');
+    const rowsT = p.items.map(it=>({
+      id: p.despacho+'_'+it.item+'_'+it.subitem, despacho:p.despacho, item:it.item, subitem:it.subitem,
+      producto: it.ai || it.ncm, ai: it.ai||'', ncm: it.ncm, unidad: it.unidad||'UNIDAD',
+      cantidad: it.cantidad||0, kgs_neto: it.kgs_neto||0, fob: it.fob||0, cif: it.fob||0, fecha: p.fecha,
+      fob_desp: p.fob_desp||0, flete_desp: p.flete_desp||0, seguro_desp: p.seguro_desp||0,
+      ...(tipoT ? {tipo: tipoT} : {})
+    }));
+    const post = body => sbFetch('terminados_base', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(body)});
+    try{
+      try{ await post(rowsT.map(r=>({...r, origen}))); }
+      catch(e){ if(/origen/i.test(e.message)) await post(rowsT); else throw e; }
+      tzMsg = `<br>✓ ${rowsT.length} ítem${rowsT.length!==1?'s':''} del TZF5 cargado${rowsT.length!==1?'s':''} en <b>Insumos importados</b>.`;
+    }catch(e){
+      const falta = /terminados_base|schema cache|does not exist/i.test(e.message) ? ' — falta correr terminados_setup.sql en Supabase.' : '';
+      tzMsg = `<br>⚠️ No se pudieron cargar los ítems del TZF5 a Insumos importados: ${e.message}${falta}`;
+    }
+  }
   document.getElementById('success-box').innerHTML = `<div class="${fail?'err':'ok'}">
-    ${fail? '⚠️' : '✓'} ZFE3 <b>${p.despacho}</b>: ${ok} ítem${ok!==1?'s':''} descontado${ok!==1?'s':''} y verificado${ok!==1?'s':''} de verdad${fail?`, <b>${fail} SIN aplicar</b>`:''}.
+    ${fail? '⚠️' : '✓'} ${p.tipo==='TZF5'?'TZF5':'ZFE3'} <b>${p.despacho}</b>: ${ok} ítem${ok!==1?'s':''} descontado${ok!==1?'s':''} y verificado${ok!==1?'s':''} de verdad${fail?`, <b>${fail} SIN aplicar</b>`:''}.
     ${fail?`<ul style="margin:8px 0 0 18px;font-family:var(--mn);font-size:11px">${erroresDetalle.map(e=>`<li>${e}</li>`).join('')}</ul>`:''}
+    ${tzMsg}
     <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
   document.getElementById('zfe3-box').style.display='none';
 }
@@ -683,6 +726,10 @@ async function handleFile(file){
     } else if(parsed.tipo === 'ZFE1'){
       if(!parsed.consumos.length) throw new Error('No se encontró la tabla de "Destinaciones que se Cancelan" en el PDF. ¿Están todas las páginas del despacho?');
       await renderZFE1(parsed);
+    } else if(parsed.tipo === 'TZF5'){
+      if(!parsed.consumos || !parsed.consumos.length) throw new Error('No se encontró la tabla de "Destinaciones que se Cancelan" en el TZF5. ¿Están todas las páginas del despacho?');
+      if(!parsed.items.length) throw new Error('No se encontró ningún ítem en el TZF5.');
+      await renderZFE3(parsed);
     } else if(parsed.tipo === 'ZFE3'){
       if(!parsed.consumos.length) throw new Error('No se encontró la tabla de "Destinaciones que se Cancelan" en el PDF. ¿Están todas las páginas del despacho?');
       await renderZFE3(parsed);

@@ -5557,7 +5557,7 @@ function verET19PorVencer(){
 let termBase = [];       // filas de terminados_base
 let termSalidas = [];    // filas de zfe1_salidas
 let termQty = {};        // cantidades tipeadas en el armado {id: n}
-const TERM_TASA_DEF = {'7310.21.90':12.6,'6302.32.00':20,'6302.22.00':20};
+const TERM_TASA_DEF = {'7310.21.90':12.6,'3923.29.90':18,'6302.32.00':20,'6302.22.00':20};
 function termN(n,d=2){ return (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function termNcm8(ncm){ return String(ncm||'').split('.').slice(0,3).join('.'); }
 function termReservado(id, exceptSalidaId){
@@ -5694,7 +5694,7 @@ function renderTerminados(){
       const estim = fobProm>0 ? `<div style="font-size:12px;margin-top:4px">≈ <b>${termN(fobD/fobProm,1)}</b> despachos más al promedio de tus ZFE1 (FOB USD ${termN(fobProm)} c/u, sobre ${confs.length} confirmado${confs.length!==1?'s':''})</div>` : '';
       return `<div style="border:1px solid var(--bd2);border-radius:var(--rs);padding:10px;margin-bottom:10px">
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div><b class="mono">${escPror(d)}</b> <span class="t2" style="font-size:11px">· oficializado ${escPror(f||'')}</span></div>
+          <div><b class="mono">${escPror(d)}</b> <span class="t2" style="font-size:11px">· oficializado ${escPror(f||'')}</span>${rows[0].origen?`<div class="t2" style="font-size:11px">Cancela: ${escPror(rows[0].origen)}</div>`:''}</div>
           <div style="font-size:12px">Original <b>${termN(orig,0)}</b> · Cancelado <b>${termN(canc,0)}</b> · Reservado <b>${termN(resv,0)}</b> · <span style="font-size:14px">Disponible <b>${termN(saldo,0)}</b></span></div>
         </div>
         <div style="font-size:12px;line-height:1.6;margin-bottom:6px;padding:6px 8px;background:var(--bg3);border-radius:var(--rs)">
