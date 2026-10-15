@@ -4,7 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ALAV COMEX — Cargar despacho por PDF</title>
-<meta name="theme-color" content="#0f1117">
+<meta name="theme-color" content="#f1f3f5">
+<script>
+(function(){try{
+  if(/[?&]embed=1/.test(location.search)) document.documentElement.classList.add('embed');
+  var m=localStorage.getItem('ga_theme_mode')||'auto';var f=parseInt(localStorage.getItem('ga_theme_from')||'19',10),t=parseInt(localStorage.getItem('ga_theme_to')||'7',10);var h=new Date().getHours();
+  var d=m==='dark'||(m==='auto'&&(f>t?(h>=f||h<t):(h>=f&&h<t)));
+  document.documentElement.setAttribute('data-theme',d?'dark':'light');
+}catch(e){}})();
+</script>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -61,6 +69,19 @@ input.narrow{width:80px}
 .spin{width:16px;height:16px;border:2px solid var(--bd2);border-top-color:var(--ac);border-radius:50%;animation:sp 0.8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+
+/* Paleta unificada con la app + modo oscuro + modo embebido (ventana dentro de la app) */
+:root{--bg:#f1f3f5;--bg2:#ffffff;--bg3:#f6f7f9;--bd:#e3e6ea;--bd2:#cdd2d9;--tx:#1f2933;--tx2:#4b5563;--tx3:#7b8494;--ac:#2d5686;--ac2:#1c3a5e}
+html[data-theme="dark"]{color-scheme:dark;--bg:#16191d;--bg2:#1f2429;--bg3:#272d33;--bd:#2f363d;--bd2:#3b444d;--tx:#e4e7eb;--tx2:#a9b1bb;--tx3:#7b8591;--ac:#4f86c6;--ac2:#3b6ea9;
+  --gr:#3fb27f;--gbg:rgba(63,178,127,.13);--gbr:rgba(63,178,127,.4);--yw:#d69a3b;--ybg:rgba(214,154,59,.13);--rd:#e06c6c;--rbg:rgba(224,108,108,.13)}
+body{background:var(--bg)}
+.card{box-shadow:0 1px 0 var(--bd2)}
+.hdr{box-shadow:none;border-bottom:1px solid var(--bd2)}
+input:not([type]),input[type=date],input[type=search]{background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx);font-family:var(--sn);font-size:13px;padding:6px 8px;outline:none}
+html.embed body{background:transparent;min-height:0}
+html.embed .hdr{display:none}
+html.embed .wrap{max-width:none;padding:0}
+html.embed a[href="./index.html"]{display:none}
 @media(max-width:700px){.wrap{padding:10px}.hdr{padding:0 10px}table{font-size:11px}thead th,tbody td{padding:4px}}
 </style>
 </head>
@@ -86,14 +107,14 @@ input.narrow{width:80px}
 <div id="main-content" style="display:none">
 
 <div class="card">
-  <div class="stit">Cargar despacho ZFI6 / ZFI8</div>
+  <div class="stit">Carga PDF</div>
   <h1>📄 Subí el PDF del despacho</h1>
-  <div class="sub">La app detecta sola qué tipo de PDF subiste: <b>ET19</b> (vencimiento a 22 meses), <b>ZFI6/ZFI8</b> (carga de stock nuevo), <b>ZFI5</b> (mercadería terminada → Insumos terminados) o <b>ZFE3</b> (descuenta el stock consumido, leyendo directo la tabla de cancelaciones del PDF — sin necesitar certificado ni carga manual de artículos). No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
+  <div class="sub">La app detecta sola qué tipo de PDF subiste: <b>ET19</b> (vencimiento a 22 meses), <b>ZFI6/ZFI8</b> (carga de stock nuevo), <b>ZFI5</b> (mercadería terminada → Insumos importados) o <b>ZFE3</b> (descuenta el stock consumido, leyendo directo la tabla de cancelaciones del PDF — sin necesitar certificado ni carga manual de artículos). No hace falta PIN — cualquiera de los 3 puede usar esto.</div>
   <div class="drop" id="drop" onclick="document.getElementById('file-inp').click()">
     <input type="file" id="file-inp" accept="application/pdf" onchange="handleFile(this.files[0])"/>
     <div class="ic">📄</div>
     <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
-    <div class="tt2">Formato ARCA — ET19, ZFI6, ZFI8, ZFI5 o ZFE3</div>
+    <div class="tt2">Formato ARCA — ET19, ZFI6, ZFI8, ZFI5, TZF5, ZFE3 o ZFE1</div>
   </div>
 </div>
 
@@ -397,6 +418,7 @@ function parseDespacho(fullPagesText) {
 }
 
 // ── UI: drag & drop ──────────────────────────────────────────────────────────
+
 // Botón "Cargar otro PDF" en cada mensaje de éxito
 new MutationObserver(()=>{
   const sb = document.getElementById('success-box');
@@ -1072,6 +1094,20 @@ function resetTool(){
   document.getElementById('success-box').innerHTML='';
   document.getElementById('file-inp').value='';
 }
+</script>
+<script>
+// ── Modo embebido: avisa la altura a la app y recibe el tema ──
+(function(){
+  if(window.parent === window) return;
+  try{ if(localStorage.getItem('ga_user_label')){ document.getElementById('name-gate').style.display='none'; document.getElementById('main-content').style.display='block'; } }catch(e){}
+  const send = ()=>{ try{ window.parent.postMessage({ga:'h', h:document.documentElement.scrollHeight},'*'); }catch(e){} };
+  new ResizeObserver(send).observe(document.body);
+  window.addEventListener('load', send);
+  window.addEventListener('message', ev=>{
+    if(ev.data && ev.data.ga==='theme') document.documentElement.setAttribute('data-theme', ev.data.t);
+  });
+})();
+
 </script>
 </body>
 </html>
