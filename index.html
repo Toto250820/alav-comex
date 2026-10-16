@@ -1853,6 +1853,10 @@ function showAdmTab(id,btn){
 // ── CALCULADORA ───────────────────────────────────────────────────────────────
 function onCalcChange(){
   const tipo=document.getElementById('calc-tipo').value;
+  const medWrap=document.getElementById('calc-med').parentElement;
+  if(tipo.startsWith('rec:')){ medWrap.style.display='none'; renderCalcReceta(tipo); return; }
+  medWrap.style.display='';
+  recetaCalcSel=null;
   const med=document.getElementById('calc-med').value;
   const qty=parseInt(document.getElementById('calc-qty').value)||0;
   const resEl=document.getElementById('calc-res');
@@ -2190,6 +2194,7 @@ function cancelarSalida(){
 }
 
 function addToSalida(){
+  if(recetaCalcSel){ addRecetaCalcToSalida(); return; }
   if(!calcState){alert('Completá tipo, medida y cantidad en la calculadora.');return;}
   if(!salidaActiva){
     alert('Primero creá una salida en la sección Salidas (botón 📋).');
@@ -2206,6 +2211,103 @@ function addToSalida(){
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.getElementById('sec-sal').classList.add('active');
   document.querySelector('.nb.nsal').classList.add('active');
+  document.getElementById('sal-activa-wrap').style.display='block';
+  document.getElementById('sal-nueva-wrap').style.display='none';
+  renderSalidaLineas();
+}
+
+// ═══════════════════════════════════════════
+// Recetas cargadas (sábanas y otros) como "Tipo" en Stock General
+// ═══════════════════════════════════════════
+let recetaCalcSel = null;
+
+function poblarTipoRecetas(){
+  const sel=document.getElementById('calc-tipo'); if(!sel) return;
+  const cur=sel.value;
+  const viejo=document.getElementById('calc-tipo-rec'); if(viejo) viejo.remove();
+  if(!recetasSabana.length) return;
+  const og=document.createElement('optgroup'); og.id='calc-tipo-rec'; og.label='SÁBANAS Y OTROS (recetas cargadas)';
+  recetasSabana.forEach(r=>{
+    const o=document.createElement('option'); o.value='rec:'+r.id;
+    o.textContent=`${r.articulo_codigo} — ${r.articulo_nombre} (${r.rip})`;
+    og.appendChild(o);
+  });
+  sel.appendChild(og);
+  sel.value=cur;
+}
+
+function stockPorNombreInsumo(nombre){
+  const n=(nombre||'').toLowerCase().trim(); if(!n) return null;
+  let tot=0, hallado=false;
+  const keys=new Set([...Object.keys(STOCK_BASE),...Object.keys(stockExtra)]);
+  keys.forEach(k=>{
+    [...(STOCK_BASE[k]||[]),...(stockExtra[k]||[])].forEach(r=>{
+      if(((r.detalle||'')+'').toLowerCase().includes(n)){ hallado=true; tot+=(r.cantidad-getCancelQty(r,k)); }
+    });
+  });
+  return hallado?tot:null;
+}
+
+function renderCalcReceta(tipo){
+  const resEl=document.getElementById('calc-res');
+  const btnsEl=document.getElementById('calc-btns');
+  const infoEl=document.getElementById('calc-info');
+  const rec=recetasSabana.find(r=>'rec:'+r.id===tipo)||null;
+  const qty=parseFloat(document.getElementById('calc-qty').value)||0;
+  calcState=null; recetaCalcSel=null;
+  if(!rec||!qty){ resEl.innerHTML=''; btnsEl.style.display='none'; infoEl.style.display='none'; return; }
+  recetaCalcSel=rec;
+  let mats=[]; try{ mats=JSON.parse(rec.materiales||'[]'); }catch(e){}
+  const factor=qty/(rec.cantidad_base||1);
+  const memo=sabanasPackingMemoria[rec.id]||{};
+  infoEl.style.display='flex';
+  infoEl.innerHTML=`<div class="ii"><div class="il">Artículo</div><div class="iv">${rec.articulo_codigo} — ${rec.articulo_nombre}</div></div>
+    <div class="ii"><div class="il">Cantidad</div><div class="iv">${qty.toLocaleString('es-AR')} u</div></div>
+    <div class="ii"><div class="il">RIP</div><div class="iv">${rec.rip||'—'}</div></div>
+    <div class="ii"><div class="il">CTZF</div><div class="iv">${rec.ctzf_numero||'—'}</div></div>`;
+  resEl.innerHTML=`<div class="mb"><div class="mh"><span class="mn2">Insumos según receta</span></div>
+    <div class="tw"><table><thead><tr><th>Insumo</th><th>NCM</th><th>Necesario</th><th>Stock encontrado</th><th>Despacho / ítem / subítem</th></tr></thead><tbody>
+    ${mats.map((m,i)=>{
+      const nec=parseFloat((m.cantidad*factor).toFixed(4));
+      const st=stockPorNombreInsumo(m.nombre);
+      const sug=sabanasDespachoMemoria[slugify(rec.articulo_codigo)+'_'+slugify(m.nombre)]||'';
+      const stTxt=st===null?'<span class="t2">—</span>':`<span class="${st>=nec?'':'t2'}" style="${st<nec?'color:var(--rd)':''}">${fmt(st)}</span>`;
+      return `<tr><td>${m.nombre}</td><td class="mono">${m.ncm||'—'}</td><td class="mono">${fmt(nec)} ${m.unidad}</td><td>${stTxt}</td>
+        <td><input id="calc-rec-desp-${i}" value="${sug}" placeholder="ej: 26258ZFI8000020J ít.3 sub.0" style="width:100%;font-family:var(--mn);font-size:11px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></td></tr>`;
+    }).join('')}
+    </tbody></table></div>
+    <div class="fr" style="padding:8px 12px">
+      <div class="ff" style="max-width:110px"><label>Bultos</label><input id="calc-rec-bultos" type="number" value="${memo.bultos??''}"/></div>
+      <div class="ff" style="max-width:130px"><label>Peso neto (kg)</label><input id="calc-rec-pn" type="number" step="0.01" value="${memo.peso_neto_kg??''}"/></div>
+      <div class="ff" style="max-width:130px"><label>Peso bruto (kg)</label><input id="calc-rec-pb" type="number" step="0.01" value="${memo.peso_bruto_kg??''}"/></div>
+    </div></div>`;
+  btnsEl.style.display='flex';
+}
+
+async function addRecetaCalcToSalida(){
+  if(!salidaActiva){ alert('Primero creá una salida en la sección Salidas.'); return; }
+  const rec=recetaCalcSel; if(!rec) return;
+  const qty=parseFloat(document.getElementById('calc-qty').value)||0;
+  if(qty<=0){ alert('Poné la cantidad.'); return; }
+  const despachos=[]; let i=0;
+  while(document.getElementById('calc-rec-desp-'+i)){ despachos.push(document.getElementById('calc-rec-desp-'+i).value); i++; }
+  // Reutiliza el alta de línea de sábana de la salida
+  recetaSabanaLineaSel=rec;
+  document.getElementById('sab-linea-codigo').value=rec.articulo_codigo;
+  document.getElementById('sab-linea-cantidad').value=qty;
+  document.getElementById('sab-linea-bultos').value=document.getElementById('calc-rec-bultos').value;
+  document.getElementById('sab-linea-peso-neto').value=document.getElementById('calc-rec-pn').value;
+  document.getElementById('sab-linea-peso-bruto').value=document.getElementById('calc-rec-pb').value;
+  calcularInsumosLineaSabana();
+  despachos.forEach((d,j)=>{ const el=document.getElementById('sab-linea-desp-'+j); if(el) el.value=d; });
+  await agregarLineaSabanaASalida();
+  recetaCalcSel=null;
+  document.getElementById('calc-tipo').value=''; document.getElementById('calc-qty').value='';
+  onCalcChange();
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sec-sal').classList.add('active');
+  const nb=document.querySelector('.nb.nsal'); if(nb) nb.classList.add('active');
   document.getElementById('sal-activa-wrap').style.display='block';
   document.getElementById('sal-nueva-wrap').style.display='none';
   renderSalidaLineas();
@@ -7213,6 +7315,7 @@ async function loadRecetasSabana(){
     const rows = await sbFetch('ctzf_sabanas?select=*&order=articulo_codigo.asc', {method:'GET', headers:{'Prefer':''}});
     recetasSabana = rows || [];
     renderRecetasSabana();
+    poblarTipoRecetas();
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de recetas (¿corriste el SQL en Supabase?).</div>';
   }
@@ -7658,6 +7761,7 @@ load();
 // Cargar desde Supabase después de que el DOM esté listo
 if(document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setTimeout(initFromSupabase, 500));
+  document.addEventListener('DOMContentLoaded', () => setTimeout(()=>{ try{ loadSabanasPackingMemoria(); loadSabanasDespachoMemoria(); loadRecetasSabana(); }catch(e){} }, 2500));
 } else {
   setTimeout(initFromSupabase, 500);
 }
