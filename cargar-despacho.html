@@ -609,11 +609,13 @@ async function renderZFE3(p){
 
   const tbody = document.getElementById('zfe3-tbody');
   const noEncontrados = [];
+  window.pendientesZ = [];
   tbody.innerHTML = p.consumos.map((c,i)=>{
     const id = c.despacho+'_'+c.item+'_'+c.subitem;
     const row = stockById[id];
     if(!row){
       noEncontrados.push(id);
+      window.pendientesZ.push({stock_id:id, despacho:c.despacho, item:c.item, subitem:c.subitem, cantidad:c.cantidad});
       return `<tr class="warn">
         <td style="text-align:center"><input type="checkbox" id="zi-${i}" disabled></td>
         <td class="mono">${id}</td>
@@ -671,6 +673,7 @@ async function confirmarZFE3(){
       if(!result || !result.length){
         fail++;
         erroresDetalle.push(`${id}: no se encontró ninguna fila con ese id — no se descontó nada (revisar despacho/ítem/subítem)`);
+        { const cc=p.consumos[i]; (window.pendientesZ=window.pendientesZ||[]).push({stock_id:id, despacho:cc.despacho, item:cc.item, subitem:cc.subitem, cantidad:cc.cantidad}); }
       } else if(Math.abs((result[0].cancel_qty ?? NaN) - nuevoCancelQty) > 0.001){
         fail++;
         erroresDetalle.push(`${id}: la fila existe pero el valor final (${result[0].cancel_qty}) no coincide con lo esperado (${nuevoCancelQty.toFixed(2)})`);
@@ -686,6 +689,22 @@ async function confirmarZFE3(){
       body: JSON.stringify({despacho:p.despacho, fecha:p.fecha, procesado_por: localStorage.getItem('ga_user_label')||'alguien', items_afectados: ok, numero_salida: document.getElementById('zfe3-numero-salida').value.trim()||null})
     });
   }catch(e){ /* si la tabla no existe, no bloqueamos el resto */ }
+
+  // Lo que NO se pudo descontar queda registrado para resolverlo después (Stock → Pendientes de descuento)
+  let pendMsg = '';
+  const pend = (window.pendientesZ||[]);
+  if(pend.length){
+    try{
+      await sbFetch('descuentos_pendientes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify(pend.map(x=>({id: p.despacho+'|'+x.stock_id, pdf_nro:p.despacho, pdf_tipo:p.tipo, pdf_fecha:p.fecha,
+          stock_id:x.stock_id, despacho:x.despacho, item:x.item, subitem:x.subitem, cantidad:x.cantidad, estado:'pendiente',
+          creado_por: localStorage.getItem('ga_user_label')||'alguien', creado_en:new Date().toISOString()})))});
+      pendMsg = `<br>📌 ${pend.length} ítem${pend.length!==1?'s':''} sin descontar quedaron anotados en <b>Stock → Pendientes de descuento</b>: cuando cargues esos despachos, ahí los descontás con un botón.`;
+    }catch(e){
+      pendMsg = `<br>⚠️ No pude anotar los ${pend.length} pendientes (${e.message})${/descuentos_pendientes|schema cache|does not exist/i.test(e.message)?' — falta correr descuentos_pendientes_setup.sql en Supabase':''}. Anotalos a mano: ${pend.map(x=>x.stock_id).join(', ')}`;
+    }
+  }
+  window.pendientesZ = [];
 
   let tzMsg = '';
   if(p.tipo === 'TZF5'){
@@ -711,7 +730,7 @@ async function confirmarZFE3(){
   document.getElementById('success-box').innerHTML = `<div class="${fail?'err':'ok'}">
     ${fail? '⚠️' : '✓'} ${p.tipo==='TZF5'?'TZF5':'ZFE3'} <b>${p.despacho}</b>: ${ok} ítem${ok!==1?'s':''} descontado${ok!==1?'s':''} y verificado${ok!==1?'s':''} de verdad${fail?`, <b>${fail} SIN aplicar</b>`:''}.
     ${fail?`<ul style="margin:8px 0 0 18px;font-family:var(--mn);font-size:11px">${erroresDetalle.map(e=>`<li>${e}</li>`).join('')}</ul>`:''}
-    ${tzMsg}
+    ${tzMsg}${pendMsg}
     <br><a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
   document.getElementById('zfe3-box').style.display='none';
 }

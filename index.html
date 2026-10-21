@@ -219,6 +219,7 @@ html[data-theme="dark"]{
       <button class="nb" onclick="solicitarPinYAbrir('adm-stock')">Cargar</button>
       <button class="nb" onclick="solicitarPinYAbrir('adm-ajuste')">Actualizar</button>
       <button class="nb nimp" onclick="cerrarSubmenusNav();showSec('insimp',document.querySelector('.nb.nimp'))">Insumos importados</button>
+      <button class="nb npend" onclick="cerrarSubmenusNav();showSec('pend',document.querySelector('.nb.npend'))">Pendientes de descuento <span id="pend-badge" style="display:none;background:var(--rd);color:#fff;border-radius:9px;padding:0 6px;font-size:10px;margin-left:4px"></span></button>
     </div>
 
     <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">Compras ▾</button>
@@ -607,6 +608,18 @@ html[data-theme="dark"]{
 </div>
 
 <!-- ET19: VINCULAR -->
+<div id="sec-pend" class="sec">
+  <div class="stit">Pendientes de descuento — ítems de PDF que no se encontraron en el stock</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Son los despachos que venían en un ZFE3 / TZF5 y no estaban cargados, así que no se descontaron. Cargá esos despachos en el stock y tocá "Reintentar": se descuentan solos.</div>
+    <button class="btn btnp" onclick="reintentarPendientes()">↻ Reintentar descontar</button>
+    <button class="btn" style="margin-left:6px" onclick="imprimirPendientes()">🖨 Imprimir lista</button>
+    <label style="margin-left:10px;font-size:12px"><input type="checkbox" id="pend-ver-res" onchange="renderPendientes()"/> ver también los resueltos</label>
+    <div id="pend-msg" style="font-size:12px;margin-top:8px"></div>
+    <div id="pend-lista" style="margin-top:8px"></div>
+  </div>
+</div>
+
 <div id="sec-insimp" class="sec">
   <div class="stit">Insumos importados — ZFI5 cargados, stock y consumos</div>
   <div class="card">
@@ -1844,6 +1857,7 @@ function showSec(id,btn){
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
   if(id==='term' || id==='insimp') loadTerminados();
+  if(id==='pend') loadPendientes();
   if(id==='comprasreal') loadOrdenesCompra();
   if(id==='cargapdf') abrirCargaPdf();
   if(id==='et19vinc') initVincularET19();
@@ -2238,6 +2252,81 @@ function addToSalida(){
   document.getElementById('sal-activa-wrap').style.display='block';
   document.getElementById('sal-nueva-wrap').style.display='none';
   renderSalidaLineas();
+}
+
+// ═══════════════════════════════════════════
+// PENDIENTES DE DESCUENTO (ítems de PDF que no se encontraron en el stock)
+// ═══════════════════════════════════════════
+let pendientesDesc = [];
+async function loadPendientes(){
+  try{
+    pendientesDesc = await sbFetch('descuentos_pendientes?select=*&order=creado_en.desc&limit=1000', {method:'GET', headers:{'Prefer':''}}) || [];
+  }catch(e){
+    pendientesDesc = [];
+    const m=document.getElementById('pend-msg');
+    if(m) m.innerHTML='<span style="color:var(--rd)">No pude leer la tabla (¿corriste descuentos_pendientes_setup.sql en Supabase?)</span>';
+  }
+  actualizarBadgePendientes();
+  renderPendientes();
+}
+function actualizarBadgePendientes(){
+  const n=pendientesDesc.filter(x=>x.estado==='pendiente').length;
+  const b=document.getElementById('pend-badge'); if(!b) return;
+  b.textContent=n; b.style.display=n?'inline-block':'none';
+}
+function renderPendientes(){
+  const el=document.getElementById('pend-lista'); if(!el) return;
+  const ver=document.getElementById('pend-ver-res')?.checked;
+  const lista=pendientesDesc.filter(x=>ver||x.estado==='pendiente');
+  if(!lista.length){ el.innerHTML='<div class="empty">No hay pendientes. Todo lo que trajeron los PDF se descontó. ✓</div>'; return; }
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>PDF</th><th>Despacho que falta</th><th>Ít.</th><th>Sub.</th><th>A descontar</th><th>Fecha PDF</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${lista.map(x=>`<tr class="${x.estado==='pendiente'?'':'t2'}">
+    <td class="mono" style="font-size:11px">${x.pdf_tipo||''} ${x.pdf_nro||''}</td>
+    <td class="mono">${x.despacho}</td><td style="text-align:center">${x.item}</td><td style="text-align:center">${x.subitem}</td>
+    <td class="mono">${fmt(x.cantidad)}</td><td class="t2">${x.pdf_fecha||''}</td>
+    <td>${x.estado==='pendiente'?'<span class="bdg br">pendiente</span>':'<span class="bdg bg">resuelto</span>'}</td>
+    <td>${x.estado==='pendiente'?`<button class="btn" style="padding:2px 8px;font-size:10px" title="Ya lo descontaste a mano" onclick="resolverPendiente('${x.id.replace(/'/g,"\\'")}')">Ya está</button>`:''}</td>
+  </tr>`).join('')}</tbody></table></div>`;
+}
+async function resolverPendiente(id){
+  if(!confirm('¿Marcar como resuelto sin descontar? (usalo si ya lo ajustaste a mano)')) return;
+  try{ await sbFetch('descuentos_pendientes?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({estado:'resuelto',resuelto_en:new Date().toISOString()})}); }catch(e){ alert('Error: '+e.message); }
+  loadPendientes();
+}
+async function reintentarPendientes(){
+  const msg=document.getElementById('pend-msg');
+  const pend=pendientesDesc.filter(x=>x.estado==='pendiente');
+  if(!pend.length){ msg.textContent='No hay nada pendiente.'; return; }
+  msg.textContent='Buscando en el stock...';
+  let ok=0, sigue=0; const err=[];
+  let rows=[];
+  try{
+    const ids=[...new Set(pend.map(x=>x.stock_id))].join(',');
+    rows = await sbFetch('stock_base?select=id,cantidad,cancel_qty&id=in.('+encodeURIComponent(ids).replace(/%2C/g,',')+')', {method:'GET', headers:{'Prefer':''}}) || [];
+  }catch(e){ msg.innerHTML='<span style="color:var(--rd)">Error consultando el stock: '+e.message+'</span>'; return; }
+  const byId={}; rows.forEach(r=>byId[r.id]=r);
+  for(const x of pend){
+    const r=byId[x.stock_id];
+    if(!r){ sigue++; continue; }
+    const nuevo=(parseFloat(r.cancel_qty)||0)+parseFloat(x.cantidad);
+    try{
+      const res=await sbFetch('stock_base?id=eq.'+encodeURIComponent(x.stock_id),{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({cancel_qty:nuevo})});
+      if(res && res.length && Math.abs((res[0].cancel_qty??NaN)-nuevo)<0.001){
+        r.cancel_qty=nuevo; // por si el mismo ítem aparece en más de un pendiente
+        await sbFetch('descuentos_pendientes?id=eq.'+encodeURIComponent(x.id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({estado:'resuelto',resuelto_en:new Date().toISOString()})});
+        ok++;
+      } else { err.push(x.stock_id+': no se pudo verificar el descuento'); }
+    }catch(e){ err.push(x.stock_id+': '+e.message); }
+  }
+  msg.innerHTML=`✓ ${ok} descontado${ok!==1?'s':''}. ${sigue?`${sigue} sigue${sigue!==1?'n':''} sin aparecer en el stock (cargá ese despacho primero). `:''}${err.length?`<br><span style="color:var(--rd)">⚠ ${err.join('<br>')}</span>`:''}`;
+  if(ok){ try{ await loadStockFromSupabase(); }catch(_){} }
+  loadPendientes();
+}
+function imprimirPendientes(){
+  const l=pendientesDesc.filter(x=>x.estado==='pendiente');
+  const w=window.open('','_blank');
+  w.document.write('<html><body style="font-family:Arial;font-size:12px"><h3>Pendientes de descuento</h3><table border="1" cellspacing="0" cellpadding="4"><tr><th>PDF</th><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cantidad</th></tr>'+l.map(x=>`<tr><td>${x.pdf_tipo||''} ${x.pdf_nro||''}</td><td>${x.despacho}</td><td>${x.item}</td><td>${x.subitem}</td><td>${x.cantidad}</td></tr>`).join('')+'</table></body></html>');
+  w.document.close(); w.print();
 }
 
 // ═══════════════════════════════════════════
@@ -7804,7 +7893,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'ZFE1', cargapdf:'Carga PDF', insimp:'Insumos importados', comprasreal:'Compras realizadas', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'ZFE1', cargapdf:'Carga PDF', insimp:'Insumos importados', pend:'Pendientes de descuento', comprasreal:'Compras realizadas', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;
@@ -7913,7 +8002,7 @@ load();
 // Cargar desde Supabase después de que el DOM esté listo
 if(document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setTimeout(initFromSupabase, 500));
-  document.addEventListener('DOMContentLoaded', () => setTimeout(()=>{ try{ loadSabanasPackingMemoria(); loadSabanasDespachoMemoria(); loadSabanasInsumoCat(); loadRecetasSabana(); }catch(e){} }, 2500));
+  document.addEventListener('DOMContentLoaded', () => setTimeout(()=>{ try{ loadSabanasPackingMemoria(); loadSabanasDespachoMemoria(); loadSabanasInsumoCat(); loadRecetasSabana(); loadPendientes(); }catch(e){} }, 2500));
 } else {
   setTimeout(initFromSupabase, 500);
 }
