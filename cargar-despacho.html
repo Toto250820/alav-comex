@@ -178,6 +178,7 @@ html.embed a[href="./index.html"]{display:none}
 </div>
 
 <datalist id="zfi5-tipos-dl-static"><option value="Latas"><option value="Sábanas"><option value="Fundas de almohada"><option value="Bolsas"><option value="Otros"></datalist>
+<div id="rev-box"></div>
 <div id="zfe3-box" style="display:none">
   <div class="card">
     <div class="stit">ZFE3 — Descuento de stock</div>
@@ -211,6 +212,7 @@ html.embed a[href="./index.html"]{display:none}
     <div class="actions">
       <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
       <button class="btn btng" id="btn-confirm-zfe3" onclick="confirmarZFE3()" disabled>✓ Confirmar y descontar stock</button>
+      <button class="btn btnd" id="btn-revertir-zfe3" onclick="abrirReversion()" style="display:none;margin-left:8px" title="Devuelve al stock lo que descontó este PDF, para volver a subirlo limpio">↩ Revertir el descuento de este PDF</button>
       <button class="btn" id="btn-registrar-zfe3" onclick="registrarSoloZFE3()" style="display:none;margin-left:8px" title="No toca el stock: solo guarda el detalle de este PDF en Control de descuentos">📋 Solo registrar el detalle (sin descontar)</button>
     </div>
   </div>
@@ -595,13 +597,14 @@ async function renderZFE3(p){
   document.getElementById('zf-count').textContent = p.consumos.length;
 
   const dupBox = document.getElementById('zf-dup-warning');
-  dupBox.innerHTML = ''; window.zPrevSalida=''; { const rb=document.getElementById('btn-registrar-zfe3'); if(rb) rb.style.display='none'; }
+  dupBox.innerHTML = ''; window.zPrevSalida=''; { const rb=document.getElementById('btn-registrar-zfe3'); if(rb) rb.style.display='none'; const rv=document.getElementById('btn-revertir-zfe3'); if(rv) rv.style.display='none'; const rbx=document.getElementById('rev-box'); if(rbx) rbx.innerHTML=''; }
   try{
     const prev = await sbFetch('zfe3_procesados?select=*&despacho=eq.'+encodeURIComponent(p.despacho), {method:'GET', headers:{'Prefer':''}});
     if(prev && prev.length){
       const r = prev[0];
       window.zPrevSalida = r.numero_salida||'';
       document.getElementById('btn-registrar-zfe3').style.display='inline-block';
+      document.getElementById('btn-revertir-zfe3').style.display='inline-block';
       dupBox.innerHTML = `<div class="dupwarn">⚠️ Este despacho (${p.despacho}) ya fue procesado el ${new Date(r.procesado_en).toLocaleString('es-AR')} por ${r.procesado_por}. Si confirmás igual, el stock se va a descontar OTRA VEZ — asegurate de que no sea un duplicado antes de continuar.</div>`;
     }
   }catch(e){ /* si la tabla no existe todavía, seguimos sin bloquear */ }
@@ -664,6 +667,69 @@ async function renderZFE3(p){
 }
 
 // Para PDF ya procesados antes: NO descuenta nada, solo arma el registro (qué está en el stock y qué no)
+// ── REVERSIÓN: devuelve al stock lo que descontó un PDF ya procesado, para poder volver a subirlo limpio ──
+async function abrirReversion(){
+  const p = currentParsed; if(!p) return;
+  const box = document.getElementById('rev-box');
+  box.innerHTML = '<div class="card">Leyendo el stock...</div>';
+  const ids = [...new Set(p.consumos.map(c=>c.despacho+'_'+c.item+'_'+c.subitem))];
+  const byId = {};
+  try{
+    for(let k=0;k<ids.length;k+=100){
+      const chunk = ids.slice(k,k+100).join(',');
+      const rows = await sbFetch('stock_base?select=id,cantidad,cancel_qty,producto&id=in.('+encodeURIComponent(chunk).replace(/%2C/g,',')+')',{method:'GET',headers:{'Prefer':''}}) || [];
+      rows.forEach(r=>byId[r.id]=r);
+    }
+  }catch(e){ box.innerHTML = `<div class="err">⚠️ ${e.message}</div>`; return; }
+  window.revData = {byId};
+  box.innerHTML = `<div class="card" style="border:2px solid var(--rd)">
+    <div style="font-weight:600;color:var(--rd);margin-bottom:6px">↩ Revertir el descuento de ${p.tipo} ${p.despacho}</div>
+    <div style="font-size:12px;margin-bottom:8px">Por cada ítem elegí <b>cuántas veces</b> se descontó este PDF: <b>1</b> si se descontó una sola vez, <b>2</b> si se descontó dos veces (por ejemplo, un despacho que ya estaba cargado cuando subiste el PDF la primera vez y de nuevo la segunda), <b>0</b> si no querés tocarlo. El stock nunca baja de cero descontado.</div>
+    <div class="tw" style="overflow-x:auto"><table><thead><tr><th>Despacho / ítem</th><th>Cantidad del PDF</th><th>Descontado hoy</th><th>Veces a devolver</th><th>Quedaría descontado</th></tr></thead><tbody>
+    ${p.consumos.map((c,i)=>{
+      const id=c.despacho+'_'+c.item+'_'+c.subitem, r=byId[id];
+      if(!r) return `<tr class="warn"><td class="mono">${id}</td><td class="mono">${c.cantidad}</td><td colspan="3" style="color:var(--rd)">NO ESTÁ EN EL STOCK — no hay nada que devolver</td></tr>`;
+      return `<tr><td class="mono">${id}</td><td class="mono">${c.cantidad}</td><td class="mono">${(parseFloat(r.cancel_qty)||0).toFixed(2)}</td>
+        <td><select id="rv-${i}" onchange="rvCalc(${i})"><option>0</option><option selected>1</option><option>2</option><option>3</option></select></td>
+        <td class="mono" id="rvq-${i}"></td></tr>`;}).join('')}
+    </tbody></table></div>
+    <div style="margin-top:10px"><button class="btn btnd" id="btn-aplicar-rev" onclick="aplicarReversion()">Aplicar reversión</button>
+    <span style="font-size:11px;color:var(--tx3);margin-left:8px">Después de esto se borra el registro del PDF y lo podés volver a subir con "Confirmar y descontar".</span></div>
+    <div id="rev-res" style="margin-top:8px;font-size:12px"></div></div>`;
+  p.consumos.forEach((c,i)=>{ if(document.getElementById('rv-'+i)) rvCalc(i); });
+}
+function rvCalc(i){
+  const p=currentParsed, c=p.consumos[i], r=window.revData.byId[c.despacho+'_'+c.item+'_'+c.subitem];
+  const n=parseInt(document.getElementById('rv-'+i).value)||0;
+  const nuevo=Math.max(0,(parseFloat(r.cancel_qty)||0)-n*c.cantidad);
+  document.getElementById('rvq-'+i).textContent=nuevo.toFixed(2);
+}
+async function aplicarReversion(){
+  const p=currentParsed; if(!p) return;
+  if(!confirm('¿Aplicar la reversión? Esto devuelve stock a los despachos.')) return;
+  const btn=document.getElementById('btn-aplicar-rev'); btn.disabled=true;
+  let ok=0; const err=[]; const hechos={};
+  for(let i=0;i<p.consumos.length;i++){
+    const sel=document.getElementById('rv-'+i); if(!sel) continue;
+    const n=parseInt(sel.value)||0; if(!n) continue;
+    const c=p.consumos[i], id=c.despacho+'_'+c.item+'_'+c.subitem;
+    const base = (hechos[id]!==undefined) ? hechos[id] : (parseFloat(window.revData.byId[id].cancel_qty)||0);
+    const nuevo = Math.max(0, base - n*c.cantidad);
+    try{
+      const res = await sbFetch('stock_base?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({cancel_qty:nuevo})});
+      if(res && res.length && Math.abs((res[0].cancel_qty??NaN)-nuevo)<0.001){ hechos[id]=nuevo; ok++; } else err.push(id+': no se pudo verificar');
+    }catch(e){ err.push(id+': '+e.message); }
+  }
+  if(!err.length){
+    try{ await sbFetch('zfe3_procesados?despacho=eq.'+encodeURIComponent(p.despacho),{method:'DELETE',headers:{'Prefer':'return=minimal'}}); }catch(e){}
+    try{ await sbFetch('descuentos_pendientes?pdf_nro=eq.'+encodeURIComponent(p.despacho),{method:'DELETE',headers:{'Prefer':'return=minimal'}}); }catch(e){}
+  }
+  document.getElementById('rev-res').innerHTML = err.length
+    ? `<span style="color:var(--rd)">⚠ ${ok} devueltos, ${err.length} con error:<br>${err.join('<br>')}</span>`
+    : `<span style="color:var(--gr)">✓ ${ok} ítems devueltos al stock y registro del PDF borrado. Ya podés volver a subir el PDF (volvé a elegirlo) y confirmarlo limpio.</span>`;
+  btn.disabled=false;
+}
+
 async function registrarLote(files){
   const out = document.getElementById('lote-res');
   if(!files || !files.length){ out.innerHTML='Elegí al menos un PDF.'; return; }
