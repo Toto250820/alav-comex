@@ -152,7 +152,7 @@ input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ac
 .toast{background:var(--ink);color:#fff;border:1px solid var(--yw);font-size:12px;padding:9px 16px;border-radius:var(--rs);box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90vw;text-align:center}
 #name-modal{display:none;position:fixed;inset:0;background:rgba(23,33,44,.75);z-index:998;align-items:center;justify-content:center}
 /* Chat interno */
-#chat-fab{position:fixed;bottom:18px;right:18px;z-index:900;width:52px;height:52px;border-radius:50%;background:var(--ink);color:#fff;border:2px solid var(--ac);font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+#chat-fab{touch-action:none;user-select:none;position:fixed;bottom:18px;right:18px;z-index:900;width:52px;height:52px;border-radius:50%;background:var(--ink);color:#fff;border:2px solid var(--ac);font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
 #chat-fab:hover{background:var(--ac2)}
 #chat-unread{position:absolute;top:-4px;right:-4px;background:var(--rd);color:#fff;font-family:var(--mn);font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--bg)}
 #chat-drawer{display:none;position:fixed;bottom:80px;right:18px;z-index:900;width:340px;max-width:calc(100vw - 36px);height:460px;max-height:calc(100vh - 120px);background:var(--bg2);border:1px solid var(--bd2);border-radius:var(--r);box-shadow:0 8px 32px rgba(0,0,0,.35);flex-direction:column;overflow:hidden}
@@ -219,7 +219,7 @@ html[data-theme="dark"]{
       <button class="nb" onclick="solicitarPinYAbrir('adm-stock')">Cargar</button>
       <button class="nb" onclick="solicitarPinYAbrir('adm-ajuste')">Actualizar</button>
       <button class="nb nimp" onclick="cerrarSubmenusNav();showSec('insimp',document.querySelector('.nb.nimp'))">Insumos importados</button>
-      <button class="nb npend" onclick="cerrarSubmenusNav();showSec('pend',document.querySelector('.nb.npend'))">Pendientes de descuento <span id="pend-badge" style="display:none;background:var(--rd);color:#fff;border-radius:9px;padding:0 6px;font-size:10px;margin-left:4px"></span></button>
+      <button class="nb npend" onclick="cerrarSubmenusNav();showSec('pend',document.querySelector('.nb.npend'))">Control de descuentos <span id="pend-badge" style="display:none;background:var(--rd);color:#fff;border-radius:9px;padding:0 6px;font-size:10px;margin-left:4px"></span></button>
     </div>
 
     <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">Compras ▾</button>
@@ -609,12 +609,12 @@ html[data-theme="dark"]{
 
 <!-- ET19: VINCULAR -->
 <div id="sec-pend" class="sec">
-  <div class="stit">Pendientes de descuento — ítems de PDF que no se encontraron en el stock</div>
+  <div class="stit">Control de descuentos — qué descontó cada salida y qué no se encontró</div>
   <div class="card">
-    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Son los despachos que venían en un ZFE3 / TZF5 y no estaban cargados, así que no se descontaron. Cargá esos despachos en el stock y tocá "Reintentar": se descuentan solos.</div>
-    <button class="btn btnp" onclick="reintentarPendientes()">↻ Reintentar descontar</button>
-    <button class="btn" style="margin-left:6px" onclick="imprimirPendientes()">🖨 Imprimir lista</button>
-    <label style="margin-left:10px;font-size:12px"><input type="checkbox" id="pend-ver-res" onchange="renderPendientes()"/> ver también los resueltos</label>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Acá figuran todas las salidas (las que cargás en la app y las que subís por PDF) con el detalle completo: lo que se <b>descontó</b> y lo que <b>no se encontró</b> en el stock. Cuando cargues los despachos que faltan, tocá "Reintentar" y se descuentan solos.</div>
+    <button class="btn btnp" onclick="reintentarPendientes()">↻ Reintentar descontar los no encontrados</button>
+    <button class="btn" style="margin-left:6px" onclick="imprimirPendientes()">🖨 Imprimir no encontrados</button>
+    <select id="pend-filtro" onchange="renderPendientes()" style="width:auto;margin-left:10px"><option value="todo">Ver todo</option><option value="faltan">Solo salidas con faltantes</option></select>
     <div id="pend-msg" style="font-size:12px;margin-top:8px"></div>
     <div id="pend-lista" style="margin-top:8px"></div>
   </div>
@@ -1569,8 +1569,40 @@ function toggleChat(){
     renderChat();
     document.getElementById('chat-inp').focus();
     pedirPermisoNotificaciones();
+    if(window.posChatDrawer) window.posChatDrawer();
   }
 }
+
+// El globito del chat se puede arrastrar a cualquier lado (se acuerda de dónde lo dejaste)
+(function(){
+  const fab=document.getElementById('chat-fab'); if(!fab) return;
+  let start=null, moved=false;
+  function clamp(x,y){ return [Math.min(Math.max(0,x),innerWidth-fab.offsetWidth), Math.min(Math.max(0,y),innerHeight-fab.offsetHeight)]; }
+  function posDrawer(){
+    const d=document.getElementById('chat-drawer'); if(!d) return;
+    const r=fab.getBoundingClientRect();
+    const dw=Math.min(340,innerWidth-16), dh=Math.min(460,innerHeight-120);
+    let left=Math.min(Math.max(8,r.right-dw),innerWidth-dw-8);
+    let top=(r.top>innerHeight/2)?r.top-dh-8:r.bottom+8;
+    top=Math.min(Math.max(8,top),innerHeight-dh-8);
+    d.style.left=left+'px'; d.style.top=top+'px'; d.style.right='auto'; d.style.bottom='auto';
+  }
+  window.posChatDrawer=posDrawer;
+  function setPos(x,y){ [x,y]=clamp(x,y); fab.style.left=x+'px'; fab.style.top=y+'px'; fab.style.right='auto'; fab.style.bottom='auto'; posDrawer(); }
+  try{ const sv=JSON.parse(localStorage.getItem('ga_chat_pos')||'null'); if(sv) setPos(sv.x,sv.y); }catch(e){}
+  fab.addEventListener('pointerdown',e=>{ const r=fab.getBoundingClientRect(); start={x:e.clientX,y:e.clientY,ox:e.clientX-r.left,oy:e.clientY-r.top}; moved=false; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
+  fab.addEventListener('pointermove',e=>{
+    if(!start) return;
+    if(!moved && Math.hypot(e.clientX-start.x,e.clientY-start.y)<6) return;
+    moved=true; setPos(e.clientX-start.ox, e.clientY-start.oy);
+  });
+  fab.addEventListener('pointerup',()=>{
+    if(start && moved){ const r=fab.getBoundingClientRect(); try{localStorage.setItem('ga_chat_pos',JSON.stringify({x:r.left,y:r.top}));}catch(_){} }
+    start=null;
+  });
+  fab.addEventListener('click',e=>{ if(moved){ e.stopImmediatePropagation(); e.preventDefault(); moved=false; } },true);
+  window.addEventListener('resize',()=>{ const r=fab.getBoundingClientRect(); if(fab.style.left) setPos(r.left,r.top); });
+})();
 
 setInterval(loadChatFromSupabase, 10000);
 setTimeout(loadChatFromSupabase, 2000);
@@ -2260,7 +2292,7 @@ function addToSalida(){
 let pendientesDesc = [];
 async function loadPendientes(){
   try{
-    pendientesDesc = await sbFetch('descuentos_pendientes?select=*&order=creado_en.desc&limit=1000', {method:'GET', headers:{'Prefer':''}}) || [];
+    pendientesDesc = await sbFetch('descuentos_pendientes?select=*&order=creado_en.desc&limit=5000', {method:'GET', headers:{'Prefer':''}}) || [];
   }catch(e){
     pendientesDesc = [];
     const m=document.getElementById('pend-msg');
@@ -2274,19 +2306,41 @@ function actualizarBadgePendientes(){
   const b=document.getElementById('pend-badge'); if(!b) return;
   b.textContent=n; b.style.display=n?'inline-block':'none';
 }
+function _tablaDesc(filas){
+  return `<div class="tw"><table><thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${filas.map(x=>{
+    const bad = x.estado==='pendiente';
+    const est = bad?'<span class="bdg br">NO ENCONTRADO</span>':x.estado==='resuelto'?'<span class="bdg bg">descontado después</span>':x.estado==='omitido'?'<span class="bdg">omitido</span>':'<span class="bdg bg">✓ descontado</span>';
+    return `<tr class="${bad?'warn':''}"><td class="mono">${x.despacho}</td><td style="text-align:center">${x.item}</td><td style="text-align:center">${x.subitem}</td>
+      <td class="t2" style="font-size:11px">${x.producto||''}</td><td class="mono">${fmt(x.cantidad)}</td><td>${est}</td>
+      <td>${bad?`<button class="btn" style="padding:2px 8px;font-size:10px" title="Ya lo descontaste a mano" onclick="resolverPendiente('${String(x.id).replace(/'/g,"\\'")}')">Ya está</button>`:''}</td></tr>`;}).join('')}
+  </tbody></table></div>`;
+}
 function renderPendientes(){
   const el=document.getElementById('pend-lista'); if(!el) return;
-  const ver=document.getElementById('pend-ver-res')?.checked;
-  const lista=pendientesDesc.filter(x=>ver||x.estado==='pendiente');
-  if(!lista.length){ el.innerHTML='<div class="empty">No hay pendientes. Todo lo que trajeron los PDF se descontó. ✓</div>'; return; }
-  el.innerHTML=`<div class="tw"><table><thead><tr><th>PDF</th><th>Despacho que falta</th><th>Ít.</th><th>Sub.</th><th>A descontar</th><th>Fecha PDF</th><th>Estado</th><th></th></tr></thead><tbody>
-  ${lista.map(x=>`<tr class="${x.estado==='pendiente'?'':'t2'}">
-    <td class="mono" style="font-size:11px">${x.pdf_tipo||''} ${x.pdf_nro||''}</td>
-    <td class="mono">${x.despacho}</td><td style="text-align:center">${x.item}</td><td style="text-align:center">${x.subitem}</td>
-    <td class="mono">${fmt(x.cantidad)}</td><td class="t2">${x.pdf_fecha||''}</td>
-    <td>${x.estado==='pendiente'?'<span class="bdg br">pendiente</span>':'<span class="bdg bg">resuelto</span>'}</td>
-    <td>${x.estado==='pendiente'?`<button class="btn" style="padding:2px 8px;font-size:10px" title="Ya lo descontaste a mano" onclick="resolverPendiente('${x.id.replace(/'/g,"\\'")}')">Ya está</button>`:''}</td>
-  </tr>`).join('')}</tbody></table></div>`;
+  const solo=document.getElementById('pend-filtro')?.value==='faltan';
+  const grupos={};
+  pendientesDesc.forEach(x=>{ (grupos[x.pdf_nro]=grupos[x.pdf_nro]||{nro:x.pdf_nro,tipo:x.pdf_tipo,fecha:x.pdf_fecha,sal:x.numero_salida,ts:x.creado_en,filas:[]}).filas.push(x); });
+  const bloques=[];
+  Object.values(grupos).forEach(g=>{
+    const falt=g.filas.filter(f=>f.estado==='pendiente').length, okc=g.filas.filter(f=>f.estado==='descontado'||f.estado==='resuelto').length;
+    bloques.push({ts:g.ts||'', falt, html:`<details style="margin-bottom:8px;border:1px solid var(--bd2);border-radius:var(--rs);padding:8px 10px" ${falt?'open':''}>
+      <summary style="cursor:pointer;font-size:13px"><b>${g.tipo||'PDF'}</b> <span class="mono">${g.nro}</span> ${g.sal?`· Salida <b>${g.sal}</b>`:''} <span class="t2">${g.fecha||''}</span>
+        — <span style="color:var(--gn,#2e7d32)">✓ ${okc} descontados</span> ${falt?`· <span style="color:var(--rd);font-weight:600">⚠ ${falt} no encontrados</span>`:''}</summary>
+      <div style="margin-top:8px">${_tablaDesc(g.filas)}</div></details>`});
+  });
+  // Salidas armadas dentro de la app (sus cancelaciones salen del stock cargado → todas descontadas)
+  salidaHistorial.forEach(sa=>{
+    if(grupos[sa.zfeNro]) return;
+    const filas=(sa.cancelaciones||[]).map(c=>({despacho:c.despacho,item:c.item_zfi,subitem:c.subitem,producto:'',cantidad:c.cantidad,estado:'descontado'}));
+    const parseTs=String(sa.ts||'').split('/'); const ts=parseTs.length===3?`${parseTs[2]}-${parseTs[1]}-${parseTs[0]}`:'';
+    bloques.push({ts, falt:0, html:`<details style="margin-bottom:8px;border:1px solid var(--bd2);border-radius:var(--rs);padding:8px 10px">
+      <summary style="cursor:pointer;font-size:13px"><b>Salida ${sa.nro}</b> ${sa.desc||''} <span class="mono t2">${sa.zfeNro||''}</span> <span class="t2">${sa.zfeFecha||''}</span>
+        — <span style="color:var(--gn,#2e7d32)">✓ ${filas.length} descontados</span> <span class="t2">(armada en la app)</span></summary>
+      <div style="margin-top:8px">${_tablaDesc(filas)}</div></details>`});
+  });
+  const lista=bloques.filter(b=>!solo||b.falt).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
+  el.innerHTML=lista.length?lista.map(b=>b.html).join(''):'<div class="empty">'+(solo?'No hay salidas con faltantes. ✓':'Todavía no hay salidas registradas.')+'</div>';
 }
 async function resolverPendiente(id){
   if(!confirm('¿Marcar como resuelto sin descontar? (usalo si ya lo ajustaste a mano)')) return;
@@ -2325,7 +2379,7 @@ async function reintentarPendientes(){
 function imprimirPendientes(){
   const l=pendientesDesc.filter(x=>x.estado==='pendiente');
   const w=window.open('','_blank');
-  w.document.write('<html><body style="font-family:Arial;font-size:12px"><h3>Pendientes de descuento</h3><table border="1" cellspacing="0" cellpadding="4"><tr><th>PDF</th><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cantidad</th></tr>'+l.map(x=>`<tr><td>${x.pdf_tipo||''} ${x.pdf_nro||''}</td><td>${x.despacho}</td><td>${x.item}</td><td>${x.subitem}</td><td>${x.cantidad}</td></tr>`).join('')+'</table></body></html>');
+  w.document.write('<html><body style="font-family:Arial;font-size:12px"><h3>Despachos NO encontrados en el stock</h3><table border="1" cellspacing="0" cellpadding="4"><tr><th>PDF</th><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cantidad</th></tr>'+l.map(x=>`<tr><td>${x.pdf_tipo||''} ${x.pdf_nro||''}</td><td>${x.despacho}</td><td>${x.item}</td><td>${x.subitem}</td><td>${x.cantidad}</td></tr>`).join('')+'</table></body></html>');
   w.document.close(); w.print();
 }
 
@@ -7893,7 +7947,7 @@ function showToast(msg, ms=6000){
   setTimeout(()=>{ t.remove(); }, ms);
 }
 
-const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'ZFE1', cargapdf:'Carga PDF', insimp:'Insumos importados', pend:'Pendientes de descuento', comprasreal:'Compras realizadas', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
+const SECTION_NAMES = {calc:'Stock General', sal:'Salidas', liq:'Liquidación', stock:'Stock', hist:'Historial', adm:'Admin', term:'ZFE1', cargapdf:'Carga PDF', insimp:'Insumos importados', pend:'Control de descuentos', comprasreal:'Compras realizadas', et19vinc:'ET19 · Vincular', et19exp:'ET19 · Explorar'};
 function getPresenceContext(){
   if(currentSectionId==='sal' && typeof salidaActiva!=='undefined' && salidaActiva) return 'Salida '+salidaActiva.nro;
   return null;

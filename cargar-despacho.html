@@ -609,10 +609,11 @@ async function renderZFE3(p){
 
   const tbody = document.getElementById('zfe3-tbody');
   const noEncontrados = [];
-  window.pendientesZ = [];
+  window.pendientesZ = []; window.zProd = {};
   tbody.innerHTML = p.consumos.map((c,i)=>{
     const id = c.despacho+'_'+c.item+'_'+c.subitem;
     const row = stockById[id];
+    window.zProd[i] = row ? (row.producto||'') : '';
     if(!row){
       noEncontrados.push(id);
       window.pendientesZ.push({stock_id:id, despacho:c.despacho, item:c.item, subitem:c.subitem, cantidad:c.cantidad});
@@ -657,9 +658,12 @@ async function confirmarZFE3(){
   const p = currentParsed;
   let ok = 0, fail = 0;
   const erroresDetalle = [];
+  const estadoZ = {}; // i -> 'descontado' | 'pendiente' | 'omitido'
   for(let i=0;i<p.consumos.length;i++){
     const chk = document.getElementById('zi-'+i);
-    if(!chk || !chk.checked || chk.disabled) continue;
+    if(!chk || chk.disabled){ estadoZ[i]='pendiente'; continue; }
+    if(!chk.checked){ estadoZ[i]='omitido'; continue; }
+    estadoZ[i]='pendiente';
     const id = chk.dataset.id;
     const nuevoCancelQty = parseFloat(chk.dataset.cancelqty) + parseFloat(chk.dataset.cantidad);
     try{
@@ -678,7 +682,7 @@ async function confirmarZFE3(){
         fail++;
         erroresDetalle.push(`${id}: la fila existe pero el valor final (${result[0].cancel_qty}) no coincide con lo esperado (${nuevoCancelQty.toFixed(2)})`);
       } else {
-        ok++;
+        ok++; estadoZ[i]='descontado';
       }
     }catch(e){ fail++; erroresDetalle.push(`${id}: ${e.message}`); }
   }
@@ -690,19 +694,24 @@ async function confirmarZFE3(){
     });
   }catch(e){ /* si la tabla no existe, no bloqueamos el resto */ }
 
-  // Lo que NO se pudo descontar queda registrado para resolverlo después (Stock → Pendientes de descuento)
+  // Registro COMPLETO de lo que trajo el PDF: qué se descontó y qué no (Stock → Control de descuentos)
   let pendMsg = '';
-  const pend = (window.pendientesZ||[]);
-  if(pend.length){
-    try{
-      await sbFetch('descuentos_pendientes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-        body: JSON.stringify(pend.map(x=>({id: p.despacho+'|'+x.stock_id, pdf_nro:p.despacho, pdf_tipo:p.tipo, pdf_fecha:p.fecha,
-          stock_id:x.stock_id, despacho:x.despacho, item:x.item, subitem:x.subitem, cantidad:x.cantidad, estado:'pendiente',
-          creado_por: localStorage.getItem('ga_user_label')||'alguien', creado_en:new Date().toISOString()})))});
-      pendMsg = `<br>📌 ${pend.length} ítem${pend.length!==1?'s':''} sin descontar quedaron anotados en <b>Stock → Pendientes de descuento</b>: cuando cargues esos despachos, ahí los descontás con un botón.`;
-    }catch(e){
-      pendMsg = `<br>⚠️ No pude anotar los ${pend.length} pendientes (${e.message})${/descuentos_pendientes|schema cache|does not exist/i.test(e.message)?' — falta correr descuentos_pendientes_setup.sql en Supabase':''}. Anotalos a mano: ${pend.map(x=>x.stock_id).join(', ')}`;
-    }
+  const nroSal = (document.getElementById('zfe3-numero-salida')||{}).value || '';
+  const logRows = p.consumos.map((c,i)=>({
+    id: p.despacho+'|'+c.despacho+'_'+c.item+'_'+c.subitem,
+    pdf_nro:p.despacho, pdf_tipo:p.tipo, pdf_fecha:p.fecha, numero_salida:nroSal,
+    stock_id:c.despacho+'_'+c.item+'_'+c.subitem, despacho:c.despacho, item:c.item, subitem:c.subitem,
+    cantidad:c.cantidad, producto:(window.zProd||{})[i]||'', estado:estadoZ[i]||'pendiente',
+    creado_por: localStorage.getItem('ga_user_label')||'alguien', creado_en:new Date().toISOString()
+  }));
+  const nPend = logRows.filter(x=>x.estado==='pendiente').length;
+  try{
+    await sbFetch('descuentos_pendientes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(logRows)});
+    pendMsg = nPend
+      ? `<br>📌 ${nPend} ítem${nPend!==1?'s':''} <b>no se encontraron</b> en el stock y quedaron anotados en <b>Stock → Control de descuentos</b>. Ahí ves el detalle completo de este PDF.`
+      : `<br>📋 El detalle completo quedó en <b>Stock → Control de descuentos</b>.`;
+  }catch(e){
+    pendMsg = `<br>⚠️ No pude guardar el registro del PDF (${e.message})${/descuentos_pendientes|schema cache|does not exist|column/i.test(e.message)?' — falta correr descuentos_pendientes_setup.sql en Supabase':''}.`;
   }
   window.pendientesZ = [];
 
