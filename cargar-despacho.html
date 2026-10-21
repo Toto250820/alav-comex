@@ -84,6 +84,7 @@ html.embed .wrap{max-width:none;padding:0}
 html.embed a[href="./index.html"]{display:none}
 @media(max-width:700px){.wrap{padding:10px}.hdr{padding:0 10px}table{font-size:11px}thead th,tbody td{padding:4px}}
 </style>
+<style>/* Estilo único: todo en MAYÚSCULA (solo visual, no cambia lo que se guarda) */body,input,select,textarea,button,option,th,td{text-transform:uppercase}#chat-msgs,#chat-inp,.chat-msg{text-transform:none}</style>
 </head>
 <body>
 <div class="hdr">
@@ -1168,6 +1169,15 @@ async function confirmarCarga(){
       });
       vinculoTxt = ` Vinculado a la ET19 <b>${v.et19.toUpperCase()}</b>.`;
     }
+    // Si el despacho ya estaba cargado, se CONSERVA lo ya descontado (no se pisa cancel_qty con 0)
+    try{
+      const ids = rows.map(r=>r.id);
+      for(let k=0;k<ids.length;k+=100){
+        const chunk = ids.slice(k,k+100).join(',');
+        const ex = await sbFetch('stock_base?select=id,cancel_qty&id=in.('+encodeURIComponent(chunk).replace(/%2C/g,',')+')',{method:'GET',headers:{'Prefer':''}}) || [];
+        ex.forEach(e=>{ const r=rows.find(x=>x.id===e.id); if(r) r.cancel_qty = parseFloat(e.cancel_qty)||0; });
+      }
+    }catch(e){ console.error('No se pudo leer lo ya descontado:',e); }
     await sbFetch('stock_base', {
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
