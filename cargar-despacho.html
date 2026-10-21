@@ -116,6 +116,13 @@ html.embed a[href="./index.html"]{display:none}
     <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
     <div class="tt2">Formato ARCA — ET19, ZFI6, ZFI8, ZFI5, TZF5, ZFE3 o ZFE1</div>
   </div>
+  <div style="margin-top:14px;padding:10px 12px;border:1px dashed var(--bd2);border-radius:var(--r)">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 Registrar ZFE3 / TZF5 que ya subiste antes (varios a la vez)</div>
+    <div style="font-size:12px;color:var(--tx3);margin-bottom:8px">Elegí todos los PDF viejos juntos. <b>No descuenta nada</b>: solo arma el detalle en <i>Stock → Control de descuentos</i> (✓ verde los que están en el stock, rojo los que no se encontraron). Usa el número de salida que ya habías puesto.</div>
+    <input type="file" id="lote-inp" accept="application/pdf" multiple/>
+    <button class="btn" onclick="registrarLote(document.getElementById('lote-inp').files)">Registrar detalle</button>
+    <div id="lote-res" style="font-size:12px;margin-top:8px"></div>
+  </div>
 </div>
 
 <div id="loading-box" class="card" style="display:none">
@@ -203,6 +210,7 @@ html.embed a[href="./index.html"]{display:none}
     <div class="actions">
       <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
       <button class="btn btng" id="btn-confirm-zfe3" onclick="confirmarZFE3()" disabled>✓ Confirmar y descontar stock</button>
+      <button class="btn" id="btn-registrar-zfe3" onclick="registrarSoloZFE3()" style="display:none;margin-left:8px" title="No toca el stock: solo guarda el detalle de este PDF en Control de descuentos">📋 Solo registrar el detalle (sin descontar)</button>
     </div>
   </div>
 </div>
@@ -586,11 +594,13 @@ async function renderZFE3(p){
   document.getElementById('zf-count').textContent = p.consumos.length;
 
   const dupBox = document.getElementById('zf-dup-warning');
-  dupBox.innerHTML = '';
+  dupBox.innerHTML = ''; window.zPrevSalida=''; { const rb=document.getElementById('btn-registrar-zfe3'); if(rb) rb.style.display='none'; }
   try{
     const prev = await sbFetch('zfe3_procesados?select=*&despacho=eq.'+encodeURIComponent(p.despacho), {method:'GET', headers:{'Prefer':''}});
     if(prev && prev.length){
       const r = prev[0];
+      window.zPrevSalida = r.numero_salida||'';
+      document.getElementById('btn-registrar-zfe3').style.display='inline-block';
       dupBox.innerHTML = `<div class="dupwarn">⚠️ Este despacho (${p.despacho}) ya fue procesado el ${new Date(r.procesado_en).toLocaleString('es-AR')} por ${r.procesado_por}. Si confirmás igual, el stock se va a descontar OTRA VEZ — asegurate de que no sea un duplicado antes de continuar.</div>`;
     }
   }catch(e){ /* si la tabla no existe todavía, seguimos sin bloquear */ }
@@ -650,6 +660,70 @@ async function renderZFE3(p){
 
   document.getElementById('zfe3-box').style.display = 'block';
   document.getElementById('btn-confirm-zfe3').disabled = false;
+}
+
+// Para PDF ya procesados antes: NO descuenta nada, solo arma el registro (qué está en el stock y qué no)
+async function registrarLote(files){
+  const out = document.getElementById('lote-res');
+  if(!files || !files.length){ out.innerHTML='Elegí al menos un PDF.'; return; }
+  out.innerHTML=''; const li=[];
+  const linea = (t,ok)=>{ li.push(`<div style="color:${ok===false?'var(--rd)':ok?'var(--gr)':'inherit'}">${t}</div>`); out.innerHTML=li.join(''); };
+  for(const file of Array.from(files)){
+    try{
+      const buf = await file.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+      const pages=[]; for(let i=1;i<=doc.numPages;i++){ const pg=await doc.getPage(i); const c=await pg.getTextContent(); pages.push(c.items.map(it=>it.str).join('|')); }
+      const p = parseDespacho(pages);
+      if((p.tipo!=='ZFE3' && p.tipo!=='TZF5') || !p.consumos || !p.consumos.length){ linea(`${file.name}: no es un ZFE3/TZF5 con cancelaciones — se saltea`, false); continue; }
+      const ya = await sbFetch('descuentos_pendientes?select=id&pdf_nro=eq.'+encodeURIComponent(p.despacho)+'&limit=1',{method:'GET',headers:{'Prefer':''}});
+      if(ya && ya.length){ linea(`${p.despacho}: ya estaba registrado — se saltea`, null); continue; }
+      let sal='';
+      try{ const prev = await sbFetch('zfe3_procesados?select=numero_salida&despacho=eq.'+encodeURIComponent(p.despacho),{method:'GET',headers:{'Prefer':''}}); sal=(prev&&prev[0]&&prev[0].numero_salida)||''; }catch(e){}
+      const ids = [...new Set(p.consumos.map(c=>c.despacho+'_'+c.item+'_'+c.subitem))];
+      const have = new Set();
+      for(let k=0;k<ids.length;k+=100){
+        const chunk = ids.slice(k,k+100).join(',');
+        const rows = await sbFetch('stock_base?select=id,producto&id=in.('+encodeURIComponent(chunk).replace(/%2C/g,',')+')',{method:'GET',headers:{'Prefer':''}}) || [];
+        rows.forEach(r=>have.add(r.id)); rows.forEach(r=>{ (window._lotProd=window._lotProd||{})[r.id]=r.producto||''; });
+      }
+      const who = localStorage.getItem('ga_user_label')||'alguien';
+      const logRows = p.consumos.map(c=>{ const sid=c.despacho+'_'+c.item+'_'+c.subitem; return {
+        id:p.despacho+'|'+sid, pdf_nro:p.despacho, pdf_tipo:p.tipo, pdf_fecha:p.fecha, numero_salida:sal, stock_id:sid,
+        despacho:c.despacho, item:c.item, subitem:c.subitem, cantidad:c.cantidad, producto:(window._lotProd||{})[sid]||'',
+        estado: have.has(sid)?'descontado':'pendiente', creado_por:who, creado_en:new Date().toISOString() }; });
+      await sbFetch('descuentos_pendientes',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(logRows)});
+      const nF = logRows.filter(x=>x.estado==='pendiente').length;
+      linea(`${p.tipo} ${p.despacho}${sal?' · salida '+sal:''}: ${logRows.length-nF} ✓ encontrados, ${nF} NO encontrados`, nF?false:true);
+    }catch(e){ linea(`${file.name}: error — ${e.message}`, false); }
+  }
+  linea('Listo. Mirá el resultado en Stock → Control de descuentos.', null);
+  document.getElementById('lote-inp').value='';
+}
+
+async function registrarSoloZFE3(){
+  const p = currentParsed; if(!p) return;
+  const btn = document.getElementById('btn-registrar-zfe3'); btn.disabled = true; btn.textContent = 'Registrando...';
+  const logRows = p.consumos.map((c,i)=>{
+    const chk = document.getElementById('zi-'+i);
+    const enc = !!(chk && !chk.disabled);
+    return {
+      id: p.despacho+'|'+c.despacho+'_'+c.item+'_'+c.subitem, pdf_nro:p.despacho, pdf_tipo:p.tipo, pdf_fecha:p.fecha,
+      numero_salida: window.zPrevSalida||'', stock_id:c.despacho+'_'+c.item+'_'+c.subitem, despacho:c.despacho, item:c.item, subitem:c.subitem,
+      cantidad:c.cantidad, producto:(window.zProd||{})[i]||'', estado: enc ? 'descontado' : 'pendiente',
+      creado_por: localStorage.getItem('ga_user_label')||'alguien', creado_en:new Date().toISOString()
+    };
+  });
+  const nF = logRows.filter(x=>x.estado==='pendiente').length;
+  try{
+    await sbFetch('descuentos_pendientes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(logRows)});
+    document.getElementById('success-box').innerHTML = `<div class="ok">✓ Registrado el detalle de <b>${p.despacho}</b> (sin tocar el stock): ${logRows.length-nF} encontrados y <b>${nF} NO encontrados</b>.
+      <br>Los "encontrados" se muestran como descontados (el PDF ya se había procesado antes). Si algún despacho lo cargaste al stock <i>después</i> de subir este PDF, revisá su saldo.
+      <br>Verlo en <b>Stock → Control de descuentos</b>. <a href="./index.html" style="color:var(--gr);font-weight:600">Ir a la app →</a></div>`;
+    document.getElementById('zfe3-box').style.display='none';
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ No pude guardar el registro: ${e.message}${/descuentos_pendientes|schema cache|does not exist|column/i.test(e.message)?' — falta correr descuentos_pendientes_setup.sql en Supabase':''}</div>`;
+    btn.disabled = false; btn.textContent = '📋 Solo registrar el detalle (sin descontar)';
+  }
 }
 
 async function confirmarZFE3(){

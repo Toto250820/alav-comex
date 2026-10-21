@@ -2290,6 +2290,7 @@ function addToSalida(){
 // PENDIENTES DE DESCUENTO (ítems de PDF que no se encontraron en el stock)
 // ═══════════════════════════════════════════
 let pendientesDesc = [];
+let zfe3Proc = [];
 async function loadPendientes(){
   try{
     pendientesDesc = await sbFetch('descuentos_pendientes?select=*&order=creado_en.desc&limit=5000', {method:'GET', headers:{'Prefer':''}}) || [];
@@ -2298,6 +2299,7 @@ async function loadPendientes(){
     const m=document.getElementById('pend-msg');
     if(m) m.innerHTML='<span style="color:var(--rd)">No pude leer la tabla (¿corriste descuentos_pendientes_setup.sql en Supabase?)</span>';
   }
+  try{ zfe3Proc = await sbFetch('zfe3_procesados?select=*&limit=1000', {method:'GET', headers:{'Prefer':''}}) || []; }catch(e){ zfe3Proc=[]; }
   actualizarBadgePendientes();
   renderPendientes();
 }
@@ -2339,8 +2341,30 @@ function renderPendientes(){
         — <span style="color:var(--gn,#2e7d32)">✓ ${filas.length} descontados</span> <span class="t2">(armada en la app)</span></summary>
       <div style="margin-top:8px">${_tablaDesc(filas)}</div></details>`});
   });
+  // PDF procesados antes de que existiera este registro: no tienen detalle guardado
+  zfe3Proc.forEach(z=>{
+    if(grupos[z.despacho]) return;
+    if(salidaHistorial.some(sa=>sa.zfeNro===z.despacho)) return;
+    bloques.push({ts:z.procesado_en||z.fecha||'', falt:0, sinDetalle:true, html:`<div style="margin-bottom:8px;border:1px dashed var(--bd2);border-radius:var(--rs);padding:8px 10px;font-size:13px">
+      <b>ZFE3</b> <span class="mono">${z.despacho}</span> ${z.numero_salida?`· Salida <b>${z.numero_salida}</b>`:''} <span class="t2">${z.fecha||''}</span>
+      — <span class="t2">${z.items_afectados||0} ítems descontados · detalle no guardado (PDF anterior).</span>
+      <a href="./cargar-despacho.html" style="font-size:12px;margin-left:6px" onclick="event.preventDefault();showSec('cargapdf',document.querySelector('.nb.ncargapdf'))">Volver a subirlo → "Solo registrar el detalle"</a></div>`});
+  });
+  // Resumen: qué despachos hay que cargar al sistema (únicos, con todo lo que se les debe descontar)
+  const faltan={};
+  pendientesDesc.filter(x=>x.estado==='pendiente').forEach(x=>{
+    const k=x.despacho+'|'+x.item+'|'+x.subitem;
+    const f=faltan[k]=faltan[k]||{despacho:x.despacho,item:x.item,subitem:x.subitem,total:0,en:new Set()};
+    f.total+=parseFloat(x.cantidad)||0; f.en.add((x.numero_salida?('Salida '+x.numero_salida):x.pdf_nro));
+  });
+  const fl=Object.values(faltan).sort((a,b)=>a.despacho.localeCompare(b.despacho)||a.item-b.item);
+  const resumen = fl.length ? `<div style="margin-bottom:14px;border:2px solid var(--rd);border-radius:var(--rs);padding:8px 10px">
+    <div style="font-weight:600;color:var(--rd);margin-bottom:6px">⚠ Despachos que faltan cargar al sistema (${new Set(fl.map(f=>f.despacho)).size} despachos, ${fl.length} ítems)</div>
+    <div class="tw"><table><thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Total a descontar</th><th>Usado en</th></tr></thead><tbody>
+    ${fl.map(f=>`<tr class="warn"><td class="mono">${f.despacho}</td><td style="text-align:center">${f.item}</td><td style="text-align:center">${f.subitem}</td><td class="mono">${fmt(f.total)}</td><td class="t2" style="font-size:11px">${[...f.en].join(', ')}</td></tr>`).join('')}
+    </tbody></table></div></div>` : '';
   const lista=bloques.filter(b=>!solo||b.falt).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
-  el.innerHTML=lista.length?lista.map(b=>b.html).join(''):'<div class="empty">'+(solo?'No hay salidas con faltantes. ✓':'Todavía no hay salidas registradas.')+'</div>';
+  el.innerHTML=resumen+(lista.length?lista.map(b=>b.html).join(''):'<div class="empty">'+(solo?'No hay salidas con faltantes. ✓':'Todavía no hay salidas registradas.')+'</div>');
 }
 async function resolverPendiente(id){
   if(!confirm('¿Marcar como resuelto sin descontar? (usalo si ya lo ajustaste a mano)')) return;
@@ -2377,9 +2401,11 @@ async function reintentarPendientes(){
   loadPendientes();
 }
 function imprimirPendientes(){
-  const l=pendientesDesc.filter(x=>x.estado==='pendiente');
+  const m={};
+  pendientesDesc.filter(x=>x.estado==='pendiente').forEach(x=>{ const k=x.despacho+'|'+x.item+'|'+x.subitem; const f=m[k]=m[k]||{...x,total:0,en:new Set()}; f.total+=parseFloat(x.cantidad)||0; f.en.add(x.numero_salida?('Salida '+x.numero_salida):x.pdf_nro); });
+  const l=Object.values(m).sort((a,b)=>a.despacho.localeCompare(b.despacho)||a.item-b.item);
   const w=window.open('','_blank');
-  w.document.write('<html><body style="font-family:Arial;font-size:12px"><h3>Despachos NO encontrados en el stock</h3><table border="1" cellspacing="0" cellpadding="4"><tr><th>PDF</th><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cantidad</th></tr>'+l.map(x=>`<tr><td>${x.pdf_tipo||''} ${x.pdf_nro||''}</td><td>${x.despacho}</td><td>${x.item}</td><td>${x.subitem}</td><td>${x.cantidad}</td></tr>`).join('')+'</table></body></html>');
+  w.document.write('<html><body style="font-family:Arial;font-size:12px"><h3>Despachos NO encontrados en el stock (a cargar)</h3><table border="1" cellspacing="0" cellpadding="4"><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Total a descontar</th><th>Usado en</th></tr>'+l.map(x=>`<tr><td>${x.despacho}</td><td>${x.item}</td><td>${x.subitem}</td><td>${x.total}</td><td>${[...x.en].join(', ')}</td></tr>`).join('')+'</table></body></html>');
   w.document.close(); w.print();
 }
 
