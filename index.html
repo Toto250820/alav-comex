@@ -2361,11 +2361,19 @@ function renderPendientes(){
   const fl=Object.values(faltan).sort((a,b)=>a.despacho.localeCompare(b.despacho)||a.item-b.item);
   const resumen = fl.length ? `<div style="margin-bottom:14px;border:2px solid var(--rd);border-radius:var(--rs);padding:8px 10px">
     <div style="font-weight:600;color:var(--rd);margin-bottom:6px">⚠ Despachos que faltan cargar al sistema (${new Set(fl.map(f=>f.despacho)).size} despachos, ${fl.length} ítems)</div>
-    <div class="tw"><table><thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Total a descontar</th><th>Usado en</th></tr></thead><tbody>
-    ${fl.map(f=>`<tr class="warn"><td class="mono">${f.despacho}</td><td style="text-align:center">${f.item}</td><td style="text-align:center">${f.subitem}</td><td class="mono">${fmt(f.total)}</td><td class="t2" style="font-size:11px">${[...f.en].join(', ')}</td></tr>`).join('')}
+    <div class="tw"><table><thead><tr><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Total a descontar</th><th>Usado en</th><th></th></tr></thead><tbody>
+    ${fl.map(f=>`<tr class="warn"><td class="mono">${f.despacho}</td><td style="text-align:center">${f.item}</td><td style="text-align:center">${f.subitem}</td><td class="mono">${fmt(f.total)}</td><td class="t2" style="font-size:11px">${[...f.en].join(', ')}</td><td><button class="btn" style="padding:2px 8px;font-size:10px" title="Lo cargué al stock YA con el descuento aplicado" onclick="resolverPorItem('${f.despacho}',${f.item},${f.subitem})">Cargado con descuento</button></td></tr>`).join('')}
     </tbody></table></div></div>` : '';
   const lista=bloques.filter(b=>!solo||b.falt).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
   el.innerHTML=resumen+(lista.length?lista.map(b=>b.html).join(''):'<div class="empty">'+(solo?'No hay salidas con faltantes. ✓':'Todavía no hay salidas registradas.')+'</div>');
+}
+async function resolverPorItem(despacho,item,subitem){
+  if(!confirm('¿Ese ítem ya lo cargaste al stock CON el descuento aplicado? Se marca como resuelto y NO se vuelve a descontar.')) return;
+  const ids=pendientesDesc.filter(x=>x.estado==='pendiente'&&x.despacho===despacho&&x.item==item&&x.subitem==subitem).map(x=>x.id);
+  for(const id of ids){
+    try{ await sbFetch('descuentos_pendientes?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({estado:'resuelto',resuelto_en:new Date().toISOString()})}); }catch(e){ alert('Error: '+e.message); break; }
+  }
+  loadPendientes();
 }
 async function resolverPendiente(id){
   if(!confirm('¿Marcar como resuelto sin descontar? (usalo si ya lo ajustaste a mano)')) return;
