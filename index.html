@@ -2000,7 +2000,8 @@ function onCalcChange(){
     const needed=getNeeded(k,med,qty,tipo);
     if(needed<=0) return;
     const rows=getStock(k);
-    const totalStock=rows.reduce((s,r)=>s+getCancelQty(r,k),0);
+    // Stock DISPONIBLE = cantidad − lo ya descontado (antes sumaba solo lo descontado: por eso parecía que "no descontaba")
+    const totalStock=rows.reduce((s,r)=>s+(r.cantidad-getCancelQty(r,k)),0);
     // Para micro90/micro100: RIP consume en kg pero stock está en metros
     // neededStock = metros equivalentes = needed_kg (no hay factor fijo, el usuario elige los m)
     // Para liquidación: taken ya viene en metros del selector → usar taken directo
