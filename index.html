@@ -445,6 +445,7 @@ html[data-theme="dark"]{
           <div class="ff" style="max-width:110px"><label>Bultos</label><input id="sab-linea-bultos" type="number" step="1"/></div>
           <div class="ff" style="max-width:130px"><label>Peso neto (kg)</label><input id="sab-linea-peso-neto" type="number" step="0.01"/></div>
           <div class="ff" style="max-width:130px"><label>Peso bruto (kg)</label><input id="sab-linea-peso-bruto" type="number" step="0.01"/></div>
+          <div class="ff" style="max-width:130px"><label>Valor unit. (USD)</label><input id="sab-linea-precio" type="number" step="0.01"/></div>
         </div>
         <div id="sab-linea-memoria-aviso" style="font-size:11px;color:var(--yw);margin:2px 0 4px;display:none">↻ Se precargó el packing que usaste la última vez para esta receta — cambialo si corresponde.</div>
 
@@ -2520,6 +2521,7 @@ function renderCalcReceta(tipo){
       <div class="ff" style="max-width:110px"><label>Bultos</label><input id="calc-rec-bultos" type="number" value="${memo.bultos??''}"/></div>
       <div class="ff" style="max-width:130px"><label>Peso neto (kg)</label><input id="calc-rec-pn" type="number" step="0.01" value="${memo.peso_neto_kg??''}"/></div>
       <div class="ff" style="max-width:130px"><label>Peso bruto (kg)</label><input id="calc-rec-pb" type="number" step="0.01" value="${memo.peso_bruto_kg??''}"/></div>
+      <div class="ff" style="max-width:130px"><label>Valor unit. (USD)</label><input id="calc-rec-precio" type="number" step="0.01" value="${(()=>{try{return localStorage.getItem('ga_sab_precio_'+rec.id)||''}catch(e){return ''}})()}"/></div>
     </div></div>`;
   mats.forEach((m,i)=>rcRenderBlock(i));
   btnsEl.style.display='flex';
@@ -2624,6 +2626,7 @@ async function addRecetaCalcToSalida(){
   document.getElementById('sab-linea-bultos').value=document.getElementById('calc-rec-bultos').value;
   document.getElementById('sab-linea-peso-neto').value=document.getElementById('calc-rec-pn').value;
   document.getElementById('sab-linea-peso-bruto').value=document.getElementById('calc-rec-pb').value;
+  { const pr=document.getElementById('sab-linea-precio'); if(pr) pr.value=(document.getElementById('calc-rec-precio')||{}).value||''; }
   calcularInsumosLineaSabana();
   despachos.forEach((d,j)=>{ const el=document.getElementById('sab-linea-desp-'+j); if(el) el.value=d; });
   await agregarLineaSabanaASalida();
@@ -2755,8 +2758,10 @@ async function agregarLineaSabanaASalida(){
   if(isNaN(cantidad) || cantidad<=0){ alert('Poné la cantidad.'); return; }
 
   const bultos = parseFloat(document.getElementById('sab-linea-bultos').value);
+  try{ const pv=parseFloat((document.getElementById('sab-linea-precio')||{}).value); if(!isNaN(pv)&&recetaSabanaLineaSel) localStorage.setItem('ga_sab_precio_'+recetaSabanaLineaSel.id,String(pv)); }catch(e){}
   const pesoNeto = parseFloat(document.getElementById('sab-linea-peso-neto').value);
   const pesoBruto = parseFloat(document.getElementById('sab-linea-peso-bruto').value);
+  const precioU = parseFloat((document.getElementById('sab-linea-precio')||{}).value);
 
   let mats=[]; try{ mats = JSON.parse(recetaSabanaLineaSel.materiales||'[]'); }catch(e){}
   const factor = cantidad / (recetaSabanaLineaSel.cantidad_base||1);
@@ -2773,6 +2778,7 @@ async function agregarLineaSabanaASalida(){
     receta_nombre: recetaSabanaLineaSel.articulo_nombre,
     rip: recetaSabanaLineaSel.rip, ctzf_numero: recetaSabanaLineaSel.ctzf_numero,
     bultos: isNaN(bultos)?null:bultos, peso_neto_kg: isNaN(pesoNeto)?null:pesoNeto, peso_bruto_kg: isNaN(pesoBruto)?null:pesoBruto,
+    precio_unit: isNaN(precioU)?null:precioU,
     materiales: materialesUsados
   });
 
@@ -2809,6 +2815,7 @@ async function agregarLineaSabanaASalida(){
   document.getElementById('sab-linea-bultos').value='';
   document.getElementById('sab-linea-peso-neto').value='';
   document.getElementById('sab-linea-peso-bruto').value='';
+  { const pr=document.getElementById('sab-linea-precio'); if(pr) pr.value=''; }
   document.getElementById('sab-linea-memoria-aviso').style.display='none';
   document.getElementById('sab-linea-info').textContent='';
   document.getElementById('sab-linea-insumos').innerHTML='';
@@ -3094,14 +3101,14 @@ function getEquivKey(tipo, med){
 
 function imprimirPackingList(salOverride){
   const sal = salOverride || salidaActiva;
-  if(!sal||!sal.lineas.length){alert('No hay líneas en la salida.');return;}
+  if(!sal||(!sal.lineas.length && !(sal.sabanas||[]).length)){alert('No hay líneas en la salida.');return;}
   const marca = document.getElementById('sal-marca')?.value || 'CACHAREL';
   const fecha = new Date().toLocaleDateString('es-AR');
   // NCM: depende del artículo Y de la medida (Patagonia /1 vs /3 tienen NCM distinta).
   // Si la salida mezcla artículos/medidas con NCM distinta, el header muestra la del primer renglón
   // y cada fila de la tabla igual muestra la suya correcta.
   const primeraLinea = sal.lineas[0];
-  const NCM = primeraLinea ? getNCMArticulo(primeraLinea.tipo||'triples', primeraLinea.med) : '9404.90.00.900E';
+  const NCM = primeraLinea ? getNCMArticulo(primeraLinea.tipo||'triples', primeraLinea.med) : ((sal.sabanas||[])[0] ? sabNCMReceta(sal.sabanas[0]) : '9404.90.00.900E');
 
   // Calcular totales
   let totalQty=0, totalBultos=0, totalKgNeto=0, totalFOB=0;
@@ -3176,9 +3183,19 @@ function imprimirPackingList(salOverride){
     };
   });
 
+  // Sábanas / covers de la salida (peso y valor cargados a mano en cada línea)
+  let extraBruto = 0;
+  const sabRows = (sal.sabanas||[]).map((l,i)=>{
+    const neto = parseFloat(l.peso_neto_kg)||0;
+    const bruto = (l.peso_bruto_kg!=null && !isNaN(parseFloat(l.peso_bruto_kg))) ? parseFloat(l.peso_bruto_kg) : parseFloat((neto*1.1).toFixed(2));
+    const pu = parseFloat(l.precio_unit)||0;
+    const val = parseFloat(((l.cantidad||0)*pu).toFixed(2));
+    totalQty += l.cantidad||0; totalBultos += parseFloat(l.bultos)||0; totalKgNeto += neto; totalFOB += val; extraBruto += bruto;
+    return {itemNum: rowsUnificadas.length+i+1, n:l.codigo+' — '+l.receta_nombre, med:'—', qty:l.cantidad||0, bultos:parseFloat(l.bultos)||0, kgNeto:neto, kgBruto:bruto, precioUnit:pu, valorTotal:val, rip:l.rip||'—', ctzf:l.ctzf_numero||'—', ncm:sabNCMReceta(l)};
+  });
   const flete = parseFloat((totalFOB*0.02).toFixed(2));
   const seguro = parseFloat((totalFOB*0.006).toFixed(2));
-  const totalKgBruto = parseFloat((totalKgNeto*1.1).toFixed(2));
+  const totalKgBruto = parseFloat((rowsUnificadas.reduce((s,r)=>s+r.kgBruto,0) + extraBruto).toFixed(2));
 
   const fmtUSD = v => '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -3240,6 +3257,18 @@ function imprimirPackingList(salOverride){
       +'</tr>';
   });
 
+  sabRows.forEach(r=>{
+    p+='<tr>'
+      +'<td class="c">'+r.itemNum+'</td><td>'+r.n+'</td><td class="c">'+r.med+'</td>'
+      +'<td style="font-family:monospace;font-size:8px">'+r.ncm+'</td>'
+      +'<td class="r">'+r.qty.toLocaleString('es-AR')+'</td><td class="r">'+r.bultos+'</td>'
+      +'<td class="r">'+r.kgNeto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
+      +'<td class="r">'+r.kgBruto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
+      +'<td class="r" style="color:#1a7a3c;font-weight:700">'+(r.precioUnit?fmtUSD(r.precioUnit):'—')+'</td>'
+      +'<td class="r"><strong>'+(r.valorTotal?fmtUSD(r.valorTotal):'—')+'</strong></td>'
+      +'<td class="c">'+r.ctzf+'</td><td class="c">'+r.rip+'</td><td class="c">'+marca+'</td></tr>';
+  });
+
   // Fila de totales
   p+='<tr class="total-row">'
     +'<td colspan="4" style="text-align:right">TOTALES:</td>'
@@ -3284,9 +3313,55 @@ function imprimirPackingList(salOverride){
 }
 
 
+// ═══════════════════════════════════════════
+// SÁBANAS / COVERS (2091, 2100…) en Impresión, Packing y Liquidación de una salida
+// ═══════════════════════════════════════════
+function sabSelecciones(l,m){
+  if(m.seleccion && m.seleccion.length) return m.seleccion.map(x=>({...x,asumida:false}));
+  const txt=String(m.despacho_anotado||'');
+  const re=/(\d{5}[A-Z]{3}\d[A-Z0-9]{6,8}[A-Z])\D{0,12}?(\d+)\D{1,8}?(\d+)(?:\s*\(\s*([\d.,]+)\s*\))?/gi;
+  const out=[]; let mm;
+  while((mm=re.exec(txt))){
+    out.push({despacho:mm[1].toUpperCase(),item:parseInt(mm[2]),subitem:parseInt(mm[3]),cantidad:mm[4]?parseFloat(mm[4].replace(',','.')):null});
+  }
+  if(out.length===1 && out[0].cantidad===null){ out[0].cantidad=m.necesario; out[0].asumida=true; }
+  return out;
+}
+function sabNCMReceta(l){
+  const r=(recetasSabana||[]).find(x=>x.articulo_codigo===l.receta_codigo && x.rip===l.rip) || (recetasSabana||[]).find(x=>x.articulo_codigo===l.receta_codigo);
+  return (r&&r.ncm)||'9404.90.00.900E';
+}
+function htmlSabanasImpresion(sal,offset){
+  let p='';
+  (sal.sabanas||[]).forEach(function(l,idx){
+    p+='<div class="item-hdr">'
+      +'<span>ITEM '+(offset+idx+1)+' &nbsp;|&nbsp; '+l.codigo+' — '+l.receta_nombre+'</span>'
+      +'<span>'+Number(l.cantidad).toLocaleString('es-AR')+' unidades</span>'
+      +'<span class="item-rip">RIP '+(l.rip||'—')+' &nbsp;|&nbsp; CTZF '+(l.ctzf_numero||'—')+'</span></div>';
+    p+='<table><thead><tr><th>#</th><th>Insumo</th><th>NCM</th><th>x unid.</th><th>U.M.</th><th>Total</th><th>Despacho a cancelar</th><th>Cant. cancelar</th></tr></thead><tbody>';
+    (l.materiales||[]).forEach(function(m,i){
+      const sels=sabSelecciones(l,m);
+      const xu=l.cantidad>0?(m.necesario/l.cantidad):0;
+      const base='<td style="text-align:center"'+'ROWSPAN>'+(i+1)+'</td><td ROWSPAN><strong>'+m.nombre+'</strong></td><td class="mono" ROWSPAN>'+(m.ncm||'—')+'</td><td class="r" ROWSPAN>'+fmt(xu,4)+'</td><td ROWSPAN>'+m.unidad+'</td><td class="r" ROWSPAN><strong>'+fmt(m.necesario,3)+'</strong></td>';
+      if(!sels.length){
+        const txt=(m.despacho_anotado||'').trim();
+        p+='<tr>'+base.replace(/ROWSPAN/g,'')+'<td colspan="2" style="font-style:italic">'+(txt||'sin selección')+'</td></tr>';
+      } else {
+        sels.forEach(function(sx,si){
+          const nac=/ZFI6/.test(sx.despacho);
+          const cel='<td class="mono'+(nac?' nac':'')+'">'+sx.despacho+' // '+sx.item+'-'+sx.subitem+'</td><td class="r'+(nac?' nac':'')+'"><strong>'+(sx.cantidad!=null?fmt(sx.cantidad,3):'—')+'</strong></td>';
+          if(si===0) p+='<tr>'+base.replace(/ROWSPAN/g,'rowspan="'+sels.length+'"')+cel+'</tr>'; else p+='<tr>'+cel+'</tr>';
+        });
+      }
+    });
+    p+='</tbody></table>';
+  });
+  return p;
+}
+
 function imprimirSalida(salOverride){
   const sal = salOverride || salidaActiva;
-  if(!sal||!sal.lineas.length){
+  if(!sal||(!sal.lineas.length && !(sal.sabanas||[]).length)){
     alert('No hay líneas en la salida para imprimir.'); return;
   }
 
@@ -3415,6 +3490,8 @@ function imprimirSalida(salOverride){
     p+='</tbody></table>';
   });
 
+  p+=htmlSabanasImpresion(sal, ordenGrupos.length);
+
   p+='<div class="footer">ALAV SRL — Sistema Gestión Aduanera — Salida '+sal.nro+' — '+new Date().toLocaleString('es-AR')+'</div>'
     +'</body></html>';
 
@@ -3430,8 +3507,129 @@ function imprimirSalida(salOverride){
 }
 
 
+// ── Liquidación de una salida de SÁBANAS / COVERS (2091, 2100…) ──
+function _hallarFilaStock(sx){
+  const keys=new Set([...Object.keys(STOCK_BASE),...Object.keys(stockExtra)]);
+  for(const k of keys){
+    const r=[...(STOCK_BASE[k]||[]),...(stockExtra[k]||[])].find(r=>r.despacho===sx.despacho && r.item==sx.item && r.subitem==sx.subitem);
+    if(r) return {row:r,k};
+  }
+  return null;
+}
+function generarLiqSabanas(sal){
+  const entries=[]; const avisos=[];
+  (sal.sabanas||[]).forEach((l,li)=>{
+    (l.materiales||[]).forEach((m,mi)=>{
+      const sels=sabSelecciones(l,m);
+      if(!sels.length){ avisos.push(`${l.codigo} · ${m.nombre}: sin despacho elegido — no entra en la liquidación`); return; }
+      sels.forEach(sx=>{
+        if(/ZFI6/.test(sx.despacho)) return; // nacional: no paga derechos
+        const f=_hallarFilaStock(sx);
+        if(!f){ avisos.push(`${l.codigo} · ${m.nombre}: ${sx.despacho} ít.${sx.item}-${sx.subitem} no está en el stock`); return; }
+        entries.push({li,mi,l,m,k:f.k,row:f.row,taken:(sx.cantidad!=null?sx.cantidad:m.necesario),asumida:!!sx.asumida,ncm:(m.ncm||f.row.ncm||'')});
+      });
+    });
+  });
+  if(!entries.length){ alert('No encontré despachos ZFI8 con stock cargado en las líneas de esta salida.\n\n'+avisos.join('\n')); return; }
+  const dkMap={};
+  entries.forEach(e=>{ const dk=e.row.despacho+'_'+e.row.item+'_'+e.row.subitem; if(!dkMap[dk]) dkMap[dk]={row:e.row,k:e.k}; });
+  const ncms=[...new Set(entries.map(e=>e.ncm))];
+  liqState={fromSalida:true, sabanas:true, salida:sal, entries, dks:Object.keys(dkMap), dkMap, ncms, avisos};
+
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sec-liq').classList.add('active');
+  document.querySelector('.nb.nliq').classList.add('active');
+  const info=document.getElementById('liq-info'); info.style.display='block';
+  document.getElementById('liq-info-body').innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--pu)">Salida ${sal.nro}${sal.desc?' — '+sal.desc:''}</div>
+    <div style="font-size:11px;color:var(--tx2);margin-top:4px">${sal.sabanas.map(l=>`${l.codigo} × ${Number(l.cantidad).toLocaleString('es-AR')} u`).join(' | ')}</div>
+    <div style="font-size:11px;color:var(--tx2);margin-top:2px">${liqState.dks.length} despacho(s) ZFI8</div>
+    ${avisos.length?`<div style="font-size:11px;color:var(--rd);margin-top:6px">⚠ ${avisos.join('<br>⚠ ')}</div>`:''}
+    ${entries.some(e=>e.asumida)?`<div style="font-size:11px;color:var(--yw);margin-top:6px">ℹ Donde el insumo tenía un solo despacho anotado a mano, se tomó la cantidad necesaria de la receta.</div>`:''}`;
+  document.getElementById('liq-resultado').style.display='none';
+
+  let html='<div style="font-weight:600;font-size:12px;margin-bottom:6px">Tasa de derecho de importación por NCM</div><div class="fr" style="margin-bottom:12px">'
+    + ncms.map(n=>{ const t=TASAS[n]; return `<div class="ff" style="max-width:190px"><label>${n||'(sin NCM)'} — %</label><input class="qinp" id="tasa_${slugify(n||'sin')}" type="number" step="0.01" style="width:100%" value="${t!==undefined?(t*100):''}" placeholder="% derecho"/></div>`; }).join('')+'</div>';
+  liqState.dks.forEach(dk=>{
+    const {row}=dkMap[dk]; const sdk=dk.replace(/[^a-zA-Z0-9]/g,'_');
+    html+=`<div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);padding:11px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><span class="mono" style="font-weight:600">${row.despacho}</span><span class="t2">Ít.${row.item}.${row.subitem}</span><span class="t2">${row.fecha||''}</span><span style="font-size:12px">FOB: <strong>${fmtU(row.fob)}</strong></span></div>
+      <div class="fr">
+        <div class="ff" style="max-width:160px"><label>FOB total despacho (USD)</label><input class="qinp" id="fobdesp_${sdk}" type="number" step="0.01" style="width:100%" value="${fobDespPatch[dk]!==undefined?fobDespPatch[dk]:(row.fob_desp||'')}"/></div>
+        <div class="ff" style="max-width:160px"><label>Flete total despacho (USD)</label><input class="qinp" id="flete_${sdk}" type="number" step="0.01" style="width:100%" value="${fletesPatch[dk]?.flete!==undefined?fletesPatch[dk].flete:(row.flete_desp||0)}"/></div>
+        <div class="ff" style="max-width:160px"><label>Seguro total despacho (USD)</label><input class="qinp" id="seguro_${sdk}" type="number" step="0.01" style="width:100%" value="${fletesPatch[dk]?.seguro!==undefined?fletesPatch[dk].seguro:(row.seguro_desp||0)}"/></div>
+        <div class="ff" style="max-width:160px"><label>Cant. orig. ítem</label><input class="qinp" id="cantorig_${sdk}" type="number" step="0.001" style="width:100%" value="${cantOrigPatch[dk]!==undefined?cantOrigPatch[dk]:''}"/></div>
+        <div class="ff" style="max-width:160px"><label>FOB ítem (USD)</label><input class="qinp" id="fobitem_${sdk}" type="number" step="0.01" style="width:100%" value="${fobPatch[dk]!==undefined?fobPatch[dk]:''}"/></div>
+      </div></div>`;
+  });
+  document.getElementById('liq-flete-lista').innerHTML=html;
+  document.getElementById('liq-flete-wrap').style.display='block';
+}
+
+function calcularLiqSabanas(){
+  const {salida,entries,dks}=liqState;
+  const fl={};
+  dks.forEach(dk=>{
+    const sdk=dk.replace(/[^a-zA-Z0-9]/g,'_');
+    const f=parseFloat(document.getElementById('flete_'+sdk)?.value)||0, sg=parseFloat(document.getElementById('seguro_'+sdk)?.value)||0;
+    const fd=parseFloat(document.getElementById('fobdesp_'+sdk)?.value)||0, co=parseFloat(document.getElementById('cantorig_'+sdk)?.value)||0, fi=parseFloat(document.getElementById('fobitem_'+sdk)?.value)||0;
+    fl[dk]={flete:f,seguro:sg,fobdesp:fd,cantorig:co,fobitem:fi};
+    if(f>0||sg>0) fletesPatch[dk]={flete:f,seguro:sg};
+    if(co>0) cantOrigPatch[dk]=co; if(fi>0) fobPatch[dk]=fi; if(fd>0) fobDespPatch[dk]=fd;
+  });
+  save();
+  const tasas={};
+  liqState.ncms.forEach(n=>{ const v=parseFloat(document.getElementById('tasa_'+slugify(n||'sin'))?.value); tasas[n]=isNaN(v)?0:v/100; });
+  const calc=entries.map(e=>{
+    const row=e.row, dk=row.despacho+'_'+row.item+'_'+row.subitem, x=fl[dk]||{};
+    const fobTot=x.fobdesp||row.fob_desp||row.fob||0;
+    const cantOrigBase=(row.cancel_unit==='kg'||CANCEL_UNIT[e.k]==='kg')?(row.kgs_neto||row.cantidad||1):(row.cantidad||1);
+    const cantOrig=x.cantorig||cantOrigBase, fobItem=x.fobitem||row.fob||0;
+    const pu=cantOrig>0?fobItem/cantOrig:0;
+    const fobP=parseFloat((e.taken*pu).toFixed(4));
+    const prop=fobTot>0?fobP/fobTot:0;
+    const fleteP=(x.flete??row.flete_desp??0)*prop, seguroP=(x.seguro??row.seguro_desp??0)*prop;
+    const cif=fobP+fleteP+seguroP, tasa=tasas[e.ncm]||0, der=cif*tasa, baseIva=cif+der, iva=baseIva*IVA;
+    return {e,row,fobP,fleteP,seguroP,cif,tasa,der,baseIva,iva,total:der+iva,cu:CANCEL_UNIT[e.k]||''};
+  });
+  const sumF=(arr,f)=>arr.reduce((s,c)=>s+c[f],0);
+  let html=`<div class="card" style="border-color:var(--pu)"><div class="ct" style="color:var(--pu)">Liquidación — Salida ${salida.nro}${salida.desc?' — '+salida.desc:''}</div>`;
+  (salida.sabanas||[]).forEach((l,li)=>{
+    const cl=calc.filter(c=>c.e.li===li); if(!cl.length) return;
+    html+=`<div style="margin-bottom:16px;border:1px solid var(--bd2);border-radius:var(--rs);overflow:hidden">
+      <div style="background:var(--bg3);border-bottom:2px solid var(--pu);padding:6px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <strong style="font-size:14px">${l.codigo} — ${l.receta_nombre}</strong><span style="color:var(--pu)">${Number(l.cantidad).toLocaleString('es-AR')} u</span>
+        <span style="color:var(--tx3);font-size:11px">RIP ${l.rip||'—'} — CTZF ${l.ctzf_numero||'—'}</span><span style="color:var(--pu);margin-left:auto">Total: USD ${fmt(sumF(cl,'total'),2)}</span></div>
+      <div class="tw"><table><thead><tr><th>Insumo</th><th>NCM</th><th>Despacho</th><th>Ít.</th><th>Sub.</th><th>Cant.</th><th>FOB prop.</th><th>Flete</th><th>Seguro</th><th>CIF</th><th>Tasa</th><th>Der.Import.</th><th>Base IVA</th><th>IVA 21%</th><th>TOTAL</th></tr></thead><tbody>
+      ${cl.map(c=>`<tr><td>${c.e.m.nombre}</td><td class="mono">${c.e.ncm}</td><td class="mono">${c.row.despacho}</td><td style="text-align:center">${c.row.item}</td><td style="text-align:center">${c.row.subitem}</td>
+        <td>${fmt(c.e.taken,3)} ${c.cu}</td><td>USD ${fmt(c.fobP,2)}</td><td>USD ${fmt(c.fleteP,2)}</td><td>USD ${fmt(c.seguroP,2)}</td><td><strong>USD ${fmt(c.cif,2)}</strong></td>
+        <td>${(c.tasa*100).toFixed(1)}%</td><td>USD ${fmt(c.der,2)}</td><td>USD ${fmt(c.baseIva,2)}</td><td>USD ${fmt(c.iva,2)}</td><td><strong style="color:var(--pu)">USD ${fmt(c.total,2)}</strong></td></tr>`).join('')}
+      </tbody></table></div>
+      <div style="padding:6px 10px;background:rgba(167,139,250,.08);display:flex;gap:16px;flex-wrap:wrap">
+        <div class="ii"><div class="il">Der. Import.</div><div class="iv">USD ${fmt(sumF(cl,'der'),2)}</div></div>
+        <div class="ii"><div class="il">IVA 21%</div><div class="iv">USD ${fmt(sumF(cl,'iva'),2)}</div></div>
+        <div class="ii"><div class="il" style="color:var(--pu)">Total</div><div class="iv" style="color:var(--pu)">USD ${fmt(sumF(cl,'total'),2)}</div></div></div></div>`;
+  });
+  html+=`<div style="border-top:2px solid var(--pu);padding-top:10px;display:flex;gap:20px;flex-wrap:wrap">
+    <div class="ii"><div class="il">Der. Importación total</div><div class="iv">USD ${fmt(sumF(calc,'der'),2)}</div></div>
+    <div class="ii"><div class="il">IVA 21% total</div><div class="iv">USD ${fmt(sumF(calc,'iva'),2)}</div></div>
+    <div class="ii"><div class="il" style="color:var(--pu)">TOTAL LIQUIDACIÓN</div><div class="iv" style="color:var(--pu);font-size:20px">USD ${fmt(sumF(calc,'total'),2)}</div></div></div>
+  <div style="margin-top:12px"><button class="btn btnpu" onclick="imprimirLiqSabanas()">🖨 Imprimir liquidación</button></div></div>`;
+  const res=document.getElementById('liq-resultado'); res.style.display='block'; res.innerHTML=html; liqState.calc=calc;
+  res.scrollIntoView({behavior:'smooth'});
+}
+function imprimirLiqSabanas(){
+  const el=document.getElementById('liq-resultado'); if(!el) return;
+  const css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:9px;color:#000;padding:10px}table{width:100%;border-collapse:collapse;margin-bottom:6px}th{background:#e8e8e8;border:1px solid #aaa;padding:3px 4px;font-size:8px;text-align:left}td{border:1px solid #ccc;padding:2px 4px;font-size:8.5px}button{display:none}.ct{font-size:13px;font-weight:700;margin-bottom:8px}.ii{display:inline-block;margin-right:14px}.il{font-size:8px;text-transform:uppercase}.iv{font-weight:700;font-size:11px}@media print{@page{size:A4 landscape;margin:8mm}}';
+  let iframe=document.getElementById('pif');
+  if(!iframe){ iframe=document.createElement('iframe'); iframe.id='pif'; iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:297mm;height:210mm;border:none'; document.body.appendChild(iframe); }
+  iframe.onload=function(){iframe.contentWindow.focus();iframe.contentWindow.print();};
+  iframe.srcdoc='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'+css+'</style></head><body>'+el.innerHTML+'</body></html>';
+}
+
 function generarLiqDesdeSalida(salOverride){
   const sal = salOverride || salidaActiva;
+  if(sal && !sal.lineas.length && (sal.sabanas||[]).length){ return generarLiqSabanas(sal); }
   if(!sal||!sal.lineas.length){
     alert('No hay líneas en la salida.'); return;
   }
@@ -4299,6 +4497,7 @@ function calcularLiqSalida(){
 
 function calcularLiq(){
   if(!liqState) return;
+  if(liqState.sabanas) { calcularLiqSabanas(); return; }
   if(liqState.fromSalida) { calcularLiqSalida(); return; }
   const {tipo,art,matKeys,med,qty,zfi8Sel,selectedDKs}=liqState;
 
