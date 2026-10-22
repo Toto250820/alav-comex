@@ -1096,6 +1096,20 @@ async function loadCustomCategoriasFromSupabase(){
   }catch(e){ /* si la tabla no existe todavía, seguimos con lo que haya local */ }
 }
 
+let _ultRefrescoStock=0;
+async function refrescarStockDesdeSupabase(forzar){
+  if(!forzar && Date.now()-_ultRefrescoStock<4000) return;
+  _ultRefrescoStock=Date.now();
+  try{
+    const ok=await loadStockFromSupabase();
+    if(ok){
+      try{ renderStock(); }catch(_){}
+      try{ if(document.getElementById('sec-calc').classList.contains('active')) onCalcChange(); }catch(_){}
+      try{ if(document.getElementById('sec-pend').classList.contains('active')) loadPendientes(); }catch(_){}
+    }
+  }catch(e){ console.error('No se pudo refrescar el stock:',e); }
+}
+
 async function loadStockFromSupabase() {
   try {
     const rows = await sbFetch('stock_base?select=*&limit=2000', {method:'GET', headers:{'Prefer':''}});
@@ -1132,6 +1146,17 @@ async function loadStockFromSupabase() {
         });
       }
     });
+    // Reaplicar las reservas de salidas en borrador (la lista se rearmó desde Supabase)
+    try{
+      Object.values(reservaPatch).forEach(resv=>{
+        Object.entries(resv).forEach(([dk,cant])=>{
+          Object.keys(STOCK_BASE).forEach(k=>{
+            const row=STOCK_BASE[k]?.find(r=>(r.despacho+'_'+r.item+'_'+r.subitem)===dk);
+            if(row) row.cancel_qty=(row.cancel_qty||0)+cant;
+          });
+        });
+      });
+    }catch(_){}
     unificarCategoriasDuplicadas();
     console.log('Stock cargado desde Supabase:', rows.length, 'registros');
     try{ programarRefrescoET19(); }catch(_){}
@@ -1178,11 +1203,22 @@ async function loadBorradoresFromSupabase() {
 async function updateStockInSupabase(despacho, item, subitem, newCancelQty) {
   const id = despacho + '_' + item + '_' + subitem;
   try {
-    await sbFetch('stock_base?id=eq.' + encodeURIComponent(id), {
+    const res = await sbFetch('stock_base?id=eq.' + encodeURIComponent(id), {
       method: 'PATCH',
+      headers: {'Prefer':'return=representation'},
       body: JSON.stringify({ cancel_qty: newCancelQty })
     });
-  } catch(e) { console.error('Error actualizando stock en Supabase:', e); }
+    if(res && res.length && Math.abs((res[0].cancel_qty??NaN)-newCancelQty)<0.001) return {ok:true,id};
+    // No había fila en Supabase con ese id: la creamos con los datos que tenemos en pantalla
+    let hallada=null, kHallada=null;
+    Object.keys(STOCK_BASE).forEach(k=>{ const r=(STOCK_BASE[k]||[]).find(x=>x.despacho===despacho&&x.item===item&&x.subitem===subitem); if(r&&!hallada){hallada=r;kHallada=k;} });
+    Object.keys(stockExtra).forEach(k=>{ const r=(stockExtra[k]||[]).find(x=>x.despacho===despacho&&x.item===item&&x.subitem===subitem); if(r&&!hallada){hallada=r;kHallada=k;} });
+    if(hallada){
+      await pushStockRowToSupabase(kHallada, {...hallada, cancel_qty:newCancelQty});
+      return {ok:true,id,creada:true};
+    }
+    return {ok:false,id,motivo:'no existe en Supabase ni en pantalla'};
+  } catch(e) { console.error('Error actualizando stock en Supabase:', e); return {ok:false,id,motivo:e.message}; }
 }
 
 // Guardar salida en Supabase
@@ -1888,6 +1924,7 @@ function showSec(id,btn){
   document.getElementById('sec-'+id).classList.add('active');
   btn.classList.add('active');
   if(id==='stock') renderStock();
+  if(id==='calc' || id==='stock' || id==='insimp' || id==='sal') refrescarStockDesdeSupabase(false);
   if(id==='hist')  { poblarSelectorConsumo(); poblarSelectorArticuloHist(); }
   if(id==='compras'){ if(!ocItemIndices.length) agregarLineaOC(); if(!document.getElementById('oc-fecha-emision').value) document.getElementById('oc-fecha-emision').value = new Date().toISOString().slice(0,10); loadOrdenesCompra(); loadProveedores(); }
   if(id==='term' || id==='insimp') loadTerminados();
@@ -3778,16 +3815,25 @@ function confirmarSalida(){
   save();
   // Sincronizar con Supabase
   const _sal = salidaHistorial[0];
+  const _pendUpd=[], _sinFila=[];
   if(_sal) {
     saveSalidaToSupabase(_sal).catch(e=>console.error(e));
     if(_sal.cancelaciones) {
       _sal.cancelaciones.forEach(c=>{
         const r=Object.values(STOCK_BASE).flat().find(x=>x.despacho===c.despacho&&x.item===c.item_zfi&&x.subitem===c.subitem);
-        if(r) updateStockInSupabase(r.despacho,r.item,r.subitem,r.cancel_qty).catch(e=>console.error(e));
+        if(r) _pendUpd.push(updateStockInSupabase(r.despacho,r.item,r.subitem,r.cancel_qty).catch(e=>({ok:false,id:c.despacho+'_'+c.item_zfi+'_'+c.subitem,motivo:e.message})));
+        else _sinFila.push(c.despacho+' ít.'+c.item_zfi+'-'+c.subitem);
       });
     }
   }
-  alert('Salida confirmada. Stock actualizado.');
+  Promise.all(_pendUpd).then(rs=>{
+    const mal=rs.filter(x=>!x.ok);
+    if(mal.length || _sinFila.length){
+      alert('Salida confirmada, PERO ojo con el stock:\n'
+        +(mal.length?'\n• No se pudo guardar en Supabase ('+mal.length+'):\n'+mal.map(x=>'   '+x.id+' — '+x.motivo).join('\n'):'')
+        +(_sinFila.length?'\n• No encontrados en el stock (no se descontaron) ('+_sinFila.length+'):\n'+_sinFila.map(x=>'   '+x).join('\n'):''));
+    } else { alert('Salida confirmada. Stock actualizado (guardado en Supabase).'); }
+  });
   renderSalidaHist();
 }
 
@@ -6672,6 +6718,7 @@ window.addEventListener('message', ev=>{
   const fr=document.getElementById('cargapdf-frame');
   if(!fr || ev.source!==fr.contentWindow || !ev.data) return;
   if(ev.data.ga==='h') fr.style.height = Math.max(500, ev.data.h+20)+'px';
+  if(ev.data.ga==='stock-changed') refrescarStockDesdeSupabase(true);
 });
 
 async function loadStockMercaderia(){
