@@ -248,7 +248,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 22/10 14:30</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 22/10 15:10</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -1120,13 +1120,34 @@ async function refrescarStockDesdeSupabase(forzar){
 
 async function loadStockFromSupabase() {
   try {
-    const rows = await sbFetch('stock_base?select=*&limit=2000', {method:'GET', headers:{'Prefer':''}});
+    // Se traen TODAS las filas (de a 1000) — antes había un tope de 2000 y lo que pasaba de ahí no aparecía
+    let rows = [];
+    for(let off=0; off<50000; off+=1000){
+      const pg = await sbFetch('stock_base?select=*&order=id.asc&limit=1000&offset='+off, {method:'GET', headers:{'Prefer':''}});
+      if(!pg || !pg.length) break;
+      rows = rows.concat(pg);
+      if(pg.length<1000) break;
+    }
     if (!rows || !rows.length) return false;
     // Si ya tenemos este id como carga manual local (stockExtra), no lo importamos de nuevo
     // (evita que se muestre duplicado en ESTE navegador; en otros navegadores sí se ve normal)
     const idsLocalesManual = new Set();
     Object.values(stockExtra).forEach(arr=>arr.forEach(r=>idsLocalesManual.add(r.despacho+'_'+r.item+'_'+r.subitem)));
     Object.keys(STOCK_BASE).forEach(k => STOCK_BASE[k] = []);
+    // Las cargas manuales locales (stockExtra) también tienen que reflejar lo que ya se descontó en Supabase
+    // (por PDF, desde otra compu, etc.). Si lo local es MAYOR (descuento hecho acá y no guardado), se sube a Supabase.
+    const extraPorId = {};
+    Object.values(stockExtra).forEach(arr=>arr.forEach(x=>{ extraPorId[x.despacho+'_'+x.item+'_'+x.subitem]=x; }));
+    rows.forEach(r => {
+      const id = r.despacho+'_'+r.item+'_'+r.subitem;
+      const ex = extraPorId[id];
+      if(ex){
+        const sbCq = parseFloat(r.cancel_qty||0), locCq = parseFloat(ex.cancel_qty||0);
+        if(locCq > sbCq + 0.001){ updateStockInSupabase(ex.despacho, ex.item, ex.subitem, locCq).catch(()=>{}); }
+        else { ex.cancel_qty = sbCq; }
+        if(r.cantidad!=null && !isNaN(parseFloat(r.cantidad))) ex.cantidad = parseFloat(r.cantidad);
+      }
+    });
     rows.forEach(r => {
       const id = r.despacho+'_'+r.item+'_'+r.subitem;
       if (idsLocalesManual.has(id)) return;
@@ -3845,7 +3866,7 @@ function confirmarSalida(){
     saveSalidaToSupabase(_sal).catch(e=>console.error(e));
     if(_sal.cancelaciones) {
       _sal.cancelaciones.forEach(c=>{
-        const r=Object.values(STOCK_BASE).flat().find(x=>x.despacho===c.despacho&&x.item===c.item_zfi&&x.subitem===c.subitem);
+        const r=[...Object.values(STOCK_BASE).flat(),...Object.values(stockExtra).flat()].find(x=>x.despacho===c.despacho&&x.item===c.item_zfi&&x.subitem===c.subitem);
         if(r) _pendUpd.push(updateStockInSupabase(r.despacho,r.item,r.subitem,r.cancel_qty).catch(e=>({ok:false,id:c.despacho+'_'+c.item_zfi+'_'+c.subitem,motivo:e.message})));
         else _sinFila.push(c.despacho+' ít.'+c.item_zfi+'-'+c.subitem);
       });
