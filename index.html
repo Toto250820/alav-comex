@@ -248,6 +248,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 22/10 14:30</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -337,7 +338,7 @@ html[data-theme="dark"]{
 
 <!-- CALCULADORA -->
 <div id="sec-calc" class="sec active">
-  <div class="stit">Stock General — Calculadora de consumo</div>
+  <div class="stit" style="display:flex;align-items:center;gap:10px">Stock General — Calculadora de consumo <button class="btn" style="padding:2px 8px;font-size:12px" onclick="refrescarStockDesdeSupabase(true).then(()=>onCalcChange())" title="Releer el stock desde Supabase">↻ Actualizar stock</button></div>
   <div class="card">
     <div class="fr">
       <div class="ff" style="max-width:200px"><label>Tipo</label>
@@ -617,6 +618,13 @@ html[data-theme="dark"]{
     <button class="btn btnp" onclick="reintentarPendientes()">↻ Reintentar descontar los no encontrados</button>
     <button class="btn" style="margin-left:6px" onclick="imprimirPendientes()">🖨 Imprimir no encontrados</button>
     <select id="pend-filtro" onchange="renderPendientes()" style="width:auto;margin-left:10px"><option value="todo">Ver todo</option><option value="faltan">Solo salidas con faltantes</option></select>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--bd2)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">🔎 Consultar un despacho (qué tiene Supabase vs qué muestra la pantalla)</div>
+      <input id="diag-desp" placeholder="ej: 26258ZFI8000004Z" style="width:260px;font-family:var(--mn)"/>
+      <button class="btn" onclick="consultarDespacho()">Consultar</button>
+      <button class="btn" style="margin-left:6px" onclick="refrescarStockDesdeSupabase(true).then(()=>{document.getElementById('diag-res').innerHTML='✓ Stock actualizado desde Supabase'})">↻ Forzar actualización del stock</button>
+      <div id="diag-res" style="margin-top:8px;font-size:12px"></div>
+    </div>
     <div id="pend-msg" style="font-size:12px;margin-top:8px"></div>
     <div id="pend-lista" style="margin-top:8px"></div>
   </div>
@@ -2342,6 +2350,22 @@ async function loadPendientes(){
   try{ zfe3Proc = await sbFetch('zfe3_procesados?select=*&limit=1000', {method:'GET', headers:{'Prefer':''}}) || []; }catch(e){ zfe3Proc=[]; }
   actualizarBadgePendientes();
   renderPendientes();
+}
+async function consultarDespacho(){
+  const d=(document.getElementById('diag-desp').value||'').trim().toUpperCase();
+  const out=document.getElementById('diag-res'); if(!d){ out.textContent='Escribí un número de despacho.'; return; }
+  out.textContent='Consultando...';
+  try{
+    const rows=await sbFetch('stock_base?select=*&despacho=eq.'+encodeURIComponent(d)+'&order=item.asc,subitem.asc',{method:'GET',headers:{'Prefer':''}})||[];
+    const log=await sbFetch('descuentos_pendientes?select=*&despacho=eq.'+encodeURIComponent(d),{method:'GET',headers:{'Prefer':''}}).catch(()=>[])||[];
+    if(!rows.length){ out.innerHTML='<span style="color:var(--rd)">Ese despacho NO existe en Supabase (stock_base). Por eso no descuenta.</span>'+(log.length?`<br>Figura en ${log.length} registro(s) de PDF como no encontrado.`:''); return; }
+    const mem=[...Object.values(STOCK_BASE).flat(),...Object.values(stockExtra).flat()];
+    out.innerHTML=`<div class="tw"><table><thead><tr><th>Ít.</th><th>Sub.</th><th>Material</th><th>Cantidad</th><th>Descontado (Supabase)</th><th>Disponible (Supabase)</th><th>Descontado que muestra la pantalla</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>{ const m=mem.find(x=>x.despacho===r.despacho&&x.item==r.item&&x.subitem==r.subitem); const dif=m&&Math.abs((m.cancel_qty||0)-(r.cancel_qty||0))>0.001;
+      return `<tr class="${dif?'warn':''}"><td>${r.item}</td><td>${r.subitem}</td><td>${r.material||''}</td><td class="mono">${fmt(r.cantidad)}</td><td class="mono">${fmt(r.cancel_qty||0)}</td><td class="mono"><b>${fmt((r.cantidad||0)-(r.cancel_qty||0))}</b></td><td class="mono">${m?fmt(m.cancel_qty||0):'—'}</td><td>${dif?'⚠ pantalla desactualizada':''}</td></tr>`;}).join('')}
+    </tbody></table></div>
+    ${log.length?`<div style="margin-top:6px">PDF que lo usaron: ${log.map(x=>`${x.pdf_tipo||''} ${x.pdf_nro} (${x.estado}, ${fmt(x.cantidad)})`).join(' · ')}</div>`:''}`;
+  }catch(e){ out.innerHTML='<span style="color:var(--rd)">Error: '+e.message+'</span>'; }
 }
 function actualizarBadgePendientes(){
   const n=pendientesDesc.filter(x=>x.estado==='pendiente').length;
