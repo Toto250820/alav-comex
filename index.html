@@ -227,6 +227,7 @@ html[data-theme="dark"]{
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
       <button class="nb ncompras" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">Cargar Compra</button>
       <button class="nb ncomprasreal" onclick="cerrarSubmenusNav();showSec('comprasreal',document.querySelector('.nb.ncomprasreal'))">Compra Realizada</button>
+      <button class="nb navisoscompra" onclick="cerrarSubmenusNav();showSec('avisoscompra',document.querySelector('.nb.navisoscompra'))">Avisos de compra <span id="avc-badge" style="display:none;background:var(--rd);color:#fff;border-radius:9px;padding:0 6px;font-size:10px"></span></button>
       <button class="nb" onclick="cerrarSubmenusNav();showSec('solimp',this)">Solicitud Insumos Importados</button>
     </div>
 
@@ -248,7 +249,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 22/10 15:10</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 27/10 12:00</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -608,6 +609,27 @@ html[data-theme="dark"]{
     <button class="btn" style="padding:2px 8px;font-size:13px" onclick="loadOrdenesCompra()" title="Actualizar">↻</button>
   </div>
   <div id="oc-lista-real"><div class="empty">Cargando...</div></div>
+</div>
+
+<div id="sec-avisoscompra" class="sec">
+  <div class="stit">Avisos de compra</div>
+  <div class="card" style="max-width:620px">
+    <div class="ct">Registrar aviso de compra</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Desde que se aprueba el SITA, el proveedor tiene <b>72 horas hábiles</b> (sin sábados ni domingos) para entregar. Si no entregó, <b>renovás</b> el aviso; cuando llega, lo marcás <b>resuelto</b> y cargás el remito de entrega. Al aprobar un SITA desde la orden, el aviso se crea solo.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:170px"><label>Nº de OC</label><input id="avc-oc" placeholder="ej: OC-0012" style="font-family:var(--mn);font-size:12px"/></div>
+      <div class="ff" style="max-width:190px"><label>Nº de SITA</label><input id="avc-sita" placeholder="ej: 26-1234" style="font-family:var(--mn);font-size:12px"/></div>
+      <div class="ff" style="max-width:150px"><label>SITA aprobado el</label><input id="avc-fecha" type="date"/></div>
+      <div class="ff" style="max-width:110px"><label>Hora</label><input id="avc-hora" type="time"/></div>
+    </div>
+    <div class="fr"><div class="ff"><label>Nota (opcional)</label><input id="avc-nota" placeholder="ej: proveedor avisó que entrega el jueves"/></div></div>
+    <button class="btn btnp" onclick="registrarAvisoCompra()">🔔 Registrar aviso de compra</button>
+    <div id="avc-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+  <div class="card">
+    <div class="ct">Avisos de compra pendientes</div>
+    <div id="avc-lista"><div class="empty">Ninguno.</div></div>
+  </div>
 </div>
 
 <!-- ET19: VINCULAR -->
@@ -1344,7 +1366,7 @@ async function initFromSupabase() {
   await loadCustomCategoriasFromSupabase();
   poblarSelectMatAdm();
   const stockOk = await loadStockFromSupabase();
-  await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase()]);
+  await Promise.all([loadSalidasFromSupabase(), loadBorradoresFromSupabase(), loadAvisosFromSupabase(), loadAvisosCompra()]);
   try{ const rows = await sbFetch('stock_minimos?select=*', {method:'GET', headers:{'Prefer':''}}); stockMinimos = rows || []; }catch(e){}
   await loadZfi6Et19();
   if(stockOk) { renderStock(); renderSalidaHist(); }
@@ -1528,7 +1550,177 @@ function renderAvisos(){
     }
   });
 }
-setInterval(renderAvisos, 60000); // refresca el estado (vigente/vencido) cada 1 min sin recargar
+setInterval(renderAvisos, 60000);
+// ═══════════════════════════════════════════
+// SITA (aprobado / no aprobado) + AVISOS DE COMPRA (72 hs hábiles)
+// ═══════════════════════════════════════════
+function sumarHorasHabiles(desde, horas){
+  // Cuenta solo lunes a viernes: 72 hs hábiles = 3 días hábiles manteniendo la hora
+  const d = new Date(desde.getTime());
+  let dias = Math.round(horas/24);
+  while(dias>0){
+    d.setDate(d.getDate()+1);
+    const w = d.getDay();
+    if(w!==0 && w!==6) dias--;
+  }
+  // si el punto de partida cayó en fin de semana, corre al lunes
+  while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()+1);
+  return d;
+}
+
+function bloqueSitaOC(o, pendiente, q){
+  const est = o.sita_estado || '';
+  const inp = 'font-family:var(--mn);font-size:12px;padding:5px 7px;width:170px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)';
+  if(!pendiente){
+    return (o.sita ? `<div style="padding:6px 12px;font-size:12px">SITA <b class="mono">${q(o.sita)}</b> — ${est==='aprobado'?'<span style="color:var(--gr)">APROBADO</span>':'sin aprobar'}</div>` : '');
+  }
+  if(est==='aprobado'){
+    return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:center;background:var(--gbg);border:1px solid var(--gr)">
+      <div style="color:var(--gr);font-weight:600">✅ SITA <span class="mono">${q(o.sita)}</span> — APROBADO</div>
+      <div style="font-size:11px;color:var(--tx2)">${o.sita_fecha_aprobado?('Aprobado: '+fmtFechaHora(o.sita_fecha_aprobado)+' · '):''}Esperando el remito de entrega para confirmar la compra.</div>
+      <button class="btn" style="font-size:11px;padding:3px 9px" onclick="sitaVolverANoAprobado('${o.id}')">↩ Pasar a NO APROBADO</button>
+    </div>`;
+  }
+  return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end;${est==='no_aprobado'?'border:1px solid var(--rd)':''}">
+    <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">SITA ${est==='no_aprobado'?'— NO APROBADO (editá el número)':''}</label>
+      <input id="oc-sita-${o.id}" value="${q(o.sita||'')}" placeholder="Nº de SITA" style="${inp}"/></div>
+    <button class="btn btng" onclick="guardarSitaEstado('${o.id}','aprobado')">✓ APROBADO</button>
+    <button class="btn btnd" onclick="guardarSitaEstado('${o.id}','no_aprobado')">✕ NO APROBADO</button>
+  </div>`;
+}
+
+async function guardarSitaEstado(id, estado){
+  const sita = (document.getElementById('oc-sita-'+id)?.value||'').trim();
+  if(!sita){ alert('Escribí el número de SITA.'); return; }
+  const o = ordenesCompra.find(x=>x.id===id);
+  const ahora = new Date();
+  const patch = {sita, sita_estado:estado, sita_fecha_aprobado: estado==='aprobado' ? ahora.toISOString() : null};
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify(patch)});
+    if(estado==='aprobado' && o){
+      const who = localStorage.getItem('ga_user_label') || 'alguien';
+      try{
+        await sbFetch('avisos_compra', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify({
+          id:'avc_'+id+'_'+ahora.getTime(), oc_id:id, oc_numero:o.numero, sita, sita_aprobado_en:ahora.toISOString(),
+          vence_en:sumarHorasHabiles(ahora,72).toISOString(), registrado_por:who, resuelto:false, renovaciones:0
+        })});
+        showToast('✓ SITA aprobado. Aviso de compra creado: vence en 72 hs hábiles.', 6000);
+      }catch(e){ alert('El SITA quedó aprobado, pero no se pudo crear el aviso de compra (¿corriste el SQL?): '+e.message); }
+    } else showToast(estado==='aprobado' ? '✓ SITA aprobado' : 'SITA guardado como NO APROBADO');
+    await loadOrdenesCompra();
+  }catch(e){
+    alert('Error guardando el SITA: '+e.message + (String(e.message).includes('sita_estado')?'\n\nFalta correr el SQL "avisos_compra_setup.sql" en Supabase.':''));
+  }
+}
+
+async function sitaVolverANoAprobado(id){
+  if(!confirm('¿Pasar este SITA a NO APROBADO? Se puede editar el número y aprobarlo de nuevo.')) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({sita_estado:'no_aprobado', sita_fecha_aprobado:null})});
+    try{ await sbFetch('avisos_compra?oc_id=eq.'+encodeURIComponent(id)+'&resuelto=eq.false', {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({resuelto:true, nota:'SITA vuelto a NO APROBADO'})}); }catch(e){}
+    await loadOrdenesCompra();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+let avisosCompra = [];
+async function loadAvisosCompra(){
+  try{
+    const rows = await sbFetch('avisos_compra?select=*&resuelto=eq.false&order=vence_en.asc', {method:'GET', headers:{'Prefer':''}});
+    avisosCompra = rows || [];
+  }catch(e){ avisosCompra = []; }
+  renderAvisosCompra();
+}
+function abrirAvisosCompra(){
+  const f=document.getElementById('avc-fecha'), h=document.getElementById('avc-hora');
+  if(f && !f.value){ const n=new Date(); f.value=n.toISOString().slice(0,10); h.value=n.toTimeString().slice(0,5); }
+  loadAvisosCompra();
+}
+
+async function registrarAvisoCompra(){
+  const oc = document.getElementById('avc-oc').value.trim();
+  const sita = document.getElementById('avc-sita').value.trim();
+  const f = document.getElementById('avc-fecha').value, h = document.getElementById('avc-hora').value;
+  const nota = document.getElementById('avc-nota').value.trim();
+  const msg = document.getElementById('avc-msg'); msg.style.display='block';
+  if(!oc || !sita || !f || !h){ msg.style.color='var(--rd)'; msg.textContent='Completá OC, SITA, fecha y hora.'; return; }
+  const aprob = new Date(`${f}T${h}`);
+  const venc = sumarHorasHabiles(aprob,72);
+  const ocRow = (ordenesCompra||[]).find(x=>String(x.numero).toLowerCase()===oc.toLowerCase());
+  try{
+    await sbFetch('avisos_compra', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify({
+      id:'avc_'+oc+'_'+aprob.getTime(), oc_id: ocRow?ocRow.id:null, oc_numero:oc, sita, sita_aprobado_en:aprob.toISOString(),
+      vence_en:venc.toISOString(), nota, registrado_por: localStorage.getItem('ga_user_label')||'alguien', resuelto:false, renovaciones:0
+    })});
+    msg.style.color='var(--gr)'; msg.textContent='✓ Aviso registrado. Vence: '+fmtFechaHora(venc.toISOString());
+    ['avc-oc','avc-sita','avc-nota'].forEach(i=>document.getElementById(i).value='');
+    await loadAvisosCompra();
+    abrirCalendarAvisoCompra(oc, sita, venc, nota);
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message+' (¿corriste el SQL avisos_compra_setup.sql?)'; }
+}
+
+function abrirCalendarAvisoCompra(oc, sita, venc, nota){
+  const fmt2 = d=>d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+  const end = new Date(venc.getTime()+30*60000);
+  const text = encodeURIComponent(`⚠️ Vence aviso de compra ${oc} — SITA ${sita}`);
+  const details = encodeURIComponent(`El proveedor de la ${oc} (SITA ${sita}) tenía 72 hs hábiles para entregar y vence a esta hora. Si no entregó, renovar el aviso en la app.${nota?(' '+nota):''}`);
+  window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${fmt2(venc)}/${fmt2(end)}&details=${details}&add=${encodeURIComponent(AVISO_GUESTS.join(','))}`,'_blank');
+}
+
+async function renovarAvisoCompra(id){
+  const a = avisosCompra.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`¿Renovar el aviso de ${a.oc_numero}? El proveedor no entregó: arranca otro plazo de 72 hs hábiles desde ahora.`)) return;
+  const venc = sumarHorasHabiles(new Date(),72);
+  try{
+    await sbFetch('avisos_compra?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({vence_en:venc.toISOString(), renovaciones:(a.renovaciones||0)+1})});
+    await loadAvisosCompra();
+    abrirCalendarAvisoCompra(a.oc_numero, a.sita, venc, 'Renovación Nº '+((a.renovaciones||0)+1));
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function resolverAvisoCompra(id){
+  const a = avisosCompra.find(x=>x.id===id); if(!a) return;
+  const remito = (prompt(`Resolver aviso de ${a.oc_numero} (SITA ${a.sita}).\n\nNº de remito de entrega:`)||'').trim();
+  if(!remito){ alert('Hace falta el número de remito de entrega para resolverlo.'); return; }
+  try{
+    await sbFetch('avisos_compra?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({resuelto:true, remito_entrega:remito})});
+    const oc = a.oc_id && (ordenesCompra||[]).find(x=>x.id===a.oc_id);
+    if(oc && (oc.estado==='abierta'||oc.estado==='confirmada') && oc.sita_estado==='aprobado' && confirm(`¿Confirmar también la compra ${oc.numero} con el remito ${remito}? (queda cerrada)`)){
+      await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(oc.id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({estado:'cerrada', fecha_cierre:new Date().toISOString().slice(0,10), remito_entrega:remito})});
+      try{ await loadOrdenesCompra(); }catch(e){}
+    }
+    await loadAvisosCompra();
+    showToast('✓ Aviso resuelto con el remito '+remito);
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+function renderAvisosCompra(){
+  const el = document.getElementById('avc-lista');
+  const now = Date.now();
+  const venc = avisosCompra.filter(a=>new Date(a.vence_en).getTime()<now).length;
+  const b = document.getElementById('avc-badge');
+  if(b){ b.style.display = venc?'inline':'none'; b.textContent = venc; }
+  if(!el) return;
+  if(!avisosCompra.length){ el.innerHTML='<div class="empty">Ninguno.</div>'; return; }
+  const q = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;');
+  el.innerHTML = avisosCompra.map(a=>{
+    const v = new Date(a.vence_en).getTime(), falta = Math.round((v-now)/60000);
+    const estado = v<now ? `<span style="background:var(--rbg);color:var(--rd);padding:2px 8px;border-radius:3px;font-size:10px">🔴 VENCIDO</span>`
+      : falta<24*60 ? `<span style="background:var(--ybg);color:var(--yw);padding:2px 8px;border-radius:3px;font-size:10px">🟡 vence en ${falta<60?falta+'min':(falta/60).toFixed(1)+'hs'}</span>`
+      : `<span style="background:var(--gbg);color:var(--gr);padding:2px 8px;border-radius:3px;font-size:10px">🟢 vigente</span>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;gap:8px;flex-wrap:wrap">
+      <div><span class="mono" style="font-weight:600">${q(a.oc_numero)}</span> <span class="mono" style="color:var(--tx2)">· SITA ${q(a.sita)}</span> ${estado}${a.renovaciones?` <span style="font-size:10px;color:var(--tx3)">(renovado ${a.renovaciones}x)</span>`:''}<br>
+        <span style="color:var(--tx3);font-size:11px">SITA aprobado: ${fmtFechaHora(a.sita_aprobado_en)} · Vence: ${fmtFechaHora(a.vence_en)} · por ${q(a.registrado_por||'?')}${a.nota?(' · '+q(a.nota)):''}</span></div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:var(--ybg);border-color:var(--yw);color:var(--yw)" onclick="renovarAvisoCompra('${q(a.id)}')">🔄 Renovar</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="resolverAvisoCompra('${q(a.id)}')">✓ Resuelto</button>
+      </div></div>`;
+  }).join('');
+  avisosCompra.forEach(a=>{
+    if(new Date(a.vence_en).getTime()<now && !avisosNotificados[a.id]){ avisosNotificados[a.id]=true; showToast('🔴 Venció el aviso de compra '+a.oc_numero+' (SITA '+a.sita+')',10000); }
+  });
+}
+setInterval(renderAvisosCompra, 60000);
+ // refresca el estado (vigente/vencido) cada 1 min sin recargar
 
 // ═══════════════════════════════════════════
 // CHAT INTERNO (Javier / Marina / Carina)
@@ -1959,6 +2151,7 @@ function showSec(id,btn){
   if(id==='term' || id==='insimp') loadTerminados();
   if(id==='pend') loadPendientes();
   if(id==='comprasreal') loadOrdenesCompra();
+  if(id==='avisoscompra') abrirAvisosCompra();
   if(id==='cargapdf') abrirCargaPdf();
   if(id==='et19vinc') initVincularET19();
   if(id==='et19exp') initExplorarET19();
@@ -5203,10 +5396,12 @@ function renderOrdenesCompra(){
         `:''}
       </div>
 
+      ${bloqueSitaOC(o, pendiente, q)}
+
       ${pendiente?`<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
         <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">Cuando llegue el pedido — Nº de remito de entrega</label>
           <input id="oc-remito-${o.id}" placeholder="ej: R-0001-00001234" style="font-family:var(--mn);font-size:12px;padding:5px 7px;width:230px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
-        <button class="btn btng" onclick="cerrarOrdenConRemito('${o.id}')">🔒 Cerrar — llegó el pedido</button>
+        <button class="btn btng" ${o.sita_estado==='aprobado'?'':'disabled title="Primero tiene que estar el SITA APROBADO"'} onclick="cerrarOrdenConRemito('${o.id}')">🔒 Confirmar compra — llegó el pedido</button>
       </div>`:''}
     </div>`;
   };
@@ -5251,15 +5446,18 @@ async function guardarEdicionOrden(id){
 // Se cierra recién cuando llega el pedido, y queda anotado el remito de entrega
 async function cerrarOrdenConRemito(id){
   const remito = (document.getElementById('oc-remito-'+id)?.value||'').trim();
-  if(!remito){ alert('Escribí el número de remito de entrega para poder cerrar el pedido.'); return; }
+  const oc0 = ordenesCompra.find(x=>x.id===id);
+  if(!oc0 || oc0.sita_estado!=='aprobado'){ alert('Para confirmar la compra el SITA tiene que estar APROBADO.'); return; }
+  if(!remito){ alert('Escribí el número de remito de entrega para poder confirmar la compra.'); return; }
   if(!confirm(`¿Cerrar este pedido con el remito ${remito}?\n\nYa no se va a poder editar.`)) return;
   try{
     await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {
       method:'PATCH', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({estado:'cerrada', fecha_cierre: new Date().toISOString().slice(0,10), remito_entrega: remito})
     });
+    try{ await sbFetch('avisos_compra?oc_id=eq.'+encodeURIComponent(id)+'&resuelto=eq.false', {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({resuelto:true, remito_entrega:remito})}); }catch(e){}
     await loadOrdenesCompra();
-    showToast('✓ Pedido cerrado con el remito '+remito);
+    showToast('✓ Compra confirmada con el remito '+remito);
   }catch(e){
     alert('Error cerrando el pedido: '+e.message + (String(e.message).includes('remito_entrega') ? '\n\nFalta correr el SQL "ordenes_remito_entrega_setup.sql" en Supabase.' : ''));
   }
