@@ -5339,6 +5339,7 @@ async function loadOrdenesCompra(){
   try{
     const rows = await sbFetch('ordenes_compra?select=*&order=creado_en.desc&limit=100', {method:'GET', headers:{'Prefer':''}});
     ordenesCompra = rows || [];
+    try{ await loadET19Registro(); }catch(e){}
     renderOrdenesCompra();
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de órdenes (¿corriste el SQL en Supabase?).</div>';
@@ -5356,6 +5357,14 @@ function renderOrdenesCompra(){
   const q = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const inpStyle = 'font-family:var(--sn);font-size:12px;padding:4px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)';
 
+  // ET19 de la orden: la guardada en la orden, o la que figure en el registro con el mismo SITA
+  const nSita = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const et19DeOrden = o=>{
+    if(o.et19) return o.et19;
+    const k = nSita(o.sita); if(!k) return '';
+    const r = Object.values(et19Registro||{}).find(r=>nSita(r.sita)===k);
+    return r ? r.et19 : '';
+  };
   const tarjeta = o=>{
     let items=[]; try{ items = JSON.parse(o.items||'[]'); }catch(e){}
     const pendiente = esPendiente(o);
@@ -5366,7 +5375,7 @@ function renderOrdenesCompra(){
       <div class="mh">
         <div><span class="mono" style="font-weight:600">${q(o.numero)}</span> — <strong>${q(o.proveedor)}</strong>
           <span class="bdg ${tagCls}">${estadoTxt}</span></div>
-        <div style="font-size:11px;color:var(--tx3)">Pedido: ${q(o.fecha_emision)}${o.fecha_cierre?` · Llegó: ${q(o.fecha_cierre)}`:''}${o.remito_entrega?` · Remito de entrega: <strong>${q(o.remito_entrega)}</strong>`:''}${o.et19?` · <span class="bdg bb">ET19 ${q(o.et19)}</span>`:' · <span style="color:var(--yw)">sin ET19 vinculada</span>'} · por ${q(o.creado_por||'?')}</div>
+        <div style="font-size:11px;color:var(--tx3)">Pedido: ${q(o.fecha_emision)}${o.fecha_cierre?` · Llegó: ${q(o.fecha_cierre)}`:''}${o.remito_entrega?` · Remito de entrega: <strong>${q(o.remito_entrega)}</strong>`:''}${et19DeOrden(o)?` · <span class="bdg bb">ET19 ${q(et19DeOrden(o))}</span>`:' · <span style="color:var(--yw)">sin ET19 vinculada</span>'} · por ${q(o.creado_por||'?')}</div>
       </div>
 
       <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Nota</th></tr></thead><tbody>
@@ -6342,7 +6351,8 @@ async function vincularET19ZFI6(){
     let ocVinc = [];
     try{
       if(!ordenesCompra.length) await loadOrdenesCompra();
-      ocVinc = ordenesCompra.filter(o=>o.sita && o.sita.trim().toUpperCase()===sita.toUpperCase());
+      const ns = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+      ocVinc = ordenesCompra.filter(o=>o.sita && ns(o.sita)===ns(sita));
       for(const o of ocVinc){
         await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(o.id), {method:'PATCH', headers:{'Prefer':'return=minimal'},
           body: JSON.stringify({et19, et19_fecha: oficFinal, et19_meses: meses})});
