@@ -725,6 +725,11 @@ html[data-theme="dark"]{
       </div>
     </div>
     <div class="fr" style="margin-top:6px">
+      <div class="ff" style="max-width:300px"><label>Nº de SITA <span class="t2">(vincula la ET19 con su OC)</span></label>
+        <input id="vinc-sita" placeholder="ej: el SITA aprobado de la compra" style="font-family:var(--mn);font-size:13px"/>
+      </div>
+    </div>
+    <div class="fr" style="margin-top:6px">
       <div class="ff" style="max-width:200px"><label>Fecha de oficialización de la ET19</label><input id="vinc-ofic" type="date" oninput="onVincFechasInput()"/></div>
       <div class="ff" style="max-width:200px"><label>Plazo autorizado</label>
         <select id="vinc-meses" onchange="onVincFechasInput()"><option value="22" selected>22 meses (interno, para llegar a pedir prórroga)</option><option value="12">12 meses</option><option value="24">24 meses</option></select>
@@ -1582,7 +1587,7 @@ function bloqueSitaOC(o, pendiente, q){
     </div>`;
   }
   return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end;${est==='no_aprobado'?'border:1px solid var(--rd)':''}">
-    <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">SITA ${est==='no_aprobado'?'— NO APROBADO (editá el número)':''}</label>
+    <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">SITA ${est==='no_aprobado'?'— NO APROBADO (editá el número)':'(opcional — si la compra no lleva SITA, dejalo vacío)'}</label>
       <input id="oc-sita-${o.id}" value="${q(o.sita||'')}" placeholder="Nº de SITA" style="${inp}"/></div>
     <button class="btn btng" onclick="guardarSitaEstado('${o.id}','aprobado')">✓ APROBADO</button>
     <button class="btn btnd" onclick="guardarSitaEstado('${o.id}','no_aprobado')">✕ NO APROBADO</button>
@@ -5361,7 +5366,7 @@ function renderOrdenesCompra(){
       <div class="mh">
         <div><span class="mono" style="font-weight:600">${q(o.numero)}</span> — <strong>${q(o.proveedor)}</strong>
           <span class="bdg ${tagCls}">${estadoTxt}</span></div>
-        <div style="font-size:11px;color:var(--tx3)">Pedido: ${q(o.fecha_emision)}${o.fecha_cierre?` · Llegó: ${q(o.fecha_cierre)}`:''}${o.remito_entrega?` · Remito de entrega: <strong>${q(o.remito_entrega)}</strong>`:''} · por ${q(o.creado_por||'?')}</div>
+        <div style="font-size:11px;color:var(--tx3)">Pedido: ${q(o.fecha_emision)}${o.fecha_cierre?` · Llegó: ${q(o.fecha_cierre)}`:''}${o.remito_entrega?` · Remito de entrega: <strong>${q(o.remito_entrega)}</strong>`:''}${o.et19?` · <span class="bdg bb">ET19 ${q(o.et19)}</span>`:' · <span style="color:var(--yw)">sin ET19 vinculada</span>'} · por ${q(o.creado_por||'?')}</div>
       </div>
 
       <table><thead><tr><th>Insumo</th><th>Cantidad pedida</th><th>Nota</th></tr></thead><tbody>
@@ -5401,7 +5406,7 @@ function renderOrdenesCompra(){
       ${pendiente?`<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
         <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">Cuando llegue el pedido — Nº de remito de entrega</label>
           <input id="oc-remito-${o.id}" placeholder="ej: R-0001-00001234" style="font-family:var(--mn);font-size:12px;padding:5px 7px;width:230px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
-        <button class="btn btng" ${o.sita_estado==='aprobado'?'':'disabled title="Primero tiene que estar el SITA APROBADO"'} onclick="cerrarOrdenConRemito('${o.id}')">🔒 Confirmar compra — llegó el pedido</button>
+        <button class="btn btng" ${(!o.sita||o.sita_estado==='aprobado')?'':'disabled title="Tiene SITA cargado: primero tiene que estar APROBADO"'} onclick="cerrarOrdenConRemito('${o.id}')">🔒 Confirmar compra — llegó el pedido</button>
       </div>`:''}
     </div>`;
   };
@@ -5447,7 +5452,8 @@ async function guardarEdicionOrden(id){
 async function cerrarOrdenConRemito(id){
   const remito = (document.getElementById('oc-remito-'+id)?.value||'').trim();
   const oc0 = ordenesCompra.find(x=>x.id===id);
-  if(!oc0 || oc0.sita_estado!=='aprobado'){ alert('Para confirmar la compra el SITA tiene que estar APROBADO.'); return; }
+  if(!oc0){ return; }
+  if(oc0.sita && oc0.sita_estado!=='aprobado'){ alert('Esta compra tiene el SITA '+oc0.sita+' cargado pero sin aprobar. Aprobalo para poder confirmar la compra.'); return; }
   if(!remito){ alert('Escribí el número de remito de entrega para poder confirmar la compra.'); return; }
   if(!confirm(`¿Cerrar este pedido con el remito ${remito}?\n\nYa no se va a poder editar.`)) return;
   try{
@@ -6288,6 +6294,7 @@ function onVincET19Input(){
   if(reg){
     document.getElementById('vinc-ofic').value = reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : '';
     document.getElementById('vinc-meses').value = String(reg.meses||22);
+    if(reg.sita) document.getElementById('vinc-sita').value = reg.sita;
     msg.textContent = 'ET19 ya registrada — si hace falta, podés corregir las fechas.';
   } else {
     msg.textContent = k ? 'ET19 nueva: cargá la fecha de oficialización (figura en el PDF de la ET19).' : '';
@@ -6314,6 +6321,8 @@ async function vincularET19ZFI6(){
   const reg = et19Registro[nzET19(et19)];
   if(!reg && !ofic) return falla('Es una ET19 nueva: falta la fecha de oficialización.');
   if(!zfi6 && !ofic) return falla('No hay nada para guardar: cargá la fecha de oficialización o un ZFI6.');
+  const sita = document.getElementById('vinc-sita').value.trim() || (reg && reg.sita) || '';
+  if(!sita) return falla('Cargá el número de SITA: sirve para vincular esta ET19 con su orden de compra.');
 
   if(zfi6){
     const previo = zfi6Et19Map[zfi6];
@@ -6327,8 +6336,19 @@ async function vincularET19ZFI6(){
     // Primero la ET19 (si falla, no se vincula nada a medias)
     await sbFetch('et19_registro', {
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({et19, fecha_oficializacion: oficFinal, meses, creado_por: who})
+      body: JSON.stringify({et19, fecha_oficializacion: oficFinal, meses, sita, creado_por: who})
     });
+    // Vincular con la/s OC que tengan ese SITA
+    let ocVinc = [];
+    try{
+      if(!ordenesCompra.length) await loadOrdenesCompra();
+      ocVinc = ordenesCompra.filter(o=>o.sita && o.sita.trim().toUpperCase()===sita.toUpperCase());
+      for(const o of ocVinc){
+        await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(o.id), {method:'PATCH', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({et19, et19_fecha: oficFinal, et19_meses: meses})});
+      }
+      if(ocVinc.length) await loadOrdenesCompra();
+    }catch(e){ console.error('vinculo OC', e); }
     if(zfi6){
       await sbFetch('zfi6_et19', {
         method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
@@ -6339,7 +6359,9 @@ async function vincularET19ZFI6(){
     const venc = oficFinal ? fmtFechaDate(sumarMesesISO(oficFinal, meses)) : null;
     msg.style.color = 'var(--gr)';
     msg.textContent = '✓ ET19 ' + et19 + ' guardada' + (venc ? ' — vence el ' + venc : '')
-      + (zfi6 ? ' · ZFI6 ' + zfi6 + ' vinculado.' : '.') + ' Podés cargar otra.';
+      + (zfi6 ? ' · ZFI6 ' + zfi6 + ' vinculado.' : '.')
+      + (ocVinc.length ? ' · Vinculada a ' + ocVinc.map(o=>o.numero).join(', ') + '.' : ' · ⚠ No hay ninguna OC con el SITA ' + sita + ' (cargalo en la orden y se vincula al volver a guardar).')
+      + ' Podés cargar otra.';
     document.getElementById('vinc-zfi6').value = '';
     onVincET19Input();
     chequearET19Consumidas();

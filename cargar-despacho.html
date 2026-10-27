@@ -169,6 +169,8 @@ html.embed a[href="./index.html"]{display:none}
       <div class="hi"><label>Vencimiento</label><b id="et-venc" style="color:var(--rd)">—</b></div>
     </div>
     <div class="sub">Este ET19 tiene que reimportarse como ZFI6 antes de la fecha de vencimiento. Si te autorizaron un plazo distinto al estándar, elegilo arriba antes de agregar el recordatorio. Agregalo al calendario para que los 3 tengan el aviso.</div>
+    <div style="margin-top:10px;max-width:340px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn);display:block">Nº de SITA (para vincular esta ET19 con su orden de compra)</label>
+      <input id="et-sita" oninput="programarRegistroET19()" placeholder="ej: el SITA aprobado de la compra" style="font-family:var(--mn);font-size:13px;padding:6px 8px;width:100%;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/></div>
     <div id="et-registro-msg" class="sub" style="margin-top:8px"></div>
     <div class="actions" style="justify-content:flex-start">
       <a id="et-cal-link" class="btn btnp" style="text-decoration:none" href="#" target="_blank">📅 Agregar a Google Calendar (los 3 invitados)</a>
@@ -568,13 +570,25 @@ async function registrarET19EnSistema(){
   if(!currentET19) return;
   const msg = document.getElementById('et-registro-msg');
   const meses = parseInt(document.getElementById('et-meses').value) || 22;
+  const sita = (document.getElementById('et-sita')?.value||'').trim();
+  const et19n = currentET19.despacho.trim().toUpperCase();
   try{
+    const reg = {et19: et19n, fecha_oficializacion: currentET19.fecha, meses, creado_por: localStorage.getItem('ga_user_label')||'alguien'};
+    if(sita) reg.sita = sita;
     await sbFetch('et19_registro', {
       method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body: JSON.stringify({et19: currentET19.despacho.trim().toUpperCase(), fecha_oficializacion: currentET19.fecha, meses,
-                            creado_por: localStorage.getItem('ga_user_label')||'alguien'})
+      body: JSON.stringify(reg)
     });
-    msg.innerHTML = `<span style="color:var(--gr)">✓ ET19 registrada en el sistema (plazo de ${meses} meses). Ya figura en ET19 → Explorar.</span>`;
+    let ocTxt = '';
+    if(sita){
+      const ocs = await sbFetch('ordenes_compra?select=id,numero&sita=eq.'+encodeURIComponent(sita), {method:'GET', headers:{'Prefer':''}});
+      for(const o of (ocs||[])){
+        await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(o.id), {method:'PATCH', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({et19: et19n, et19_fecha: currentET19.fecha, et19_meses: meses})});
+      }
+      ocTxt = (ocs&&ocs.length) ? ` Vinculada a la orden ${ocs.map(o=>o.numero).join(', ')}.` : ' ⚠ Todavía no hay ninguna orden con ese SITA.';
+    } else ocTxt = ' Falta el Nº de SITA para vincularla con su orden de compra.';
+    msg.innerHTML = `<span style="color:${sita&&!ocTxt.includes('⚠')?'var(--gr)':'var(--yw)'}">✓ ET19 registrada en el sistema (plazo de ${meses} meses). Ya figura en ET19 → Explorar.${ocTxt}</span>`;
   }catch(e){
     msg.innerHTML = `<span style="color:var(--rd)">⚠ No se pudo registrar la ET19 en el sistema: ${e.message}</span>`;
   }
@@ -1263,7 +1277,7 @@ function resetTool(){
   currentET19 = null;
   document.getElementById('review-box').style.display='none';
   document.getElementById('et19-box').style.display='none';
-  document.getElementById('et-registro-msg').innerHTML='';
+  document.getElementById('et-registro-msg').innerHTML=''; if(document.getElementById('et-sita')) document.getElementById('et-sita').value='';
   document.getElementById('submit-hint').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
   document.getElementById('zfe1-box').style.display='none';
