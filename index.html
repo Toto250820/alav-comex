@@ -223,6 +223,8 @@ html[data-theme="dark"]{
       <button class="nb npend" onclick="cerrarSubmenusNav();showSec('pend',document.querySelector('.nb.npend'))">Control de descuentos <span id="pend-badge" style="display:none;background:var(--rd);color:#fff;border-radius:9px;padding:0 6px;font-size:10px;margin-left:4px"></span></button>
     </div>
 
+    <button class="nb nnuevoprod" onclick="cerrarSubmenusNav();showSec('nuevoprod',document.querySelector('.nb.nnuevoprod'))">Nuevo producto</button>
+
     <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">Compras ▾</button>
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
       <button class="nb ncompras" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">Cargar Compra</button>
@@ -249,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 27/10 12:00</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 29/10 13:00</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -567,6 +569,48 @@ html[data-theme="dark"]{
 </div>
 
 <!-- COMPRAS -->
+<div id="sec-nuevoprod" class="sec">
+  <div class="stit">Nuevo producto</div>
+      <div class="card" style="max-width:640px">
+        <div class="ct">Alta de producto nuevo</div>
+        <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">Cargá el artículo con su receta de insumos. Queda disponible como "Tipo" en Stock General y para armar salidas. El mismo artículo puede tener más de una receta (distinto RIP) — al armar la salida elegís cuál usar.</div>
+        <div class="fr">
+          <div class="ff" style="max-width:190px"><label>Familia</label>
+            <select id="sab-familia"><option value="Sábana">Sábana</option><option value="Cover">Cover</option><option value="Frazada">Frazada</option><option value="Acolchado">Acolchado</option><option value="Manta">Manta</option><option value="Otro">Otro</option></select>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="ff" style="max-width:130px"><label>Código artículo</label><input id="sab-codigo" placeholder="ej: 1070/1F"/></div>
+          <div class="ff" style="max-width:220px"><label>Nombre</label><input id="sab-nombre" placeholder="ej: Sábana Poliester Twin"/></div>
+          <div class="ff" style="max-width:130px"><label>NCM del artículo</label><input id="sab-ncm" placeholder="ej: 6302.22.00.120Y"/></div>
+        </div>
+        <div class="fr">
+          <div class="ff" style="max-width:100px"><label>RIP</label><input id="sab-rip" list="sab-rip-dl" oninput="onRipCtzfInput('rip')" placeholder="ej: #2"/><datalist id="sab-rip-dl"></datalist></div>
+          <div class="ff" style="max-width:170px"><label>Nº CTZF</label><input id="sab-ctzf" list="sab-ctzf-dl" oninput="onRipCtzfInput('ctzf')" placeholder="ej: 00153/2023"/><datalist id="sab-ctzf-dl"></datalist></div>
+          <div class="ff" style="max-width:150px"><label>Cantidad base (unidades)</label><input id="sab-cantbase" type="number" step="1" placeholder="ej: 900" oninput="calcPesoProducto()"/></div>
+        </div>
+        <div id="sab-ripctzf-msg" style="font-size:11px;margin:-4px 0 8px;display:none"></div>
+        <div class="fr">
+          <div class="ff" style="max-width:170px"><label>Unidades por bulto</label><input id="sab-unibulto" type="number" step="1" min="1" placeholder="ej: 12" oninput="calcPesoProducto()"/></div>
+          <div class="ff" style="max-width:170px"><label>Peso por unidad (kg)</label><input id="sab-pesounit" type="number" step="0.001" min="0" placeholder="ej: 0.850" oninput="calcPesoProducto()"/></div>
+        </div>
+        <div id="sab-peso-prev" style="font-size:12px;color:var(--tx2);margin:-2px 0 8px"></div>
+
+        <div style="margin:14px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Insumos de la receta (para la cantidad base de arriba)</label></div>
+        <div id="sab-insumos-lista"></div>
+        <button class="btn" style="margin-top:6px" onclick="agregarInsumoSabana()">+ Agregar insumo</button>
+
+        <div style="margin-top:14px"><button class="btn btnp" onclick="guardarRecetaSabana()">✓ Guardar receta</button></div>
+        <div id="sab-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+      </div>
+
+
+  <div class="card">
+    <div class="ct">Productos cargados</div>
+    <div id="np-lista"><div class="empty">Cargando...</div></div>
+  </div>
+</div>
+
 <div id="sec-compras" class="sec">
   <div class="stit">Nueva orden de compra</div>
   <div id="oc-complementaria-aviso" class="ibox" style="display:none;border-color:var(--yw)"></div>
@@ -1049,27 +1093,8 @@ html[data-theme="dark"]{
       </div>
     </div>
     <div id="adm-sabanas" class="admpanel">
-      <div class="card" style="max-width:640px">
-        <div class="ct">Nueva receta de Sábana (CTZF)</div>
-        <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">El mismo artículo puede tener más de una receta cargada (distinto RIP) — al armar la salida vas a poder elegir cuál usar.</div>
-        <div class="fr">
-          <div class="ff" style="max-width:130px"><label>Código artículo</label><input id="sab-codigo" placeholder="ej: 1070/1F"/></div>
-          <div class="ff" style="max-width:220px"><label>Nombre</label><input id="sab-nombre" placeholder="ej: Sábana Poliester Twin"/></div>
-          <div class="ff" style="max-width:130px"><label>NCM del artículo</label><input id="sab-ncm" placeholder="ej: 6302.22.00.120Y"/></div>
-        </div>
-        <div class="fr">
-          <div class="ff" style="max-width:100px"><label>RIP</label><input id="sab-rip" placeholder="ej: #2"/></div>
-          <div class="ff" style="max-width:150px"><label>Nº CTZF</label><input id="sab-ctzf" placeholder="ej: 00153/2023"/></div>
-          <div class="ff" style="max-width:150px"><label>Cantidad base (unidades)</label><input id="sab-cantbase" type="number" step="1" placeholder="ej: 900"/></div>
-        </div>
-
-        <div style="margin:14px 0 6px"><label style="font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mn)">Insumos de la receta (para la cantidad base de arriba)</label></div>
-        <div id="sab-insumos-lista"></div>
-        <button class="btn" style="margin-top:6px" onclick="agregarInsumoSabana()">+ Agregar insumo</button>
-
-        <div style="margin-top:14px"><button class="btn btnp" onclick="guardarRecetaSabana()">✓ Guardar receta</button></div>
-        <div id="sab-msg" style="margin-top:8px;font-size:12px;display:none"></div>
-      </div>
+      <div class="card" style="max-width:640px"><div style="font-size:12px;color:var(--tx2)">Para dar de alta un artículo nuevo (sábana, frazada, acolchado, etc.) usá la pestaña <b>Nuevo producto</b> del menú. Acá abajo ves y borrás las recetas cargadas.</div>
+        <button class="btn btnp" style="margin-top:8px" onclick="cerrarSubmenusNav();showSec('nuevoprod',document.querySelector('.nb.nnuevoprod'))">➕ Ir a Nuevo producto</button></div>
 
       <div class="card">
         <div class="ct">Recetas cargadas</div>
@@ -2156,6 +2181,7 @@ function showSec(id,btn){
   if(id==='term' || id==='insimp') loadTerminados();
   if(id==='pend') loadPendientes();
   if(id==='comprasreal') loadOrdenesCompra();
+  if(id==='nuevoprod'){ if(!sabInsumoIndices.length) agregarInsumoSabana(); loadRecetasSabana(); }
   if(id==='avisoscompra') abrirAvisosCompra();
   if(id==='cargapdf') abrirCargaPdf();
   if(id==='et19vinc') initVincularET19();
@@ -2181,7 +2207,7 @@ function showAdmTab(id,btn){
   }
   if(id==='adm-ajuste'){ loadAjustesStock(); }
   if(id==='adm-minimos'){ poblarSelectorMinimo(); loadStockMinimos(); }
-  if(id==='adm-sabanas'){ if(!sabInsumoIndices.length) agregarInsumoSabana(); loadRecetasSabana(); }
+  if(id==='adm-sabanas'){ loadRecetasSabana(); }
   if(id==='adm-stock'){ if(!document.getElementById('adm-fecha').value) document.getElementById('adm-fecha').value=new Date().toISOString().split('T')[0]; renderAdmStock(); }
 }
 
@@ -2708,15 +2734,20 @@ let recetaCalcSel = null;
 function poblarTipoRecetas(){
   const sel=document.getElementById('calc-tipo'); if(!sel) return;
   const cur=sel.value;
-  const viejo=document.getElementById('calc-tipo-rec'); if(viejo) viejo.remove();
+  document.querySelectorAll('.calc-tipo-rec').forEach(x=>x.remove());
   if(!recetasSabana.length) return;
-  const og=document.createElement('optgroup'); og.id='calc-tipo-rec'; og.label='SÁBANAS — por número de artículo';
-  recetasSabana.forEach(r=>{
-    const o=document.createElement('option'); o.value='rec:'+r.id;
-    o.textContent=`${r.articulo_codigo} · RIP ${r.rip} — ${r.articulo_nombre}`;
-    og.appendChild(o);
+  const fams={};
+  recetasSabana.forEach(r=>{ (fams[r.familia||'Sábana']=fams[r.familia||'Sábana']||[]).push(r); });
+  Object.entries(fams).forEach(([fam,lista],i)=>{
+    const og=document.createElement('optgroup'); og.className='calc-tipo-rec'; if(i===0) og.id='calc-tipo-rec';
+    og.label=fam.toUpperCase()+(fam.endsWith('s')?'':'S')+' — por número de artículo';
+    lista.forEach(r=>{
+      const o=document.createElement('option'); o.value='rec:'+r.id;
+      o.textContent=`${r.articulo_codigo} · RIP ${r.rip} — ${r.articulo_nombre}`;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
   });
-  sel.appendChild(og);
   sel.value=cur;
 }
 
@@ -2788,7 +2819,8 @@ function renderCalcReceta(tipo){
   recetaCalcSel=rec;
   let mats=[]; try{ mats=JSON.parse(rec.materiales||'[]'); }catch(e){}
   const factor=qty/(rec.cantidad_base||1);
-  const memo=sabanasPackingMemoria[rec.id]||{};
+  const memo={...(sabanasPackingMemoria[rec.id]||{})};
+  const pk=packingDeReceta(rec,qty); if(pk){ if(pk.bultos!=null) memo.bultos=pk.bultos; memo.peso_neto_kg=pk.pn; }
   calcRec={rec, qty, mats, nec:mats.map(m=>parseFloat((m.cantidad*factor).toFixed(4))), cat:{}, rows:{}};
   mats.forEach((m,i)=>{ calcRec.cat[i]=categoriaDefaultInsumo(m); });
   infoEl.style.display='flex';
@@ -2953,7 +2985,10 @@ function aplicarRecetaSeleccionada(receta){
 
   const aviso = document.getElementById('sab-linea-memoria-aviso');
   const memo = recetaSabanaLineaSel ? sabanasPackingMemoria[recetaSabanaLineaSel.id] : null;
-  if(memo){
+  if(receta && receta.peso_unit_kg>0){
+    document.getElementById('sab-linea-bultos').dataset.man=''; document.getElementById('sab-linea-peso-neto').dataset.man='';
+    aviso.style.display = 'none';
+  } else if(memo){
     document.getElementById('sab-linea-bultos').value = memo.bultos ?? '';
     document.getElementById('sab-linea-peso-neto').value = memo.peso_neto_kg ?? '';
     document.getElementById('sab-linea-peso-bruto').value = memo.peso_bruto_kg ?? '';
@@ -3009,6 +3044,9 @@ function calcularInsumosLineaSabana(){
 
   if(!recetaSabanaLineaSel){ info.textContent=''; cont.innerHTML=''; return; }
   if(isNaN(cantidad) || cantidad<=0){ info.textContent='Falta poner la cantidad.'; cont.innerHTML=''; return; }
+  { const pk=packingDeReceta(recetaSabanaLineaSel,cantidad), bEl=document.getElementById('sab-linea-bultos'), pEl=document.getElementById('sab-linea-peso-neto');
+    if(pk){ if(pk.bultos!=null && !bEl.dataset.man) bEl.value=pk.bultos; if(!pEl.dataset.man) pEl.value=pk.pn;
+      if(!bEl.dataset.hook){ bEl.dataset.hook='1'; bEl.addEventListener('input',()=>{bEl.dataset.man='1';}); pEl.addEventListener('input',()=>{pEl.dataset.man='1';}); } } }
 
   let mats=[]; try{ mats = JSON.parse(recetaSabanaLineaSel.materiales||'[]'); }catch(e){}
   const factor = cantidad / (recetaSabanaLineaSel.cantidad_base||1);
@@ -8118,6 +8156,9 @@ async function guardarRecetaSabana(){
   const nombre = document.getElementById('sab-nombre').value.trim();
   const ncm = document.getElementById('sab-ncm').value.trim();
   const rip = document.getElementById('sab-rip').value.trim();
+  const familia = document.getElementById('sab-familia').value;
+  const uniBulto = parseFloat(document.getElementById('sab-unibulto').value);
+  const pesoUnit = parseFloat(document.getElementById('sab-pesounit').value);
   const ctzf = document.getElementById('sab-ctzf').value.trim();
   const cantBase = parseFloat(document.getElementById('sab-cantbase').value);
   const msg = document.getElementById('sab-msg');
@@ -8148,17 +8189,68 @@ async function guardarRecetaSabana(){
     await sbFetch('ctzf_sabanas', {
       method:'POST', headers:{'Prefer':'return=minimal'},
       body: JSON.stringify({
-        id, articulo_codigo:codigo, articulo_nombre:nombre, ncm, rip, ctzf_numero:ctzf,
+        id, articulo_codigo:codigo, articulo_nombre:nombre, ncm, rip, ctzf_numero:ctzf, familia, unid_por_bulto: isNaN(uniBulto)?null:uniBulto, peso_unit_kg: isNaN(pesoUnit)?null:pesoUnit,
         cantidad_base:cantBase, materiales:JSON.stringify(materiales), creado_por:who
       })
     });
-    msg.style.color='var(--gr)'; msg.textContent=`✓ Receta ${codigo} (${rip}) guardada.`;
+    msg.style.color='var(--gr)'; msg.textContent=`✓ ${familia} ${codigo} (${rip}) guardado. Ya aparece como Tipo en Stock General.`;
     document.getElementById('sab-codigo').value=''; document.getElementById('sab-nombre').value='';
     document.getElementById('sab-ncm').value=''; document.getElementById('sab-rip').value='';
-    document.getElementById('sab-ctzf').value=''; document.getElementById('sab-cantbase').value='';
+    document.getElementById('sab-ctzf').value=''; document.getElementById('sab-cantbase').value=''; document.getElementById('sab-unibulto').value=''; document.getElementById('sab-pesounit').value=''; calcPesoProducto(); onRipCtzfInput('');
     document.getElementById('sab-insumos-lista').innerHTML=''; sabInsumoIndices=[]; agregarInsumoSabana();
     await loadRecetasSabana();
-  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message; }
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ Error: '+e.message+(/familia|unid_por_bulto|peso_unit/.test(String(e.message))?' — falta correr el SQL "nuevo_producto_setup.sql" en Supabase.':''); }
+}
+
+// ── Alta de producto: RIP ↔ CTZF automático y peso total ──
+function onRipCtzfInput(origen){
+  const ripEl=document.getElementById('sab-rip'), ctzfEl=document.getElementById('sab-ctzf'), msg=document.getElementById('sab-ripctzf-msg');
+  if(!ripEl) return;
+  const norm=x=>String(x||'').trim().toUpperCase().replace(/^#?\s*/,'#');
+  const ctzfs=[...new Set(recetasSabana.map(r=>r.ctzf_numero).filter(Boolean))].sort();
+  const rips=[...new Set(recetasSabana.map(r=>r.rip).filter(Boolean))];
+  const dlC=document.getElementById('sab-ctzf-dl'), dlR=document.getElementById('sab-rip-dl');
+  if(dlC) dlC.innerHTML=ctzfs.map(c=>`<option value="${c}"></option>`).join('');
+  const rip=ripEl.value.trim(), ctzf=ctzfEl.value.trim();
+  if(dlR){
+    const delCtzf = recetasSabana.filter(r=>!ctzf||r.ctzf_numero===ctzf);
+    dlR.innerHTML=[...new Set(delCtzf.map(r=>r.rip).filter(Boolean))].map(c=>`<option value="${c}"></option>`).join('');
+  }
+  if(!msg) return;
+  msg.style.display='none';
+  if(!rip) return;
+  const coinc=recetasSabana.filter(r=>r.rip && norm(r.rip)===norm(rip));
+  const conCtzf=[...new Set(coinc.map(r=>r.ctzf_numero).filter(Boolean))];
+  if(origen==='rip' && !ctzf){
+    if(conCtzf.length===1){ ctzfEl.value=conCtzf[0]; msg.style.display='block'; msg.style.color='var(--gr)'; msg.textContent=`✓ El RIP ${rip} corresponde al CTZF ${conCtzf[0]} — lo completé solo.`; return; }
+    if(conCtzf.length>1){ msg.style.display='block'; msg.style.color='var(--yw)'; msg.textContent=`El RIP ${rip} existe en más de un CTZF (${conCtzf.join(' · ')}). Elegí el CTZF.`; return; }
+    msg.style.display='block'; msg.style.color='var(--tx3)'; msg.textContent=`RIP ${rip} nuevo: no está en ningún CTZF cargado, completá el Nº de CTZF.`; return;
+  }
+  if(ctzf){
+    const ya=coinc.filter(r=>r.ctzf_numero===ctzf);
+    msg.style.display='block';
+    if(ya.length){ msg.style.color='var(--yw)'; msg.textContent=`RIP ${rip} del CTZF ${ctzf}: ya se usa en ${ya.map(r=>r.articulo_codigo).join(', ')}.`; }
+    else if(conCtzf.length){ msg.style.color='var(--tx3)'; msg.textContent=`Ojo: el RIP ${rip} figura en el CTZF ${conCtzf.join(' · ')}, no en ${ctzf}.`; }
+    else { msg.style.color='var(--tx3)'; msg.textContent=`RIP ${rip} nuevo para el CTZF ${ctzf}.`; }
+  }
+}
+
+function calcPesoProducto(){
+  const el=document.getElementById('sab-peso-prev'); if(!el) return;
+  const cb=parseFloat(document.getElementById('sab-cantbase').value), ub=parseFloat(document.getElementById('sab-unibulto').value), pu=parseFloat(document.getElementById('sab-pesounit').value);
+  const t=[];
+  if(!isNaN(pu)) t.push(`1 bulto de ${!isNaN(ub)?fmt(ub):'?'} u = ${!isNaN(ub)?fmt(+(ub*pu).toFixed(3))+' kg':'—'}`);
+  if(!isNaN(cb)&&!isNaN(pu)) t.push(`Cantidad base ${fmt(cb)} u = <b>${fmt(+(cb*pu).toFixed(3))} kg netos</b>`+(!isNaN(ub)?` en ${Math.ceil(cb/ub)} bultos`:''));
+  el.innerHTML=t.join(' · ');
+}
+
+// Bultos y peso neto de una receta para una cantidad (null si la receta no tiene los datos)
+function packingDeReceta(rec, qty){
+  if(!rec || !qty || !(rec.peso_unit_kg>0)) return null;
+  return {
+    bultos: rec.unid_por_bulto>0 ? Math.ceil(qty/rec.unid_por_bulto) : null,
+    pn: +(qty*rec.peso_unit_kg).toFixed(3)
+  };
 }
 
 async function loadRecetasSabana(){
@@ -8168,12 +8260,16 @@ async function loadRecetasSabana(){
     recetasSabana = rows || [];
     renderRecetasSabana();
     poblarTipoRecetas();
+    try{ onRipCtzfInput(''); }catch(e){}
   }catch(e){
     if(el) el.innerHTML = '<div class="empty">Todavía no se pudo conectar con la tabla de recetas (¿corriste el SQL en Supabase?).</div>';
   }
 }
 
 function renderRecetasSabana(){
+  const np = document.getElementById('np-lista');
+  if(np) np.innerHTML = !recetasSabana.length ? '<div class="empty">Ninguno todavía.</div>'
+    : recetasSabana.map(r=>`<div style="padding:5px 4px;border-bottom:1px solid var(--bd);font-size:12px"><span class="bdg bb">${(r.familia||'Sábana')}</span> <b class="mono">${r.articulo_codigo}</b> — ${r.articulo_nombre} <span style="color:var(--tx3)">· RIP ${r.rip}</span></div>`).join('');
   const el = document.getElementById('sab-lista');
   if(!el) return;
   if(!recetasSabana.length){ el.innerHTML='<div class="empty">Ninguna receta cargada todavía.</div>'; return; }
@@ -8193,11 +8289,11 @@ function renderRecetasSabana(){
 
   el.innerHTML = Object.entries(porArticulo).map(([codigo, recetas])=>`
     <div class="mb">
-      <div class="mh"><div><strong>${codigo}</strong> — ${recetas[0].articulo_nombre}</div></div>
+      <div class="mh"><div><span class="bdg bb">${recetas[0].familia||'Sábana'}</span> <strong>${codigo}</strong> — ${recetas[0].articulo_nombre}</div></div>
       ${recetas.map(r=>{
         let mats=[]; try{ mats = JSON.parse(r.materiales||'[]'); }catch(e){}
         return `<div style="padding:8px 12px;border-top:1px dashed var(--bd2)">
-          <div style="font-size:12px;margin-bottom:4px"><span class="bdg bb">RIP ${r.rip}</span> CTZF ${r.ctzf_numero||'—'} — base: ${fmt(r.cantidad_base)} u
+          <div style="font-size:12px;margin-bottom:4px"><span class="bdg bb">RIP ${r.rip}</span> CTZF ${r.ctzf_numero||'—'} — base: ${fmt(r.cantidad_base)} u${r.peso_unit_kg?` · ${fmt(r.peso_unit_kg)} kg/u${r.unid_por_bulto?` · ${fmt(r.unid_por_bulto)} u/bulto`:''}`:''}
             <button class="btn btnd" style="padding:2px 8px;font-size:10px;margin-left:8px" onclick="borrarRecetaSabana('${r.id}')">✕ Borrar</button>
           </div>
           <table><thead><tr><th>Insumo</th><th>NCM</th><th>Cantidad (c/ ${fmt(r.cantidad_base)}u)</th></tr></thead><tbody>
