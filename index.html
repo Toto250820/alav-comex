@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 29/10 13:15</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 29/10 14:40</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -590,6 +590,7 @@ html[data-theme="dark"]{
           <div class="ff" style="max-width:150px"><label>Cantidad base (unidades)</label><input id="sab-cantbase" type="number" step="1" placeholder="ej: 900" oninput="calcPesoProducto()"/></div>
         </div>
         <div id="sab-ripctzf-msg" style="font-size:11px;margin:-4px 0 8px;display:none"></div>
+        <div id="sab-auto-msg" style="font-size:12px;margin:0 0 8px;display:none"></div>
         <div class="fr">
           <div class="ff" style="max-width:170px"><label>Unidades por bulto</label><input id="sab-unibulto" type="number" step="1" min="1" placeholder="ej: 12" oninput="calcPesoProducto()"/></div>
           <div class="ff" style="max-width:170px"><label>Peso por unidad (kg)</label><input id="sab-pesounit" type="number" step="0.001" min="0" placeholder="ej: 0.850" oninput="calcPesoProducto()"/></div>
@@ -8148,6 +8149,7 @@ function agregarInsumoSabana(){
     <button class="btn btnd" onclick="quitarInsumoSabana(${idx})" style="margin-bottom:1px">✕</button>
   `;
   document.getElementById('sab-insumos-lista').appendChild(div);
+  div.addEventListener('input',()=>{ sabAutoConsumos=false; });
 }
 
 function quitarInsumoSabana(idx){
@@ -8175,12 +8177,20 @@ async function guardarRecetaSabana(){
     return;
   }
 
+  if(!recetasSabana.some(r=>r.ctzf_numero===ctzf) ){
+    const faltan=[]; if(!ctzf) faltan.push('Nº de CTZF'); if(!ncm) faltan.push('NCM del artículo'); if(isNaN(uniBulto)) faltan.push('unidades por bulto'); if(isNaN(pesoUnit)) faltan.push('peso por unidad'); if(isNaN(precioUnit)) faltan.push('valor unitario');
+    if(faltan.length){ msg.style.color='var(--rd)'; msg.textContent='El CTZF '+(ctzf||'')+' es nuevo: faltan cargar '+faltan.join(', ')+'.'; return; }
+  }
   const materiales = [];
   for(const idx of sabInsumoIndices){
     const insNombre = document.getElementById('sab-ins-nombre-'+idx).value.trim();
     const insNcm = document.getElementById('sab-ins-ncm-'+idx).value.trim();
     const insCant = parseFloat(document.getElementById('sab-ins-cant-'+idx).value);
     const insUnidad = document.getElementById('sab-ins-unidad-'+idx).value;
+    if(!recetasSabana.some(r=>r.ctzf_numero===ctzf) && !insNcm){
+      msg.style.color='var(--rd)'; msg.textContent='El CTZF es nuevo: cada insumo necesita su NCM ('+(insNombre||'insumo sin nombre')+').';
+      return;
+    }
     if(!insNombre || isNaN(insCant)){
       msg.style.color='var(--rd)'; msg.textContent='Cada insumo necesita nombre y cantidad.';
       return;
@@ -8209,7 +8219,65 @@ async function guardarRecetaSabana(){
 }
 
 // ── Alta de producto: RIP ↔ CTZF automático y peso total ──
+// Si el CTZF y el RIP ya están en la base, trae solos los consumos; si el CTZF es nuevo, hay que cargar todo
+function autoConsumosRipCtzf(){
+  const ripEl=document.getElementById('sab-rip'), ctzfEl=document.getElementById('sab-ctzf'), box=document.getElementById('sab-auto-msg');
+  if(!ripEl||!box) return;
+  const norm=x=>String(x||'').trim().toUpperCase().replace(/^#?\s*/,'#');
+  const rip=ripEl.value.trim(), ctzf=ctzfEl.value.trim();
+  box.style.display='none';
+  if(!ctzf) return;
+  const ctzfConocido = recetasSabana.some(r=>r.ctzf_numero===ctzf);
+  if(!ctzfConocido){
+    box.style.display='block'; box.style.color='var(--yw)';
+    box.innerHTML=`⚠ El CTZF <b>${ctzf}</b> no está en la base: cargá <b>todos</b> los valores (NCM, cantidad base, unidades por bulto, peso y valor unitario, y los insumos con su NCM).`;
+    return;
+  }
+  if(!rip) return;
+  const coinc=recetasSabana.filter(r=>r.ctzf_numero===ctzf && r.rip && norm(r.rip)===norm(rip));
+  if(!coinc.length){
+    box.style.display='block'; box.style.color='var(--yw)';
+    box.innerHTML=`El CTZF ${ctzf} está en la base, pero el RIP ${rip} todavía no tiene consumos cargados: completá los insumos.`;
+    return;
+  }
+  // variantes de consumo distintas dentro del mismo CTZF + RIP
+  const firma=r=>{ let m=[]; try{ m=JSON.parse(r.materiales||'[]'); }catch(e){} return JSON.stringify({b:r.cantidad_base,m:m.map(x=>[String(x.nombre).toLowerCase(),x.ncm||'',x.cantidad,x.unidad])}); };
+  const grupos={}; coinc.forEach(r=>{ (grupos[firma(r)]=grupos[firma(r)]||[]).push(r); });
+  const orden=Object.values(grupos).sort((a,b)=>b.length-a.length);
+  const elegido=orden[0][0];
+  const lista=document.getElementById('sab-insumos-lista');
+  const hayTipeado = !sabAutoConsumos && sabInsumoIndices.some(i=>{ const n=document.getElementById('sab-ins-nombre-'+i); return n && n.value.trim(); });
+  if(hayTipeado){
+    box.style.display='block'; box.style.color='var(--tx3)';
+    box.innerHTML=`El RIP ${rip} del CTZF ${ctzf} ya tiene consumos cargados (por ejemplo en ${elegido.articulo_codigo}). Ya empezaste a cargar insumos, así que no los pisé.`;
+    return;
+  }
+  let mats=[]; try{ mats=JSON.parse(elegido.materiales||'[]'); }catch(e){}
+  lista.innerHTML=''; sabInsumoIndices=[];
+  mats.forEach(m=>{
+    agregarInsumoSabana();
+    const idx=sabInsumoIndices[sabInsumoIndices.length-1];
+    document.getElementById('sab-ins-nombre-'+idx).value=m.nombre||'';
+    document.getElementById('sab-ins-ncm-'+idx).value=m.ncm||'';
+    document.getElementById('sab-ins-cant-'+idx).value=m.cantidad;
+    document.getElementById('sab-ins-unidad-'+idx).value=m.unidad||'U';
+  });
+  if(!sabInsumoIndices.length) agregarInsumoSabana();
+  const cb=document.getElementById('sab-cantbase'); if(!cb.value && elegido.cantidad_base) cb.value=elegido.cantidad_base;
+  sabAutoConsumos=true; calcPesoProducto();
+  box.style.display='block'; box.style.color='var(--gr)';
+  box.innerHTML=`✓ Traje los consumos del RIP ${rip} (CTZF ${ctzf}) desde ${elegido.articulo_codigo}: ${mats.length} insumo${mats.length===1?'':'s'}, base ${fmt(elegido.cantidad_base)} u.`
+    + (orden.length>1?` <span style="color:var(--yw)">Ojo: ese RIP tiene ${orden.length} variantes de consumo cargadas; tomé la más usada, revisala.</span>`:'')
+    + ` Podés modificarlos.`;
+}
+
+
 function onRipCtzfInput(origen){
+  try{ onRipCtzfInput0(origen); }catch(e){ console.error(e); }
+  try{ autoConsumosRipCtzf(); }catch(e){ console.error(e); }
+}
+let sabAutoConsumos = false; // true mientras los insumos del formulario vienen de una receta existente (no tipeados a mano)
+function onRipCtzfInput0(origen){
   const ripEl=document.getElementById('sab-rip'), ctzfEl=document.getElementById('sab-ctzf'), msg=document.getElementById('sab-ripctzf-msg');
   if(!ripEl) return;
   const norm=x=>String(x||'').trim().toUpperCase().replace(/^#?\s*/,'#');
