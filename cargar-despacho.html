@@ -326,10 +326,33 @@ const AMBIGUOUS_NCM = {'6001.92.00':['cord','cord160','terc300','terc360','terc4
 const MAT_LABELS = {guata:'Guata',poliamida:'Poliamida',hilo:'Hilo de coser',tnt:'Tejido TNT',bies:'Bies / Vivo',pvc:'Bolsa PVC',insert:'Insert',cord:'Corderito 180g',cord160:'Corderito 160g',terc300:'Terciopelo 300g',terc360:'Terciopelo 360g',terc400:'Terciopelo 400g',funda:'Funda Kits',micro90:'Microfibra 90g',micro100:'Microfibra 100g',micro80:'Microfibra 80g',alma:'Alma',manta:'Manta Cacharel',caja:'Caja'};
 const CANCEL_UNIT = {guata:'kg',tnt:'kg',cord:'kg',cord160:'kg',terc300:'kg',terc360:'kg',terc400:'kg',funda:'kg',hilo:'m',bies:'m',pvc:'u',insert:'u',poliamida:'m',manta:'u',micro90:'m',micro100:'m',micro80:'m',alma:'u',caja:'u'};
 const ALL_MATS = Object.keys(MAT_LABELS);
+const BUILTIN_MATS = new Set(ALL_MATS);
+
+// Insumos que se dieron de alta en la app (sábana plana, funda de almohada, etc.): se traen de Supabase
+async function cargarCustomCats(){
+  try{
+    const rows = await sbFetch('custom_categorias?select=*', {method:'GET', headers:{'Prefer':''}});
+    (rows||[]).forEach(r=>{
+      MAT_LABELS[r.slug] = r.label;
+      CANCEL_UNIT[r.slug] = r.unit || 'u';
+      if(!ALL_MATS.includes(r.slug)) ALL_MATS.push(r.slug);
+    });
+  }catch(e){ console.error('No se pudieron traer las categorías propias:', e.message); }
+}
+cargarCustomCats();
+const _normTxt = x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
 
 function num(s){ if(!s) return 0; return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0; }
 
+function matPropiaPorTexto(aiText){
+  const ai = ' '+_normTxt(aiText)+' ';
+  if(ai.trim()==='') return null;
+  // la categoría propia cuyo nombre completo aparece en la descripción (la más larga gana)
+  const c = ALL_MATS.filter(k=>!BUILTIN_MATS.has(k)).map(k=>({k, l:_normTxt(MAT_LABELS[k])})).filter(x=>x.l && ai.includes(' '+x.l+' ')).sort((a,b)=>b.l.length-a.l.length);
+  return c.length ? c[0].k : null;
+}
 function classify(ncmShort, aiText, zaGsm){
+  { const propia = matPropiaPorTexto(aiText); if(propia && !UNIQUE_NCM[ncmShort]) return {material:propia, confidence:'media'}; }
   if(UNIQUE_NCM[ncmShort]) return {material:UNIQUE_NCM[ncmShort], confidence:'alta'};
   const cands = AMBIGUOUS_NCM[ncmShort];
   if(!cands) return {material:null, confidence:'sin_match', candidatos: ALL_MATS};
@@ -1085,7 +1108,9 @@ async function renderReview(p){
     }
     const opts = (it.confidence==='sin_match' ? it.candidatos : ALL_MATS).map(m=>
       `<option value="${m}" ${it.material===m?'selected':''}>${MAT_LABELS[m]}</option>`
-    ).join('') + `<option value="" ${!it.material?'selected':''}>— elegir —</option>`;
+    ).join('') + `<option value="" ${!it.material?'selected':''}>— elegir —</option>`
+      + (it.confidence==='sin_match' ? ALL_MATS.filter(m=>!(it.candidatos||[]).includes(m)).map(m=>`<option value="${m}">${MAT_LABELS[m]}</option>`).join('') : '')
+      + `<option value="__new__">➕ Crear insumo nuevo…</option>`;
     const detalleDefault = it.material ? `${MAT_LABELS[it.material]} ${it.ncm} - ${it.unitario!=null?it.unitario:''} USD/${CANCEL_UNIT[it.material]||'u'}` : (it.ai||'');
     return `<tr id="row-${i}" class="${it.confidence==='sin_match'?'warn':''}">
       <td style="text-align:center"><input type="checkbox" id="inc-${i}" checked onchange="updateSubmitState()"></td>
@@ -1107,7 +1132,33 @@ async function renderReview(p){
   updateSubmitState();
 }
 
-function onMatChange(i){
+async function crearInsumoNuevoDesdeItem(i){
+  const it = currentParsed.items[i];
+  const sel = document.getElementById('mat-'+i);
+  const nombre = (prompt('Nombre del insumo nuevo (ej: SABANA PLANA):', (it.ai||'').trim())||'').trim();
+  if(!nombre){ sel.value=''; return null; }
+  const slug = nombre.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'insumo';
+  const u = String(it.unidad||'').toUpperCase();
+  const unit = u.startsWith('KILO')?'kg' : u.startsWith('METRO')?'m' : 'u';
+  if(!MAT_LABELS[slug]){
+    MAT_LABELS[slug]=nombre; CANCEL_UNIT[slug]=unit;
+    try{ await sbFetch('custom_categorias', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify([{slug, label:nombre, unit}])}); }
+    catch(e){ alert('No pude guardar el insumo nuevo en Supabase: '+e.message); }
+  }
+  if(!ALL_MATS.includes(slug)) ALL_MATS.push(slug);
+  // sumar la opción a todos los desplegables de la tabla
+  document.querySelectorAll('select[id^="mat-"]').forEach(s2=>{
+    if(![...s2.options].some(o=>o.value===slug)){
+      const o=document.createElement('option'); o.value=slug; o.textContent=nombre;
+      s2.insertBefore(o, s2.querySelector('option[value="__new__"]'));
+    }
+  });
+  sel.value = slug;
+  return slug;
+}
+
+async function onMatChange(i){
+  if(document.getElementById('mat-'+i).value==='__new__'){ await crearInsumoNuevoDesdeItem(i); }
   const mat = document.getElementById('mat-'+i).value;
   const sel = document.getElementById('mat-'+i);
   sel.classList.toggle('needsel', !mat);
