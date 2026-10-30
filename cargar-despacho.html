@@ -181,6 +181,21 @@ html.embed a[href="./index.html"]{display:none}
 
 <datalist id="zfi5-tipos-dl-static"><option value="Latas"><option value="Sábanas"><option value="Fundas de almohada"><option value="Bolsas"><option value="Otros"></datalist>
 <div id="rev-box"></div>
+<div id="aviso-box" class="card" style="display:none;border-color:var(--yw)">
+  <div class="stit">🔔 Aviso de carga <span class="sub" style="font-weight:400">(opcional — queda también en la solapa Avisos de Carga)</span></div>
+  <div class="sub" style="margin-bottom:8px">El aviso de carga (Sistema María) dura <b>24 horas</b>. Si lo cargás acá, se arma el recordatorio en Google Calendar con los 3 invitados, igual que siempre.</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div><label class="avl">Despacho</label><input id="avb-desp" class="avi mono" style="width:210px" readonly/></div>
+    <div><label class="avl">Aviso</label><input id="avb-nro" class="avi mono" style="width:150px" placeholder="ej: 2588-2026"/></div>
+    <div><label class="avl">Fecha</label><input id="avb-fecha" type="date" class="avi"/></div>
+    <div><label class="avl">Hora</label><input id="avb-hora" type="time" class="avi"/></div>
+    <div><label class="avl">Canal</label><select id="avb-canal" class="avi"><option value="">—</option><option value="VERDE">🟢 Verde</option><option value="NARANJA">🟠 Naranja</option><option value="ROJO">🔴 Rojo</option></select></div>
+  </div>
+  <div style="margin-top:8px"><label class="avl">Nota (opcional)</label><input id="avb-nota" class="avi" style="width:100%;max-width:520px" placeholder="ej: esperando turno de carga en depósito"/></div>
+  <div style="margin-top:10px"><button class="btn btnp" id="avb-btn" onclick="registrarAvisoDesdePdf()">🔔 Registrar aviso + recordatorio</button></div>
+  <div id="avb-msg" style="margin-top:8px;font-size:12px"></div>
+</div>
+<style>.avl{font-size:10px;color:var(--tx3);text-transform:uppercase;font-family:var(--mn);display:block;margin-bottom:2px}.avi{font-size:13px;padding:6px 8px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)}</style>
 <div id="zfe3-box" style="display:none">
   <div class="card">
     <div class="stit">ZFE3 — Descuento de stock</div>
@@ -923,6 +938,45 @@ async function confirmarZFE3(){
   document.getElementById('zfe3-box').style.display='none';
 }
 
+// ── Aviso de carga desde el PDF (queda en la solapa Avisos de Carga) ──
+function mostrarAvisoBox(despacho){
+  const b=document.getElementById('aviso-box'); if(!b) return;
+  b.style.display='block';
+  document.getElementById('avb-desp').value=despacho;
+  const now=new Date();
+  document.getElementById('avb-fecha').value=now.toISOString().slice(0,10);
+  document.getElementById('avb-hora').value=now.toTimeString().slice(0,5);
+  document.getElementById('avb-nro').value=''; document.getElementById('avb-nota').value=''; document.getElementById('avb-canal').value='';
+  document.getElementById('avb-msg').textContent='';
+  const bt=document.getElementById('avb-btn'); bt.disabled=false; bt.textContent='🔔 Registrar aviso + recordatorio';
+}
+async function registrarAvisoDesdePdf(){
+  const desp=document.getElementById('avb-desp').value.trim();
+  const avisoNro=document.getElementById('avb-nro').value.trim();
+  const f=document.getElementById('avb-fecha').value, h=document.getElementById('avb-hora').value;
+  const canal=document.getElementById('avb-canal').value, nota=document.getElementById('avb-nota').value.trim();
+  const msg=document.getElementById('avb-msg');
+  if(!desp||!f||!h){ msg.style.color='var(--rd)'; msg.textContent='Completá fecha y hora.'; return; }
+  const cargadoEn=new Date(`${f}T${h}`), venceEn=new Date(cargadoEn.getTime()+24*60*60*1000);
+  const id='av_'+desp+'_'+cargadoEn.getTime();
+  const who=localStorage.getItem('ga_user_label')||'alguien';
+  const bt=document.getElementById('avb-btn'); bt.disabled=true;
+  try{
+    await sbFetch('avisos_carga',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({id,despacho:desp,aviso:avisoNro||null,canal:canal||null,nota,cargado_en:cargadoEn.toISOString(),vence_en:venceEn.toISOString(),registrado_por:who,resuelto:false})});
+    msg.style.color='var(--gr)'; msg.textContent='✓ Aviso registrado: ya figura en la solapa Avisos de Carga. Se abrió Google Calendar para el recordatorio.';
+    bt.textContent='✓ Aviso registrado';
+    try{ window.parent.postMessage({ga:'avisos-changed'},'*'); }catch(e){}
+    const fm=d=>d.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+    const fh=d=>d.toLocaleString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const text=encodeURIComponent(`⚠️ Vence aviso de carga${avisoNro?(' '+avisoNro):''} — ${desp}`);
+    const details=encodeURIComponent(`El aviso de carga${avisoNro?(' Nº '+avisoNro):''} del despacho ${desp} (cargado el ${fh(cargadoEn)}) vence a esta hora.${canal?(' Canal: '+canal+'.'):''}${nota?(' Nota: '+nota):''}`);
+    window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${fm(venceEn)}/${fm(new Date(venceEn.getTime()+30*60000))}&details=${details}&add=${encodeURIComponent(CALENDAR_GUESTS.join(','))}`,'_blank');
+  }catch(e){
+    bt.disabled=false; msg.style.color='var(--rd)'; msg.textContent='⚠ No se pudo guardar el aviso: '+e.message;
+  }
+}
+
 async function handleFile(file){
   if(!file) return;
   // soltar el archivo del input para que se pueda elegir otro (o el mismo) enseguida
@@ -937,6 +991,7 @@ async function handleFile(file){
   document.getElementById('et19-box').style.display='none';
   document.getElementById('zfe3-box').style.display='none';
   document.getElementById('zfe1-box').style.display='none';
+  document.getElementById('aviso-box').style.display='none';
   document.getElementById('success-box').innerHTML='';
   document.getElementById('loading-box').style.display='block';
   try{
@@ -950,6 +1005,7 @@ async function handleFile(file){
     }
     const parsed = parseDespacho(pages);
     currentParsed = parsed;
+    if(parsed.tipo !== 'ET19') mostrarAvisoBox(parsed.despacho);
     if(parsed.tipo === 'ET19'){
       renderET19(parsed);
     } else if(parsed.tipo === 'ZFE1'){
@@ -1324,6 +1380,7 @@ async function confirmarCarga(){
 }
 
 function resetTool(){
+  try{ document.getElementById('aviso-box').style.display='none'; }catch(e){}
   currentParsed = null;
   currentET19 = null;
   document.getElementById('review-box').style.display='none';
