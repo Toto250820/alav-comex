@@ -255,6 +255,13 @@ html.embed a[href="./index.html"]{display:none}
       <button class="btn" onclick="resetTool()">Cancelar / cargar otro PDF</button>
       <button class="btn btng" id="btn-confirm-zfe1" onclick="confirmarZFE1()" disabled>✓ Confirmar</button>
     </div>
+    <div style="margin-top:14px;padding:12px;border:1px dashed var(--bd2);border-radius:var(--rs)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">📝 Solo registrar este ZFE1 (sin descontar saldo)</div>
+      <div class="sub" style="margin-bottom:8px">Usalo cuando el ZFE1 ya está confirmado en la app (el saldo ya se descontó), o ya está registrado, o querés dejarlo anotado sin tocar el saldo. Le pone el número y los datos del PDF (fecha, derechos, SIM) y <b>no descuenta nada</b>.</div>
+      <label class="avl">Vincular a un ZFE1 ya confirmado en la app</label>
+      <select id="z1-vincular" class="avi" style="min-width:320px"></select>
+      <div style="margin-top:10px"><button class="btn btnp" id="btn-solo-zfe1" onclick="registrarSoloZFE1()">📝 Solo registrar (sin descontar)</button></div>
+    </div>
   </div>
 </div>
 
@@ -1068,9 +1075,55 @@ async function renderZFE1(p){
     return `<tr class="${mal?'warn':''}"><td class="mono">${id}</td><td>${r.producto||'—'}</td><td class="mono">${disp.toFixed(0)}</td><td class="mono">${x.cantidad.toFixed(0)}</td><td class="mono" style="color:${mal?'var(--rd)':'var(--tx)'}">${queda.toFixed(0)}</td><td><span class="tag ${mal?'sin_match':'alta'}">${mal?'⚠ no alcanza':(mode==='link'||mode==='dup'?'ya descontado':'✓ ok')}</span></td></tr>`;
   }).join('');
   zfe1Plan = {mode, rec, byId, ids};
-  document.getElementById('zfe1-box').style.display='block';
+  {
+    const sinNum = salidas.filter(s=>!s.numero && s.estado==='confirmado');
+    const sel = document.getElementById('z1-vincular');
+    const resumen = s=>{ const it=s.items||[]; const tot=it.reduce((a,x)=>a+(Number(x.cant)||0),0); return `${s.tipo||'ZFE1'}${s.descripcion?' — '+s.descripcion:''} · ${s.fecha||''} · ${it.length} ítem/s · ${tot.toLocaleString('es-AR')} u`; };
+    sel.innerHTML = '<option value="">— ninguno: registrar como ZFE1 nuevo —</option>' + sinNum.map(s=>`<option value="${s.id}" ${mode==='link'&&rec&&rec.id===s.id?'selected':''}>${resumen(s)}</option>`).join('');
+    sel.disabled = (mode==='dup');
+    document.getElementById('btn-solo-zfe1').textContent = mode==='dup' ? '📝 Actualizar datos del ZFE1 ya registrado' : '📝 Solo registrar (sin descontar)';
+  }
   document.getElementById('btn-confirm-zfe1').disabled = (mode==='dup' || faltan>0);
+  document.getElementById('btn-solo-zfe1').disabled = false;
 }
+// Registra el ZFE1 del PDF sin tocar el saldo de Insumos terminados (el descuento ya se hizo, o no corresponde)
+async function registrarSoloZFE1(){
+  const btn = document.getElementById('btn-solo-zfe1');
+  const p = currentParsed, plan = zfe1Plan; if(!p || !plan) return;
+  btn.disabled = true; btn.textContent = 'Registrando...';
+  try{
+    const items = p.consumos.map((x,i)=>{
+      const r = plan.byId[plan.ids[i]] || {};
+      return {tid: plan.ids[i], despacho: x.despacho, item: x.item, subitem: x.subitem, producto: r.producto||'', ncm: r.ncm||x.ncm, cant: x.cantidad,
+        precioUnit: (Number(r.fob)||0)/(Number(r.cantidad)||1), fob_desp:Number(r.fob_desp)||0, flete_desp:Number(r.flete_desp)||0, seguro_desp:Number(r.seguro_desp)||0};
+    });
+    const datosPdf = {fecha:p.fecha, ...(Object.keys(p.tasas||{}).length?{tasas:p.tasas}:{}), ...(p.sim!=null?{sim:p.sim}:{})};
+    let accion;
+    if(plan.mode==='dup'){
+      await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(plan.rec.id), {method:'PATCH', body:JSON.stringify(datosPdf)});
+      accion = 'actualizado (datos del PDF), sin descontar';
+    } else {
+      const vincId = document.getElementById('z1-vincular').value;
+      if(vincId){
+        const viejo = (await sbFetch('zfe1_salidas?select=items&id=eq.'+encodeURIComponent(vincId), {method:'GET', headers:{'Prefer':''}}) || [])[0];
+        const prev = {}; ((viejo&&viejo.items)||[]).forEach(x=>{ prev[x.tid]=x; });
+        // se conserva el packing (bultos/kg) que ya se había cargado en la app
+        const itemsConPack = items.map(x=>{ const o=prev[x.tid]; return o ? {...x, ub:o.ub??null, pn:o.pn??null, pb:o.pb??null} : x; });
+        await sbFetch('zfe1_salidas?id=eq.'+encodeURIComponent(vincId), {method:'PATCH', body:JSON.stringify({numero:p.despacho, items:itemsConPack, ...datosPdf})});
+        accion = 'vinculado al ZFE1 confirmado en la app, sin descontar de nuevo';
+      } else {
+        await sbFetch('zfe1_salidas', {method:'POST', body:JSON.stringify({id:'zfe1_'+Date.now(), numero:p.despacho, estado:'confirmado', items, tasas:(p.tasas||{}), iva:21, sim:(p.sim!=null?p.sim:10), fecha:p.fecha, origen:'pdf'})});
+        accion = 'registrado como ZFE1 nuevo, sin descontar saldo';
+      }
+    }
+    document.getElementById('success-box').innerHTML = `<div class="ok">✓ ZFE1 <b>${p.despacho}</b> ${accion}.</div>`;
+    document.getElementById('zfe1-box').style.display='none';
+  }catch(e){
+    document.getElementById('error-box').innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = '📝 Solo registrar (sin descontar)';
+  }
+}
+
 async function confirmarZFE1(){
   const btn = document.getElementById('btn-confirm-zfe1');
   btn.disabled = true; btn.textContent = 'Procesando...';
