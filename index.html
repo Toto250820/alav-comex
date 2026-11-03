@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 30/10 10:50</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 03/11 12:40</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -1199,11 +1199,18 @@ async function loadStockFromSupabase() {
       const ex = extraPorId[id];
       if(ex){
         const sbCq = parseFloat(r.cancel_qty||0), locCq = parseFloat(ex.cancel_qty||0);
-        if(locCq > sbCq + 0.001){ updateStockInSupabase(ex.despacho, ex.item, ex.subitem, locCq).catch(()=>{}); }
+        if(locCq > sbCq + 0.001){ r.cancel_qty = locCq; updateStockInSupabase(ex.despacho, ex.item, ex.subitem, locCq).catch(()=>{}); }
         else { ex.cancel_qty = sbCq; }
         if(r.cantidad!=null && !isNaN(parseFloat(r.cantidad))) ex.cantidad = parseFloat(r.cantidad);
       }
     });
+    // Lo que ya está en Supabase deja de vivir en la lista local: desde ahora manda Supabase
+    try{
+      const sbIds = new Set(rows.map(r=>r.despacho+'_'+r.item+'_'+r.subitem));
+      if(limpiarStockExtraYaSubido(sbIds)){ save(); try{ renderAdmStock(); }catch(_){} }
+      idsLocalesManual.clear();
+      Object.values(stockExtra).forEach(arr=>arr.forEach(r=>idsLocalesManual.add(r.despacho+'_'+r.item+'_'+r.subitem)));
+    }catch(e){ console.error(e); }
     rows.forEach(r => {
       const id = r.despacho+'_'+r.item+'_'+r.subitem;
       if (idsLocalesManual.has(id)) return;
@@ -1299,7 +1306,7 @@ async function updateStockInSupabase(despacho, item, subitem, newCancelQty) {
     Object.keys(STOCK_BASE).forEach(k=>{ const r=(STOCK_BASE[k]||[]).find(x=>x.despacho===despacho&&x.item===item&&x.subitem===subitem); if(r&&!hallada){hallada=r;kHallada=k;} });
     Object.keys(stockExtra).forEach(k=>{ const r=(stockExtra[k]||[]).find(x=>x.despacho===despacho&&x.item===item&&x.subitem===subitem); if(r&&!hallada){hallada=r;kHallada=k;} });
     if(hallada){
-      await pushStockRowToSupabase(kHallada, {...hallada, cancel_qty:newCancelQty});
+      await pushStockRowToSupabase(kHallada, {...hallada, cancel_qty:newCancelQty}, {forzarCancel:true});
       return {ok:true,id,creada:true};
     }
     return {ok:false,id,motivo:'no existe en Supabase ni en pantalla'};
@@ -7815,15 +7822,25 @@ function formatNCM(el){
   el.value = out;
 }
 
-async function pushStockRowToSupabase(mat, r){
+async function pushStockRowToSupabase(mat, r, opts){
+  opts = opts || {};
   try{
+    // Lo descontado vale lo que diga Supabase: una copia local vieja no puede pisarlo
+    // (salvo cuando se está descontando a propósito: opts.forzarCancel)
+    let cancelFinal = r.cancel_qty||0;
+    if(!opts.forzarCancel){
+      try{
+        const ex = await sbFetch('stock_base?select=cancel_qty&id=eq.'+encodeURIComponent(r.despacho+'_'+r.item+'_'+r.subitem), {method:'GET', headers:{'Prefer':''}});
+        if(ex && ex.length) cancelFinal = parseFloat(ex[0].cancel_qty||0);
+      }catch(e){}
+    }
     await sbFetch('stock_base', {
       method:'POST',
       headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
       body: JSON.stringify([{
         id: r.despacho+'_'+r.item+'_'+r.subitem,
         material: mat, despacho:r.despacho, item:r.item, subitem:r.subitem,
-        cantidad:r.cantidad, cancel_qty:r.cancel_qty||0, cancel_unit:r.cancel_unit||'kg',
+        cantidad:r.cantidad, cancel_qty:cancelFinal, cancel_unit:r.cancel_unit||'kg',
         unidad:r.unidad||'KILOGRAMO', fob:r.fob||0, cif:r.cif||0, kgs_neto:r.kgs_neto||0,
         producto:r.producto||'', detalle:r.detalle||'', fecha:r.fecha||'',
         sospechoso:r.sospechoso||false,
@@ -7846,30 +7863,60 @@ async function pushCustomCategoriaToSupabase(slug, label, unit){
   }catch(e){ console.error('Error subiendo categoría nueva a Supabase:', e.message); return false; }
 }
 
+// Ids que ya existen en Supabase (stock_base), de a 1000
+async function idsStockEnSupabase(){
+  const ids = new Set();
+  for(let off=0; off<50000; off+=1000){
+    const pg = await sbFetch('stock_base?select=id&order=id.asc&limit=1000&offset='+off, {method:'GET', headers:{'Prefer':''}});
+    if(!pg || !pg.length) break;
+    pg.forEach(r=>ids.add(r.id));
+    if(pg.length<1000) break;
+  }
+  return ids;
+}
+
+// Saca de la lista local (stockExtra) lo que ya está en Supabase: desde ahí manda Supabase
+function limpiarStockExtraYaSubido(ids){
+  let sacadas = 0;
+  Object.keys(stockExtra).forEach(mat=>{
+    const antes = stockExtra[mat].length;
+    stockExtra[mat] = stockExtra[mat].filter(r=>!ids.has(r.despacho+'_'+r.item+'_'+r.subitem));
+    sacadas += antes - stockExtra[mat].length;
+    if(!stockExtra[mat].length) delete stockExtra[mat];
+  });
+  return sacadas;
+}
+
 async function sincronizarTodoStockExtra(){
   const mats = Object.keys(stockExtra).filter(k=>stockExtra[k]?.length>0);
   const total = mats.reduce((s,k)=>s+stockExtra[k].length,0);
-  if(!total){ alert('No hay nada cargado manualmente para sincronizar.'); return; }
-  if(!confirm(`Se van a subir ${total} registro(s) a Supabase (incluyendo las categorías nuevas que hayas creado por nombre). ¿Continuar?`)) return;
+  if(!total){ alert('No hay nada pendiente de sincronizar: todo lo cargado ya está en Supabase.'); return; }
+  let enSb;
+  try{ enSb = await idsStockEnSupabase(); }catch(e){ alert('No pude consultar Supabase: '+e.message); return; }
+  const faltan = [];
+  mats.forEach(mat=>stockExtra[mat].forEach(row=>{ if(!enSb.has(row.despacho+'_'+row.item+'_'+row.subitem)) faltan.push({mat,row}); }));
+  const yaEstan = total - faltan.length;
+  if(!confirm(`Hay ${total} registro(s) en la lista local: ${yaEstan} ya están en Supabase (no se tocan, así no se pisa el stock) y ${faltan.length} faltan subirse. ¿Continuar?`)) return;
   let ok=0, fail=0; const errores=[];
-  for(const mat of mats){
-    // Si la categoría no es una de las 17 fijas, aseguramos que también quede compartida en Supabase
-    const esFija = !!MAT_LABELS[mat];
-    if(!esFija){ await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
-    for(const row of stockExtra[mat]){
-      const res = await pushStockRowToSupabase(mat, row);
-      if(res.ok) ok++; else { fail++; errores.push(`${row.despacho} ít.${row.item}.${row.subitem}: ${res.error}`); }
-    }
+  const nuevasCats = new Set();
+  for(const {mat,row} of faltan){
+    if(!BUILTIN_MAT.has(mat) && !nuevasCats.has(mat)){ nuevasCats.add(mat); await pushCustomCategoriaToSupabase(mat, MAT_LABELS[mat]||mat, CANCEL_UNIT[mat]||'kg'); }
+    const res = await pushStockRowToSupabase(mat, row);
+    if(res.ok){ ok++; enSb.add(row.despacho+'_'+row.item+'_'+row.subitem); } else { fail++; errores.push(`${row.despacho} ít.${row.item}.${row.subitem}: ${res.error}`); }
   }
+  // Lo que ya está en Supabase sale de la lista de abajo
+  const sacadas = limpiarStockExtraYaSubido(enSb);
+  save(); renderAdmStock();
+  try{ await refrescarStockDesdeSupabase(true); }catch(e){}
   const resumen = document.getElementById('adm-sync-resultado');
   if(resumen){
     resumen.style.display='block';
     resumen.innerHTML = `<div style="font-size:12px;margin-top:8px;padding:10px;border-radius:6px;background:${fail?'var(--rbg)':'var(--gbg)'};color:${fail?'var(--rd)':'var(--gr)'}">
-      ✓ ${ok} sincronizados${fail?`, ⚠ ${fail} con error:` : '.'}
+      ✓ ${ok} subidos · ${yaEstan} ya estaban en Supabase (sin tocar)${fail?` · ⚠ ${fail} con error:` : '.'}
       ${fail?`<ul style="margin:6px 0 0 18px;font-family:var(--mn);font-size:11px">${errores.map(e=>`<li>${e}</li>`).join('')}</ul>`:''}
     </div>`;
   }
-  alert(`Listo: ${ok} sincronizados${fail?`, ${fail} con error (mirá el detalle debajo del botón)`:''}.`);
+  alert(`Listo: ${ok} subidos, ${yaEstan} ya estaban (no se tocaron)${fail?`, ${fail} con error (mirá el detalle debajo del botón)`:''}. La lista de abajo quedó solo con lo pendiente.`);
 }
 
 async function repararZFI6Masivo(){
@@ -8559,6 +8606,7 @@ async function addStock(){
     stockExtra[mat].push(nuevaFila);
     save(); renderAdmStock();
     const subio = await pushStockRowToSupabase(mat, nuevaFila);
+    if(subio.ok){ limpiarStockExtraYaSubido(new Set([desp+'_'+item+'_'+sub])); save(); renderAdmStock(); refrescarStockDesdeSupabase(true).catch(()=>{}); }
     msg.style.color = subio.ok ? 'var(--gr)' : 'var(--rd)';
     msg.textContent = subio.ok
       ? `✓ ${desp} (${nombreInsumo}) actualizado y sincronizado — ya lo va a ver Marina/Carina también.`
@@ -8580,6 +8628,7 @@ async function addStock(){
   stockExtra[mat].push(nuevaFila);
   save(); renderAdmStock();
   const subio = await pushStockRowToSupabase(mat, nuevaFila);
+  if(subio.ok){ limpiarStockExtraYaSubido(new Set([desp+'_'+item+'_'+sub])); save(); renderAdmStock(); refrescarStockDesdeSupabase(true).catch(()=>{}); }
   msg.style.color = subio.ok ? 'var(--gr)' : 'var(--rd)';
   msg.textContent = subio.ok
     ? `✓ ${desp} (${nombreInsumo}) agregado en categoría "${MAT_LABELS[mat]}" — 100% disponible. Ya está sincronizado, lo va a ver Marina/Carina y el lector de ZFE3 también.`
