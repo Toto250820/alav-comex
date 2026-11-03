@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 03/11 12:40</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 03/11 15:10</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -6598,6 +6598,7 @@ function verET19PorVencer(){
 let termBase = [];       // filas de terminados_base
 let termSalidas = [];    // filas de zfe1_salidas
 let termQty = {};        // cantidades tipeadas en el armado {id: n}
+let termPack = {};       // packing por ítem {id: {ub, pn, pb}} (unidades por bulto, kg neto manual, kg bruto)
 const TERM_TASA_DEF = {'7310.21.90':12.6,'3923.29.90':18,'6302.32.00':20,'6302.22.00':20};
 function termN(n,d=2){ return (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}); }
 function termNcm8(ncm){ return String(ncm||'').split('.').slice(0,3).join('.'); }
@@ -6765,16 +6766,21 @@ function renderTerminados(){
     if(!filas.length){
       box.innerHTML = `<div class="t2" style="font-size:12px">No hay ZFI5 con saldo del tipo <b>${escPror(act.tipo||'')}</b>. Si tus ZFI5 están sin clasificar, asignales el tipo en la tabla de saldos de abajo, o tildá "mostrar todos los tipos".</div>`;
     } else {
-      box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th>USD unit.</th><th>Original</th><th>Cancelado</th><th>Reservado (otras)</th><th>Saldo</th><th>Usar</th></tr></thead><tbody>'
+      box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th>USD unit.</th><th>Original</th><th>Cancelado</th><th>Reservado (otras)</th><th>Saldo</th><th>Usar</th><th>U. por bulto</th><th>Bultos</th><th>Kg neto</th><th>Kg bruto</th></tr></thead><tbody>'
       + filas.map(r=>{
         const pu = (Number(r.fob)||0)/(Number(r.cantidad)||1), saldo = termSaldo(r);
         return `<tr><td class="mono" style="font-size:11px">${escPror(r.despacho)}<br>ítem ${escPror(r.item)}/${escPror(r.subitem)}</td>
           <td>${escPror(r.producto)}</td><td class="mono" style="font-size:11px">${escPror(r.ncm)}</td>
           <td class="mono">${termN(pu,4)}</td><td class="mono">${termN(r.cantidad,0)}</td><td class="mono">${termN(r.cancel_qty,0)}</td>
           <td class="mono">${termN(termReservado(r.id,termActiva),0)}</td><td class="mono"><b>${termN(saldo,0)}</b></td>
-          <td><input type="number" min="0" max="${saldo}" step="1" style="width:90px" value="${termQty[r.id]||''}" oninput="termQtyChange('${escPror(r.id)}',this.value,${saldo})"/></td></tr>`;
+          <td><input type="number" min="0" max="${saldo}" step="1" style="width:90px" value="${termQty[r.id]||''}" oninput="termQtyChange('${escPror(r.id)}',this.value,${saldo})"/></td>
+          <td><input type="number" min="1" step="1" style="width:70px" value="${(termPack[r.id]||{}).ub||termUbMemoria(r)||''}" oninput="termPackChange('${escPror(r.id)}','ub',this.value)"/></td>
+          <td class="mono" id="tpb-${escPror(r.id)}">—</td>
+          <td><input type="number" min="0" step="0.001" style="width:80px" id="tpn-${escPror(r.id)}" value="${(termPack[r.id]||{}).pn??''}" oninput="termPackChange('${escPror(r.id)}','pn',this.value)"/></td>
+          <td><input type="number" min="0" step="0.001" style="width:80px" value="${(termPack[r.id]||{}).pb??''}" oninput="termPackChange('${escPror(r.id)}','pb',this.value)"/></td></tr>`;
       }).join('') + '</tbody></table></div>';
     }
+    Object.keys(termQty).forEach(id=>termPackRefrescarFila(id));
     if(!document.getElementById('term-fecha').value) document.getElementById('term-fecha').value = act.fecha || new Date().toISOString().slice(0,10);
     document.getElementById('term-iva').value = act.iva!=null?act.iva:21;
     document.getElementById('term-sim').value = act.sim!=null?act.sim:10;
@@ -6788,18 +6794,78 @@ function termQtyChange(id, v, saldo){
   if(n<0) n=0;
   if(n>saldo+0.0001){ n=saldo; }
   if(n>0) termQty[id]=n; else delete termQty[id];
+  termPackRefrescarFila(id);
   renderTermPreview();
 }
 async function termSetTipo(id, v){
   try{ await sbFetch('terminados_base?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({tipo:(v||'').trim()||null})}); const r=termBase.find(x=>x.id===id); if(r) r.tipo=(v||'').trim()||null; renderTerminados(); }
   catch(e){ alert('⚠ '+e.message+(/tipo/.test(e.message)?' — falta correr terminados_tipo.sql en Supabase.':'')); }
 }
+// ── Packing de la salida ZFE1: bultos y kg por línea ──
+function termUbKey(r){ return 'ga_term_ub_'+String(r.ncm||'')+'_'+String(r.producto||'').toUpperCase().replace(/\s+/g,' ').trim(); }
+function termUbMemoria(r){ try{ return localStorage.getItem(termUbKey(r))||''; }catch(e){ return ''; } }
+// Cálculo de una línea: bultos (si hay unidades por bulto), kg neto (manual o proporcional al ZFI5), kg bruto (manual)
+function termPackLinea(r, cant, pk){
+  pk = pk || {};
+  const ub = parseFloat(pk.ub) || parseFloat(termUbMemoria(r)) || 0;
+  const bultos = ub>0 && cant>0 ? Math.ceil(cant/ub) : null;
+  const kgTot = Number(r.kgs_neto)||0, cantTot = Number(r.cantidad)||0;
+  const pnAuto = kgTot>0 && cantTot>0 ? +(kgTot*cant/cantTot).toFixed(3) : null;
+  const pnMan = (pk.pn!=null && pk.pn!=='' && !isNaN(parseFloat(pk.pn))) ? parseFloat(pk.pn) : null;
+  const pbMan = (pk.pb!=null && pk.pb!=='' && !isNaN(parseFloat(pk.pb))) ? parseFloat(pk.pb) : null;
+  return {ub: ub>0?ub:null, bultos, pn: pnMan!=null?pnMan:pnAuto, pnAuto, pb: pbMan};
+}
+function termPackChange(id, campo, v){
+  termPack[id] = termPack[id] || {};
+  termPack[id][campo] = v;
+  if(campo==='ub'){ const r=termBase.find(x=>x.id===id); const n=parseFloat(v); if(r){ try{ if(n>0) localStorage.setItem(termUbKey(r), String(n)); }catch(e){} } }
+  termPackRefrescarFila(id);
+  renderTermPreview();
+}
+function termPackRefrescarFila(id){
+  const r = termBase.find(x=>x.id===id); if(!r) return;
+  const cant = termQty[id]||0;
+  const c = termPackLinea(r, cant, termPack[id]);
+  const b = document.getElementById('tpb-'+id); if(b) b.textContent = c.bultos!=null ? termN(c.bultos,0) : '—';
+  const pn = document.getElementById('tpn-'+id); if(pn) pn.placeholder = c.pnAuto!=null ? termN(c.pnAuto,3) : 'kg';
+}
+function termPackFilas(items){
+  // items: [{tid, producto, ncm, cant, ub, pn, pb, despacho, item, subitem}] -> filas calculadas
+  return (items||[]).map(it=>{
+    const r = termBase.find(x=>x.id===it.tid) || {kgs_neto:0, cantidad:0, ncm:it.ncm, producto:it.producto};
+    const c = termPackLinea(r, Number(it.cant)||0, {ub:it.ub, pn:it.pn, pb:it.pb});
+    return {...it, bultos:c.bultos, ubFinal:c.ub, pnFinal:c.pn, pbFinal:c.pb};
+  });
+}
+function termPackTotales(filas){
+  return filas.reduce((a,f)=>({bultos:a.bultos+(f.bultos||0), pn:a.pn+(f.pnFinal||0), pb:a.pb+(f.pbFinal||0)}),{bultos:0,pn:0,pb:0});
+}
+function termPackHTML(items){
+  const filas = termPackFilas(items); if(!filas.length) return '';
+  const t = termPackTotales(filas);
+  return `<div style="margin-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">📦 Packing</div><div style="overflow-x:auto"><table><thead><tr><th>Ítem</th><th>Cantidad</th><th>U. por bulto</th><th>Bultos</th><th>Kg neto</th><th>Kg bruto</th></tr></thead><tbody>`
+  + filas.map(f=>`<tr><td class="mono" style="font-size:11px">${escPror(f.despacho)} ${escPror(f.item)}/${escPror(f.subitem)}<br>${escPror(f.producto)}</td><td class="mono">${termN(f.cant,0)}</td><td class="mono">${f.ubFinal?termN(f.ubFinal,0):'—'}</td><td class="mono">${f.bultos!=null?termN(f.bultos,0):'—'}</td><td class="mono">${f.pnFinal!=null?termN(f.pnFinal,3):'—'}</td><td class="mono">${f.pbFinal!=null?termN(f.pbFinal,3):'—'}</td></tr>`).join('')
+  + `<tr style="font-weight:700"><td>Total</td><td></td><td></td><td class="mono">${termN(t.bultos,0)}</td><td class="mono">${termN(t.pn,3)}</td><td class="mono">${t.pb?termN(t.pb,3):'—'}</td></tr></tbody></table></div>`
+  + (filas.some(f=>f.bultos==null)?`<div class="t2" style="font-size:11px">Falta cargar las unidades por bulto en alguna línea para calcular los bultos.</div>`:'') + `</div>`;
+}
+function termImprimirPacking(sid){
+  const s = termSalidas.find(x=>x.id===sid); if(!s) return;
+  const filas = termPackFilas(termItemsDeSalida(s)); const t = termPackTotales(filas);
+  termAbrirImpresion('Packing ZFE1', `<h2>Packing ZFE1 ${s.numero?escPror(s.numero):''}</h2><div>Fecha: ${escPror(s.fecha||'')}${s.tipo?' · '+escPror(s.tipo):''}${s.descripcion?' — '+escPror(s.descripcion):''}</div>
+  <table><thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>NCM</th><th class="r">Cantidad</th><th class="r">U. por bulto</th><th class="r">Bultos</th><th class="r">Kg neto</th><th class="r">Kg bruto</th></tr></thead><tbody>`
+  + filas.map(f=>`<tr><td>${escPror(f.despacho)} ${escPror(f.item)}/${escPror(f.subitem)}</td><td>${escPror(f.producto)}</td><td>${escPror(f.ncm)}</td><td class="r">${termN(f.cant,0)}</td><td class="r">${f.ubFinal?termN(f.ubFinal,0):''}</td><td class="r">${f.bultos!=null?termN(f.bultos,0):''}</td><td class="r">${f.pnFinal!=null?termN(f.pnFinal,3):''}</td><td class="r">${f.pbFinal!=null?termN(f.pbFinal,3):''}</td></tr>`).join('')
+  + `<tr><th colspan="5">TOTAL</th><th class="r">${termN(t.bultos,0)}</th><th class="r">${termN(t.pn,3)}</th><th class="r">${t.pb?termN(t.pb,3):''}</th></tr></tbody></table>`);
+}
+
 function termItemsSeleccionados(){
   const out=[];
   Object.keys(termQty).forEach(id=>{
     const r = termBase.find(x=>x.id===id); if(!r) return;
     out.push({tid:r.id, despacho:r.despacho, item:r.item, subitem:r.subitem, producto:r.producto, ncm:r.ncm,
       cant:termQty[id], precioUnit:(Number(r.fob)||0)/(Number(r.cantidad)||1),
+      ub: (parseFloat((termPack[id]||{}).ub)||parseFloat(termUbMemoria(r))||null),
+      pn: ((termPack[id]||{}).pn!==undefined && (termPack[id]||{}).pn!=='') ? parseFloat(termPack[id].pn) : null,
+      pb: ((termPack[id]||{}).pb!==undefined && (termPack[id]||{}).pb!=='') ? parseFloat(termPack[id].pb) : null,
       fob_desp:Number(r.fob_desp)||0, flete_desp:Number(r.flete_desp)||0, seguro_desp:Number(r.seguro_desp)||0});
   });
   return out;
@@ -6821,7 +6887,7 @@ function renderTermPreview(tasasIniciales){
   const sel = termItemsSeleccionados();
   const cont = document.getElementById('term-preview');
   const tasasBox = document.getElementById('term-tasas');
-  if(!sel.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Poné cantidades en la columna "Usar" para ver la liquidación.</div>'; tasasBox.innerHTML=''; tasasBox.dataset.ncms=''; return; }
+  if(!sel.length){ cont.innerHTML='<div class="t2" style="font-size:12px">Poné cantidades en la columna "Usar" para ver la liquidación y el packing.</div>'; tasasBox.innerHTML=''; tasasBox.dataset.ncms=''; return; }
   const prev = {}; tasasBox.querySelectorAll('input[data-ncm]').forEach(i=>prev[i.dataset.ncm]=i.value);
   const ncms = [...new Set(sel.map(s=>termNcm8(s.ncm)))];
   if(tasasBox.dataset.ncms !== ncms.join('|')){
@@ -6832,7 +6898,7 @@ function renderTermPreview(tasasIniciales){
     }).join('');
   }
   const p = termLeerParams();
-  cont.innerHTML = termLiqHTML(termCalcLiq(sel, p.tasas, p.iva, p.sim));
+  cont.innerHTML = termLiqHTML(termCalcLiq(sel, p.tasas, p.iva, p.sim)) + termPackHTML(sel);
 }
 async function termCrear(){
   const nro = (document.getElementById('term-nro').value||'').trim();
@@ -6846,7 +6912,7 @@ async function termCrear(){
     estado:'borrador', items:[], tasas:{}, iva:21, sim:10, origen:'app'};
   try{
     await sbFetch('zfe1_salidas',{method:'POST',body:JSON.stringify(rec)});
-    termSalidas.unshift(rec); termActiva=rec.id; termQty={};
+    termSalidas.unshift(rec); termActiva=rec.id; termQty={}; termPack={};
     ['term-nro','term-desc','term-remito'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('term-fecha').value=rec.fecha;
     msg.style.display='none';
@@ -6856,12 +6922,13 @@ async function termCrear(){
 function termAbrir(id){
   const s = termSalidas.find(x=>x.id===id); if(!s||s.estado!=='borrador') return;
   termActiva=id; termQty={};
-  (s.items||[]).forEach(it=>{ termQty[it.tid]=Number(it.cant); });
+  termPack={};
+  (s.items||[]).forEach(it=>{ termQty[it.tid]=Number(it.cant); termPack[it.tid]={ub:it.ub||'', pn:it.pn!=null?it.pn:'', pb:it.pb!=null?it.pb:''}; });
   document.getElementById('term-fecha').value = s.fecha||'';
   renderTerminados();
   window.scrollTo({top:0,behavior:'smooth'});
 }
-function termCerrar(){ termActiva=null; termQty={}; renderTerminados(); }
+function termCerrar(){ termActiva=null; termQty={}; termPack={}; renderTerminados(); }
 async function termGuardar(confirmar){
   const act = termSalActiva(); if(!act) return;
   const msg = document.getElementById('term-guardar-msg');
@@ -6954,6 +7021,7 @@ function renderTermHistorial(){
           ${conf?'':`<button class="btn btnp" onclick="termAbrir('${escPror(s.id)}')">✏ Continuar</button><button class="btn btng" onclick="termConfirmar('${escPror(s.id)}')">✅ Confirmar</button>`}
           <button class="btn" onclick="termImprimirCancelar('${escPror(s.id)}')">🖨 ZFI5 a cancelar</button>
           <button class="btn" onclick="termImprimirLiq('${escPror(s.id)}')">🖨 Liquidación</button>
+          <button class="btn" onclick="termImprimirPacking('${escPror(s.id)}')">🖨 Packing</button>
           ${conf?'<span class="t2" style="font-size:11px;align-self:center">🔒 confirmado: no se puede modificar</span>':`<button class="btn" onclick="termEliminar('${escPror(s.id)}')">🗑</button>`}
         </div>
       </div>
@@ -6965,6 +7033,7 @@ function renderTermHistorial(){
         ${conf?'':`<div class="ff" style="max-width:120px;justify-content:flex-end"><button class="btn" onclick="termGuardarParams('${escPror(s.id)}')">Guardar cambios</button></div>`}
       </div>
       ${termLiqHTML(liq)}
+      ${termPackHTML(termItemsDeSalida(s))}
     </div>`;
   }).join('');
 }
