@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 03/11 15:10</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 04/11 10:10</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -1615,19 +1615,42 @@ function bloqueSitaOC(o, pendiente, q){
   if(!pendiente){
     return (o.sita ? `<div style="padding:6px 12px;font-size:12px">SITA <b class="mono">${q(o.sita)}</b> — ${est==='aprobado'?'<span style="color:var(--gr)">APROBADO</span>':'sin aprobar'}</div>` : '');
   }
-  if(est==='aprobado'){
-    return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:center;background:var(--gbg);border:1px solid var(--gr)">
-      <div style="color:var(--gr);font-weight:600">✅ SITA <span class="mono">${q(o.sita)}</span> — APROBADO</div>
-      <div style="font-size:11px;color:var(--tx2)">${o.sita_fecha_aprobado?('Aprobado: '+fmtFechaHora(o.sita_fecha_aprobado)+' · '):''}Esperando el remito de entrega para confirmar la compra.</div>
-      <button class="btn" style="font-size:11px;padding:3px 9px" onclick="sitaVolverANoAprobado('${o.id}')">↩ Pasar a NO APROBADO</button>
-    </div>`;
-  }
-  return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end;${est==='no_aprobado'?'border:1px solid var(--rd)':''}">
-    <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">SITA ${est==='no_aprobado'?'— NO APROBADO (editá el número)':'(opcional — si la compra no lleva SITA, dejalo vacío)'}</label>
+  const ap = est==='aprobado', na = est==='no_aprobado';
+  const estadoTxt = ap ? `<span style="color:var(--gr);font-weight:700">✅ APROBADO</span>${o.sita_fecha_aprobado?` <span style="font-size:11px;color:var(--tx2)">(${fmtFechaHora(o.sita_fecha_aprobado)})</span>`:''}`
+    : na ? '<span style="color:var(--rd);font-weight:700">✕ NO APROBADO</span> <span style="font-size:11px;color:var(--tx2)">— cambiá el número y guardá</span>'
+    : o.sita ? '<span style="color:var(--yw);font-weight:700">⏳ PENDIENTE de aprobación</span>' : '<span style="color:var(--tx3)">sin SITA (opcional)</span>';
+  return `<div class="pbox" style="flex-wrap:wrap;gap:8px;align-items:flex-end;${ap?'background:var(--gbg);border:1px solid var(--gr)':na?'border:1px solid var(--rd)':''}">
+    <div><label style="font-size:9px;color:var(--tx3);display:block;text-transform:uppercase;font-family:var(--mn)">SITA ${estadoTxt}</label>
       <input id="oc-sita-${o.id}" value="${q(o.sita||'')}" placeholder="Nº de SITA" style="${inp}"/></div>
-    <button class="btn btng" onclick="guardarSitaEstado('${o.id}','aprobado')">✓ APROBADO</button>
-    <button class="btn btnd" onclick="guardarSitaEstado('${o.id}','no_aprobado')">✕ NO APROBADO</button>
+    <button class="btn btnpu" onclick="guardarSitaNumero('${o.id}')">💾 Guardar SITA</button>
+    ${ap ? '' : `<button class="btn btng" onclick="guardarSitaEstado('${o.id}','aprobado')">✓ APROBADO</button>`}
+    <button class="btn btnd" onclick="guardarSitaEstado('${o.id}','no_aprobado')" ${na?'style="opacity:.6"':''}>✕ NO APROBADO</button>
+    ${ap ? '<span style="font-size:11px;color:var(--tx2)">Esperando el remito de entrega para confirmar la compra.</span>' : ''}
   </div>`;
+}
+
+// Guarda solo el número de SITA. Si el número cambia, la aprobación anterior ya no vale: vuelve a "pendiente"
+async function guardarSitaNumero(id){
+  const sita = (document.getElementById('oc-sita-'+id)?.value||'').trim();
+  const o = ordenesCompra.find(x=>x.id===id); if(!o) return;
+  if(!sita){
+    if(!o.sita){ alert('Escribí el número de SITA.'); return; }
+    if(!confirm('¿Sacar el SITA de esta orden? Queda sin SITA.')) return;
+  }
+  const cambio = (o.sita||'') !== sita;
+  const patch = {sita: sita||null};
+  if(cambio){ patch.sita_estado = sita ? 'pendiente' : null; patch.sita_fecha_aprobado = null; }
+  if(cambio && o.sita_estado==='aprobado' && !confirm('Esta orden tenía el SITA '+o.sita+' APROBADO. Si cambiás el número, la aprobación se pierde y hay que aprobarlo de nuevo. ¿Seguir?')) return;
+  try{
+    await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify(patch)});
+    if(cambio && o.sita_estado==='aprobado'){
+      try{ await sbFetch('avisos_compra?oc_id=eq.'+encodeURIComponent(id)+'&resuelto=eq.false', {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({resuelto:true, nota:'SITA cambiado'})}); }catch(e){}
+    }
+    await loadOrdenesCompra();
+    showToast(cambio ? '✓ SITA guardado. Cuando salga la respuesta, tocá APROBADO o NO APROBADO.' : 'Sin cambios en el número de SITA.', 5000);
+  }catch(e){
+    alert('Error guardando el SITA: '+e.message + (String(e.message).includes('sita_estado')?'\n\nFalta correr el SQL "avisos_compra_setup.sql" en Supabase.':''));
+  }
 }
 
 async function guardarSitaEstado(id, estado){
