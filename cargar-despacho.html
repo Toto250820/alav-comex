@@ -247,6 +247,7 @@ html.embed a[href="./index.html"]{display:none}
   </div>
   <div class="card">
     <div class="stit">Revisá antes de confirmar</div>
+    <div id="z1-faltan-box" style="display:none;margin-bottom:10px;padding:12px;border:1px solid var(--yw);border-radius:var(--rs)"></div>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>ZFI5 · ítem</th><th>Producto</th><th>Saldo actual</th><th>A cancelar</th><th>Queda</th><th>Estado</th></tr></thead>
       <tbody id="zfe1-tbody"></tbody>
@@ -820,7 +821,17 @@ async function registrarLote(files){
         estado: have.has(sid)?'descontado':'pendiente', creado_por:who, creado_en:new Date().toISOString() }; });
       await sbFetch('descuentos_pendientes',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(logRows)});
       const nF = logRows.filter(x=>x.estado==='pendiente').length;
-      linea(`${p.tipo} ${p.despacho}${sal?' · salida '+sal:''}: ${logRows.length-nF} ✓ encontrados, ${nF} NO encontrados`, nF?false:true);
+      let extraTz = '';
+      if(p.tipo==='TZF5' && p.items && p.items.length){
+        try{
+          const rowsT = p.items.map(it=>({ id:p.despacho+'_'+it.item+'_'+it.subitem, despacho:p.despacho, item:it.item, subitem:it.subitem,
+            producto: it.ai||it.ncm, ai: it.ai||'', ncm: it.ncm, unidad: it.unidad||'UNIDAD', cantidad: it.cantidad||0, kgs_neto: it.kgs_neto||0,
+            fob: it.fob||0, cif: it.fob||0, fecha:p.fecha, fob_desp:p.fob_desp||0, flete_desp:p.flete_desp||0, seguro_desp:p.seguro_desp||0 }));
+          await sbFetch('terminados_base',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rowsT)});
+          extraTz = ` · ${rowsT.length} ítem(s) del TZF5 cargados en Insumos terminados`;
+        }catch(e){ extraTz = ' · ⚠ no se pudieron cargar los ítems del TZF5 ('+e.message+')'; }
+      }
+      linea(`${p.tipo} ${p.despacho}${sal?' · salida '+sal:''}: ${logRows.length-nF} ✓ encontrados, ${nF} NO encontrados${extraTz}`, nF?false:true);
     }catch(e){ linea(`${file.name}: error — ${e.message}`, false); }
   }
   linea('Listo. Mirá el resultado en Stock → Control de descuentos.', null);
@@ -1067,7 +1078,7 @@ async function renderZFE1(p){
   let faltan = 0;
   document.getElementById('zfe1-tbody').innerHTML = p.consumos.map((x,i)=>{
     const id = ids[i], r = byId[id];
-    if(!r){ faltan++; return `<tr class="warn"><td class="mono">${id}</td><td colspan="4" style="color:var(--rd)">No encontrado en Insumos terminados — cargá primero el ZFI5</td><td><span class="tag sin_match">⚠ falta</span></td></tr>`; }
+    if(!r){ faltan++; return `<tr class="warn"><td class="mono">${id}</td><td colspan="4" style="color:var(--rd)">No encontrado en Insumos terminados — ${/TZF5/.test(id)?'cargá primero el TZF5 (botón de abajo)':'cargá primero el ZFI5'}</td><td><span class="tag sin_match">⚠ falta</span></td></tr>`; }
     const disp = (r.cantidad||0)-(r.cancel_qty||0);
     // si el borrador/confirmado ya cubre esto, el saldo actual ya lo refleja según el modo
     const queda = mode==='link'||mode==='dup' ? disp : disp - x.cantidad;
@@ -1085,6 +1096,17 @@ async function renderZFE1(p){
   }
   document.getElementById('btn-confirm-zfe1').disabled = (mode==='dup' || faltan>0);
   document.getElementById('btn-solo-zfe1').disabled = false;
+  { const fb = document.getElementById('z1-faltan-box');
+    if(faltan>0){
+      const despFalt = [...new Set(p.consumos.map((x,i)=>byId[ids[i]]?null:x.despacho).filter(Boolean))];
+      fb.style.display='block';
+      fb.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">⚠️ Faltan ${faltan} ítem${faltan!==1?'s':''} en Insumos terminados (de ${despFalt.join(', ')})</div>
+        <div class="sub" style="margin-bottom:8px">Subí acá el PDF del despacho de origen (el <b>TZF5</b> o el <b>ZFI5</b> que se está cancelando) y se cargan sus ítems <b>sin tocar ningún stock</b>. Después se completa este ZFE1 solo.</div>
+        <input type="file" id="z1-faltan-file" accept=".pdf" style="display:none" onchange="cargarOrigenFaltanteZFE1(this.files[0])"/>
+        <button class="btn btnp" onclick="document.getElementById('z1-faltan-file').click()">📥 Cargar el PDF del despacho que falta</button>
+        <div id="z1-faltan-msg" style="margin-top:8px;font-size:12px"></div>`;
+    } else { fb.style.display='none'; fb.innerHTML=''; }
+  }
 }
 // Registra el ZFE1 del PDF sin tocar el saldo de Insumos terminados (el descuento ya se hizo, o no corresponde)
 async function registrarSoloZFE1(){
@@ -1122,6 +1144,38 @@ async function registrarSoloZFE1(){
     document.getElementById('error-box').innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
     btn.disabled = false; btn.textContent = '📝 Solo registrar (sin descontar)';
   }
+}
+
+// Carga los ítems de un TZF5 / ZFI5 de origen en Insumos terminados SIN descontar ningún stock (para poder cancelarlos con un ZFE1)
+async function cargarOrigenFaltanteZFE1(file){
+  const msg = document.getElementById('z1-faltan-msg'); if(!file) return;
+  msg.style.color='var(--tx2)'; msg.textContent='Leyendo el PDF...';
+  try{
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+    const pages=[]; for(let i=1;i<=doc.numPages;i++){ const pg=await doc.getPage(i); const c=await pg.getTextContent(); pages.push(c.items.map(it=>it.str).join('|')); }
+    const o = parseDespacho(pages);
+    if(o.tipo!=='TZF5' && o.tipo!=='ZFI5') throw new Error('Ese PDF es un '+o.tipo+'. Tiene que ser el TZF5 o el ZFI5 que cancela el ZFE1.');
+    if(!o.items || !o.items.length) throw new Error('No se encontró ningún ítem en ese PDF. ¿Están todas las páginas?');
+    const ya = (currentParsed.consumos||[]).some(x=>x.despacho===o.despacho);
+    if(!ya && !confirm('Este PDF es el '+o.tipo+' '+o.despacho+', que no figura entre los que cancela este ZFE1. ¿Cargarlo igual?')) { msg.textContent=''; return; }
+    const tipoT = (prompt('Tipo de producto para filtrar al armar ZFE1 (ej: Latas, Bolsas). Podés dejarlo vacío:','')||'').trim();
+    const origen = o.tipo==='TZF5' ? (o.consumos||[]).map(x=>`${x.despacho} ítem ${x.item}/${x.subitem} (${x.cantidad})`).join(' · ') : '';
+    const rows = o.items.map(it=>({
+      id:o.despacho+'_'+it.item+'_'+it.subitem, despacho:o.despacho, item:it.item, subitem:it.subitem,
+      producto: it.ai||it.ncm, ai: it.ai||'', ncm: it.ncm, unidad: it.unidad||'UNIDAD',
+      cantidad: it.cantidad||0, kgs_neto: it.kgs_neto||0, fob: it.fob||0, cif: it.fob||0, fecha:o.fecha,
+      fob_desp:o.fob_desp||0, flete_desp:o.flete_desp||0, seguro_desp:o.seguro_desp||0,
+      ...(tipoT?{tipo:tipoT}:{})
+    }));
+    // sin cancel_qty: si ya existía alguna fila, se conserva lo descontado
+    const post = body => sbFetch('terminados_base',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
+    try{ await post(rows.map(r=>({...r, ...(origen?{origen}:{})}))); }
+    catch(e){ if(/origen/i.test(e.message)) await post(rows); else throw e; }
+    msg.style.color='var(--gr)'; msg.textContent='✓ Cargados '+rows.length+' ítem(s) de '+o.despacho+'. Actualizando el ZFE1...';
+    await renderZFE1(currentParsed);
+  }catch(e){ msg.style.color='var(--rd)'; msg.textContent='⚠ '+e.message; }
+  try{ document.getElementById('z1-faltan-file').value=''; }catch(_){}
 }
 
 async function confirmarZFE1(){
