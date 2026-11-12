@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 04/11 12:20</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 12/11 11:55</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -1546,11 +1546,14 @@ function cancelarRenovacionAviso(){
 }
 
 async function resolverAviso(id){
-  if(!confirm('¿Marcar este aviso como resuelto? (ya no se va a mostrar en la lista)')) return;
+  // Sin preguntas: el aviso desaparece de la lista al instante
+  const antes = avisosCarga.slice();
+  avisosCarga = avisosCarga.filter(a=>a.id!==id);
+  renderAvisos();
   try{
     await sbFetch('avisos_carga?id=eq.'+encodeURIComponent(id), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({resuelto:true})});
     await loadAvisosFromSupabase();
-  }catch(e){ alert('Error: '+e.message); }
+  }catch(e){ avisosCarga = antes; renderAvisos(); alert('No se pudo resolver el aviso: '+e.message); }
 }
 
 function renderAvisos(){
