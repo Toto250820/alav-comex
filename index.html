@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 12/11 11:55</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 12/11 15:30</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -7132,7 +7132,7 @@ setInterval(aplicarTema, 60000);
 // ── Carga PDF dentro de la app (ventana normal) ──
 function abrirCargaPdf(){
   const fr=document.getElementById('cargapdf-frame');
-  if(!fr.getAttribute('src')){ fr.addEventListener('load',()=>aplicarTema()); fr.setAttribute('src','./cargar-despacho.html?embed=1'); }
+  if(!fr.getAttribute('src')){ fr.addEventListener('load',()=>aplicarTema()); fr.setAttribute('src','./cargar-despacho.html?embed=1&v='+Date.now()); }
 }
 window.addEventListener('message', ev=>{
   const fr=document.getElementById('cargapdf-frame');
