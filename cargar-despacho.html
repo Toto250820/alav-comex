@@ -116,7 +116,7 @@ html.embed a[href="./index.html"]{display:none}
     <div class="ic">📄</div>
     <div class="tt">Tocá para elegir el PDF, o arrastralo acá</div>
     <div class="tt2">Formato ARCA — ET19, ZFI6, ZFI8, ZFI5, TZF5, ZFE3 o ZFE1</div>
-    <div style="font-size:9px;color:var(--tx3);font-family:var(--mn)">Carga de despachos · versión 12/11 15:45</div>
+    <div style="font-size:9px;color:var(--tx3);font-family:var(--mn)">Carga de despachos · versión 18/11 11:50</div>
   </div>
   <div style="margin-top:14px;padding:10px 12px;border:1px dashed var(--bd2);border-radius:var(--r)">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 Registrar ZFE3 / TZF5 que ya subiste antes (varios a la vez)</div>
@@ -628,12 +628,16 @@ async function registrarET19EnSistema(){
     });
     let ocTxt = '';
     if(sita){
-      const ocs = await sbFetch('ordenes_compra?select=id,numero&sita=eq.'+encodeURIComponent(sita), {method:'GET', headers:{'Prefer':''}});
-      for(const o of (ocs||[])){
-        await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(o.id), {method:'PATCH', headers:{'Prefer':'return=minimal'},
-          body: JSON.stringify({et19: et19n, et19_fecha: currentET19.fecha, et19_meses: meses})});
+      try{
+        const ocs = await sbFetch('ordenes_compra?select=id,numero&sita=eq.'+encodeURIComponent(sita), {method:'GET', headers:{'Prefer':''}});
+        for(const o of (ocs||[])){
+          await sbFetch('ordenes_compra?id=eq.'+encodeURIComponent(o.id), {method:'PATCH', headers:{'Prefer':'return=minimal'},
+            body: JSON.stringify({et19: et19n, et19_fecha: currentET19.fecha, et19_meses: meses})});
+        }
+        ocTxt = (ocs&&ocs.length) ? ` Vinculada a la orden ${ocs.map(o=>o.numero).join(', ')}.` : ' ⚠ Todavía no hay ninguna orden con ese SITA.';
+      }catch(e){
+        ocTxt = ' ⚠ La ET19 quedó registrada, pero no se pudo vincular con la orden de compra: '+e.message+(/et19_fecha|et19_meses|schema cache/i.test(e.message)?' — falta correr el SQL "ordenes_compra_et19_columnas.sql" en Supabase.':'');
       }
-      ocTxt = (ocs&&ocs.length) ? ` Vinculada a la orden ${ocs.map(o=>o.numero).join(', ')}.` : ' ⚠ Todavía no hay ninguna orden con ese SITA.';
     } else ocTxt = ' Falta el Nº de SITA para vincularla con su orden de compra.';
     msg.innerHTML = `<span style="color:${sita&&!ocTxt.includes('⚠')?'var(--gr)':'var(--yw)'}">✓ ET19 registrada en el sistema (plazo de ${meses} meses). Ya figura en ET19 → Explorar.${ocTxt}</span>`;
   }catch(e){
