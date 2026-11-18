@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 12:05</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 12:20</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -805,7 +805,7 @@ html[data-theme="dark"]{
       <button class="btn btnp" onclick="imprimirPlanillaET19()">📄 Descargar planilla PDF</button>
     </div>
     <div id="et19-explorar-resumen" style="font-size:12px;margin-top:10px"></div>
-    <div class="t2" style="font-size:11px;margin-top:6px">🔴 Rojo: hay que solicitar prórroga (queda saldo en el ZFI6) · 🟢 Verde: no hace falta (se consumió todo) o la prórroga ya está otorgada · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
+    <div class="t2" style="font-size:11px;margin-top:6px">🔴 Rojo: hay que solicitar prórroga (queda saldo en el ZFI6 y falta menos de 90 días para el vencimiento) · 🟢 Verde: no hace falta (se consumió todo, todavía está vigente o la prórroga ya está otorgada) · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
   </div>
   <div id="et19-explorar-lista" style="margin-top:12px"></div>
 </div>
@@ -6230,7 +6230,12 @@ function evaluarET19(g){
   const itemsConSaldo = zfi6.reduce((s,z)=>s+z.filas.filter(f=>f.conSaldo).length, 0);
   let veredicto;
   if(!zfi6.length) veredicto = 'sinvinculo';
-  else if(itemsConSaldo>0) veredicto = (vencProrr && vencDate && vencDate.getTime() >= Date.now()) ? 'prorrogada' : 'prorroga';
+  else if(itemsConSaldo>0){
+    if(vencProrr && vencDate && vencDate.getTime() >= Date.now()) veredicto = 'prorrogada';
+    // Queda saldo, pero si el vencimiento todavía está lejos no hay que pedir nada aún
+    else if(vencDate && diasHastaFecha(vencDate) > ET19_AVISO_DIAS) veredicto = 'vigente';
+    else veredicto = 'prorroga';
+  }
   else if(zfi6.some(z=>!z.filas.length)) veredicto = 'revisar';   // no se puede afirmar que se consumió: falta cargar el ZFI6
   else veredicto = 'no';
   return {et19: g.et19, meses, ofic: oficISO?isoAFecha(oficISO):null, venc: vencDate?fmtFechaDate(vencDate):null, vencDate,
@@ -6242,6 +6247,7 @@ function evaluarET19(g){
 const ET19_ESTILO = {
   prorroga:   {color:'var(--rd)', fondo:'var(--rbg)', chip:'🔴 PEDIR PRÓRROGA', orden:0},
   prorrogada: {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 PRÓRROGA OTORGADA', orden:2},
+  vigente:    {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 NO REQUIERE PRÓRROGA (vigente)', orden:2},
   revisar:    {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ REVISAR — ZFI6 sin ítems en stock', orden:1},
   sinvinculo: {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ SIN ZFI6 VINCULADO', orden:1},
   no:         {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 NO REQUIERE PRÓRROGA', orden:2}
@@ -6261,7 +6267,7 @@ function renderExplorarET19(){
 
   const cuenta = v => filas.filter(f=>f.veredicto===v).length;
   document.getElementById('et19-explorar-resumen').innerHTML = filas.length
-    ? `<b>${filas.length}</b> ET19 — <span style="color:var(--rd);font-weight:700">${cuenta('prorroga')} para pedir prórroga</span> · <span style="color:var(--gr);font-weight:700">${cuenta('no')+cuenta('prorrogada')} sin necesidad</span> · ${cuenta('revisar')+cuenta('sinvinculo')} sin datos suficientes`
+    ? `<b>${filas.length}</b> ET19 — <span style="color:var(--rd);font-weight:700">${cuenta('prorroga')} para pedir prórroga</span> · <span style="color:var(--gr);font-weight:700">${cuenta('no')+cuenta('prorrogada')+cuenta('vigente')} sin necesidad</span> · ${cuenta('revisar')+cuenta('sinvinculo')} sin datos suficientes`
     : '';
 
   if(!filas.length){
@@ -6495,6 +6501,7 @@ function imprimirPlanillaET19(){
   const est = {
     prorroga:{t:'PEDIR PRÓRROGA', bg:'#fbdcdc', bd:'#c62828'},
     prorrogada:{t:'PRÓRROGA OTORGADA', bg:'#d9f2dd', bd:'#1e8e3e'},
+    vigente:{t:'NO REQUIERE PRÓRROGA (vigente)', bg:'#d9f2dd', bd:'#1e8e3e'},
     no:{t:'NO REQUIERE PRÓRROGA', bg:'#d9f2dd', bd:'#1e8e3e'},
     revisar:{t:'REVISAR — ZFI6 sin ítems en stock', bg:'#eee', bd:'#888'},
     sinvinculo:{t:'SIN ZFI6 VINCULADO', bg:'#eee', bd:'#888'}
@@ -6518,7 +6525,7 @@ function imprimirPlanillaET19(){
     +'.m{font-family:monospace}.b{font-weight:700}.s{font-size:9px;color:#444;font-family:Arial,sans-serif}tr{page-break-inside:avoid}'
     +'@media print{@page{size:A4 landscape;margin:12mm}}</style></head><body>'
     +'<div class="hdr"><div><h1>PLANILLA DE ESTADO DE ET19</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div><div style="text-align:right">Emitida: '+hoy+'</div></div>'
-    +'<div class="res"><b>'+filas.length+'</b> ET19 — <b>'+cuenta('prorroga')+'</b> para pedir prórroga · <b>'+(cuenta('no')+cuenta('prorrogada'))+'</b> sin necesidad · <b>'+(cuenta('revisar')+cuenta('sinvinculo'))+'</b> sin datos suficientes</div>'
+    +'<div class="res"><b>'+filas.length+'</b> ET19 — <b>'+cuenta('prorroga')+'</b> para pedir prórroga · <b>'+(cuenta('no')+cuenta('prorrogada')+cuenta('vigente'))+'</b> sin necesidad · <b>'+(cuenta('revisar')+cuenta('sinvinculo'))+'</b> sin datos suficientes</div>'
     +'<table><thead><tr><th>ET19</th><th>ZFI6 vinculado</th><th>Oficialización</th><th>Vencimiento</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'</body></html>';
   const win = window.open('', '_blank');
@@ -6554,6 +6561,7 @@ function imprimirET19(i){
   const veredictoTxt = {
     prorroga: `SE DEBE SOLICITAR LA PRÓRROGA — queda saldo en ${d.itemsConSaldo} ítem(s).`,
     no: 'NO ES NECESARIA LA PRÓRROGA — todos los ítems fueron consumidos.',
+    vigente: 'NO REQUIERE PRÓRROGA TODAVÍA — la ET19 está vigente (vence '+(d.venc||'')+'); queda saldo en '+d.itemsConSaldo+' ítem(s).',
     prorrogada: 'PRÓRROGA OTORGADA — nuevo vencimiento: '+(d.venc||'')+'.',
     revisar: 'NO SE PUEDE CONFIRMAR — faltan ítems en el stock para alguno de los ZFI6 vinculados.'
   }[d.veredicto] || '';
