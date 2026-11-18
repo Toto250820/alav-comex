@@ -225,6 +225,8 @@ html[data-theme="dark"]{
 
     <button class="nb nnuevoprod" onclick="cerrarSubmenusNav();showSec('nuevoprod',document.querySelector('.nb.nnuevoprod'))">Nuevo producto</button>
 
+    <button class="nb nfact" onclick="cerrarSubmenusNav();showSec('fact',document.querySelector('.nb.nfact'))">Facturación</button>
+
     <button class="nb ncompmenu" onclick="toggleNavMenu('compras-submenu')">Compras ▾</button>
     <div id="compras-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
       <button class="nb ncompras" onclick="cerrarSubmenusNav();showSec('compras',document.querySelector('.nb.ncompras'))">Cargar Compra</button>
@@ -251,7 +253,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 12:20</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 14:10</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -569,6 +571,87 @@ html[data-theme="dark"]{
 </div>
 
 <!-- COMPRAS -->
+<div id="sec-fact" class="sec">
+  <div class="stit">Facturación</div>
+  <div style="background:var(--ybg);border:1px solid var(--yw);border-radius:var(--rs);padding:8px 12px;font-size:12px;margin-bottom:12px">
+    ⚠️ <b>Comprobantes internos</b>: sirven para imprimir o pasar al sistema que ya usás. <b>No tienen validez fiscal</b> (no llevan CAE de ARCA). El tratamiento de IVA y qué tipo de factura corresponde a cada cliente confirmalo con tu contador.
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="btn btnp" id="fact-tb-nuevo" onclick="factTab('nuevo')">🧾 Nuevo comprobante</button>
+    <button class="btn" id="fact-tb-hist" onclick="factTab('hist')">📚 Historial</button>
+    <button class="btn" id="fact-tb-precios" onclick="factTab('precios')">💲 Lista de precios ($)</button>
+    <button class="btn" id="fact-tb-clientes" onclick="factTab('clientes')">👥 Clientes</button>
+    <button class="btn" onclick="factEmisorDialog()">⚙ Datos de ALAV</button>
+  </div>
+  <div id="fact-msg" style="font-size:12px;margin-bottom:8px"></div>
+
+  <div id="fact-p-nuevo" class="card">
+    <div class="ct">Nuevo comprobante</div>
+    <div class="fr">
+      <div class="ff" style="max-width:170px"><label>Tipo</label>
+        <select id="fact-tipo" onchange="factTipoCambio()">
+          <option value="FA">Factura A</option><option value="FB">Factura B</option><option value="FC">Factura C</option><option value="FE">Factura E (exportación)</option><option value="RM">Remito</option><option value="PR">Presupuesto de venta</option>
+        </select></div>
+      <div class="ff" style="max-width:260px"><label>Cliente</label><select id="fact-cli" onchange="factClienteCambio()"></select></div>
+      <div class="ff" style="max-width:200px"><label>…o cliente no cargado</label><input id="fact-cli-manual" placeholder="Nombre / razón social"/></div>
+      <div class="ff" style="max-width:140px"><label>Fecha</label><input type="date" id="fact-fecha"/></div>
+    </div>
+    <div class="fr">
+      <div class="ff" style="max-width:200px"><label>Condición de venta</label><input id="fact-cond" placeholder="Contado / 30 días / etc."/></div>
+      <div class="ff" style="max-width:150px" id="fact-validez-wrap"><label>Validez (días, presupuesto)</label><input id="fact-validez" type="number" value="15"/></div>
+      <div class="ff" style="max-width:200px"><label>Remito / ZFE de referencia</label><input id="fact-ref" placeholder="opcional"/></div>
+    </div>
+    <div style="margin:10px 0;padding:10px;border:1px dashed var(--bd2);border-radius:var(--rs)">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">Cargar ítems desde una salida (cantidades), con precios de la lista en $</div>
+      <div class="fr">
+        <div class="ff" style="max-width:340px"><label>Salida</label><select id="fact-origen"></select></div>
+        <button class="btn btnp" onclick="factCargarDesdeSalida()">⬇ Traer ítems</button>
+        <button class="btn" onclick="factAgregarFila()">➕ Ítem manual</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Código</th><th>Descripción</th><th>Cant.</th><th class="fact-px">Precio unit. $ (neto)</th><th class="fact-px fact-iva-col">IVA %</th><th class="fact-px">Subtotal $</th><th></th></tr></thead>
+      <tbody id="fact-items"></tbody>
+    </table></div>
+    <div id="fact-totales" style="text-align:right;margin:10px 0;font-size:13px"></div>
+    <div class="ff"><label>Observaciones</label><input id="fact-obs" placeholder="opcional"/></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btnp" onclick="factGuardar(true)">💾 Guardar e imprimir</button>
+      <button class="btn" onclick="factGuardar(false)">💾 Solo guardar</button>
+      <button class="btn" onclick="factLimpiar()">Limpiar</button>
+    </div>
+  </div>
+
+  <div id="fact-p-hist" class="card" style="display:none"><div class="ct">Historial de comprobantes</div><div id="fact-hist"></div></div>
+
+  <div id="fact-p-precios" class="card" style="display:none">
+    <div class="ct">Lista de precios en pesos (por artículo, sin IVA)</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">Estos son los precios que se usan en las facturas (no los dolarizados del packing). Cada precio se puede cambiar igual en cada comprobante.</div>
+    <div class="fr">
+      <div class="ff" style="max-width:130px"><label>Código</label><input id="fp-cod"/></div>
+      <div class="ff" style="max-width:260px"><label>Descripción</label><input id="fp-desc"/></div>
+      <div class="ff" style="max-width:90px"><label>Unidad</label><input id="fp-uni" value="UN"/></div>
+      <div class="ff" style="max-width:130px"><label>Precio $</label><input id="fp-precio" type="number" step="0.01"/></div>
+      <button class="btn btnp" onclick="factPrecioAgregar()">➕ Agregar</button>
+      <button class="btn" onclick="factPrecioImportar()">📥 Traer artículos conocidos</button>
+    </div>
+    <div style="overflow-x:auto;margin-top:8px"><table><thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Precio $</th><th></th></tr></thead><tbody id="fact-precios-body"></tbody></table></div>
+  </div>
+
+  <div id="fact-p-clientes" class="card" style="display:none">
+    <div class="ct">Clientes</div>
+    <div class="fr">
+      <div class="ff" style="max-width:220px"><label>Razón social</label><input id="fc-nom"/></div>
+      <div class="ff" style="max-width:140px"><label>CUIT / ID</label><input id="fc-cuit"/></div>
+      <div class="ff" style="max-width:180px"><label>Condición IVA</label>
+        <select id="fc-iva"><option>Responsable Inscripto</option><option>Monotributo</option><option>Exento</option><option>Consumidor Final</option><option>Cliente del exterior</option></select></div>
+      <div class="ff" style="max-width:240px"><label>Domicilio</label><input id="fc-dom"/></div>
+      <button class="btn btnp" onclick="factClienteAgregar()">➕ Agregar</button>
+    </div>
+    <div style="overflow-x:auto;margin-top:8px"><table><thead><tr><th>Razón social</th><th>CUIT</th><th>Condición IVA</th><th>Domicilio</th><th>Tipo sugerido</th><th></th></tr></thead><tbody id="fact-clientes-body"></tbody></table></div>
+  </div>
+</div>
+
 <div id="sec-nuevoprod" class="sec">
   <div class="stit">Nuevo producto</div>
       <div class="card" style="max-width:640px">
@@ -2218,6 +2301,7 @@ function showSec(id,btn){
   if(id==='comprasreal') loadOrdenesCompra();
   if(id==='nuevoprod'){ if(!sabInsumoIndices.length) agregarInsumoSabana(); loadRecetasSabana(); }
   if(id==='avisoscompra') abrirAvisosCompra();
+  if(id==='fact') factAbrir();
   if(id==='cargapdf') abrirCargaPdf();
   if(id==='et19vinc') initVincularET19();
   if(id==='et19exp') initExplorarET19();
@@ -8512,6 +8596,279 @@ function packingDeReceta(rec, qty){
     bultos: rec.unid_por_bulto>0 ? Math.ceil(qty/rec.unid_por_bulto) : null,
     pn: +(qty*rec.peso_unit_kg).toFixed(3)
   };
+}
+
+// ===================== FACTURACIÓN (comprobantes internos) =====================
+let factPrecios=[], factClientes=[], factComps=[], factItems=[];
+const FACT_TIPOS={FA:'Factura A',FB:'Factura B',FC:'Factura C',FE:'Factura E',RM:'Remito',PR:'Presupuesto de venta'};
+const FACT_LETRA={FA:'A',FB:'B',FC:'C',FE:'E',RM:'X',PR:'P'};
+function factN(n){ return (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function factEmisor(){
+  const base={razon:'ALAV SRL',cuit:'',domicilio:'Zona Franca General Pico',iibb:'',inicio:'',condiva:'Responsable Inscripto',pv:'1'};
+  try{ return Object.assign(base, JSON.parse(localStorage.getItem('fact_emisor')||'{}')); }catch(e){ return base; }
+}
+function factEmisorDialog(){
+  const e=factEmisor();
+  const campos=[['razon','Razón social'],['cuit','CUIT'],['domicilio','Domicilio'],['iibb','Ingresos Brutos'],['inicio','Inicio de actividades'],['condiva','Condición frente al IVA'],['pv','Punto de venta interno (número)']];
+  for(const [k,l] of campos){ const v=prompt(l+':', e[k]||''); if(v===null) return; e[k]=v.trim(); }
+  try{ localStorage.setItem('fact_emisor', JSON.stringify(e)); }catch(_){}
+  showToast('✓ Datos de ALAV guardados en este equipo', 4000);
+}
+function factMsg(t,ok){ const m=document.getElementById('fact-msg'); if(!m) return; m.style.color=ok?'var(--gr)':'var(--rd)'; m.textContent=t||''; }
+function factErr(e){ return '⚠ '+e.message+(/lista_precios|clientes_fact|comprobantes|schema cache|does not exist/i.test(e.message)?' — falta correr el SQL "facturacion_setup.sql" en Supabase.':''); }
+function factTab(t){
+  ['nuevo','hist','precios','clientes'].forEach(x=>{
+    document.getElementById('fact-p-'+x).style.display = x===t?'block':'none';
+    const b=document.getElementById('fact-tb-'+x); if(b) b.classList.toggle('btnp', x===t);
+  });
+  if(t==='hist') factRenderHist();
+  if(t==='precios') factRenderPrecios();
+  if(t==='clientes') factRenderClientes();
+}
+async function factAbrir(){
+  if(!document.getElementById('fact-fecha').value) document.getElementById('fact-fecha').value=new Date().toISOString().slice(0,10);
+  try{ if(typeof loadTerminados==='function') await loadTerminados(); }catch(_){}
+  const get=async(t,o)=>{ try{ return await sbFetch(t+'?select=*'+(o||''),{method:'GET',headers:{'Prefer':''}})||[]; }catch(e){ factMsg(factErr(e)); return null; } };
+  const a=await get('lista_precios','&order=codigo'); if(a) factPrecios=a;
+  const b=await get('clientes_fact','&order=nombre'); if(b) factClientes=b;
+  const c=await get('comprobantes','&order=created_at.desc&limit=300'); if(c) factComps=c;
+  if(a&&b&&c) factMsg('');
+  factPoblarClientes(); factPoblarOrigenes(); factTipoCambio(); factRenderItems();
+}
+function factTipoSugerido(c){
+  const v=(c&&c.cond_iva)||'';
+  if(/exterior/i.test(v)) return 'FE';
+  if(/inscripto/i.test(v)) return 'FA';
+  if(v) return 'FB';
+  return null;
+}
+function factPoblarClientes(){
+  const sel=document.getElementById('fact-cli'); const prev=sel.value;
+  sel.innerHTML='<option value="">— elegir —</option>'+factClientes.map(c=>`<option value="${escPror(c.id)}">${escPror(c.nombre)}${c.cuit?' · '+escPror(c.cuit):''}</option>`).join('');
+  sel.value=prev;
+}
+function factClienteCambio(){
+  const c=factClientes.find(x=>x.id===document.getElementById('fact-cli').value);
+  const t=factTipoSugerido(c);
+  if(t && ['FA','FB','FC','FE'].includes(document.getElementById('fact-tipo').value)){ document.getElementById('fact-tipo').value=t; factTipoCambio(); }
+}
+function factPoblarOrigenes(){
+  const sel=document.getElementById('fact-origen'); let h='<option value="">— elegir salida —</option>';
+  (salidaHistorial||[]).forEach((x,i)=>{ h+=`<option value="z3|${i}">ZFE3 ${escPror(x.zfeNro||x.nro)} · ${escPror(x.desc||'')}</option>`; });
+  (termSalidas||[]).filter(x=>x.estado!=='anulado').forEach(x=>{ h+=`<option value="z1|${escPror(x.id)}">ZFE1 ${escPror(x.numero)} · ${escPror(x.descripcion||'')}</option>`; });
+  sel.innerHTML=h;
+}
+function factTipoCambio(){
+  const t=document.getElementById('fact-tipo').value;
+  const sinPrecio = t==='RM';
+  document.querySelectorAll('.fact-px').forEach(e=>e.style.display=sinPrecio?'none':'');
+  document.querySelectorAll('.fact-iva-col').forEach(e=>{ if(!sinPrecio) e.style.display=(t==='FC'||t==='FE')?'none':''; });
+  document.getElementById('fact-validez-wrap').style.display = t==='PR'?'':'none';
+  factItems.forEach(it=>{ if(t==='FC'||t==='FE') it.alic=0; else if(!it.alic) it.alic=21; });
+  factRenderItems();
+}
+function factBuscarPrecio(cod,desc){
+  const n=x=>String(x||'').trim().toUpperCase();
+  let r=factPrecios.find(p=>n(p.codigo)===n(cod)&&n(cod));
+  if(!r) r=factPrecios.find(p=>n(p.descripcion)===n(desc)&&n(desc));
+  return r?Number(r.precio)||0:0;
+}
+function factAlicDefault(){ const t=document.getElementById('fact-tipo').value; return (t==='FC'||t==='FE')?0:21; }
+function factAgregarFila(){ factItems.push({cod:'',desc:'',cant:1,precio:0,alic:factAlicDefault()}); factRenderItems(); }
+function factCargarDesdeSalida(){
+  const v=document.getElementById('fact-origen').value; if(!v) return;
+  const [k,ref]=v.split('|'); const acum={};
+  const suma=(cod,desc,q)=>{ const key=(cod||desc); if(!acum[key]) acum[key]={cod:cod||'',desc:desc||cod||'',cant:0}; acum[key].cant+=Number(q)||0; };
+  let refTxt='';
+  if(k==='z3'){
+    const x=salidaHistorial[+ref]; if(!x) return;
+    refTxt='ZFE3 '+(x.zfeNro||x.nro);
+    (x.lineas||[]).forEach(l=>suma(l.artNum||'', (l.n||'')+(l.med?'':''), l.qty));
+    (x.sabanas||[]).forEach(s=>suma(s.codigo||'', s.receta_nombre||s.codigo, s.cantidad));
+  } else {
+    const x=(termSalidas||[]).find(y=>y.id===ref); if(!x) return;
+    refTxt='ZFE1 '+x.numero;
+    (x.items||[]).forEach(it=>suma(it.producto||'', it.producto||'', it.cant));
+  }
+  const a=document.getElementById('fact-ref'); if(!a.value) a.value=refTxt;
+  const al=factAlicDefault();
+  Object.values(acum).forEach(r=>factItems.push({cod:r.cod,desc:r.desc,cant:r.cant,precio:factBuscarPrecio(r.cod,r.desc),alic:al}));
+  const sinP=factItems.filter(i=>!i.precio).length;
+  factMsg(sinP?('Ojo: '+sinP+' ítem(s) sin precio en la lista — completalos acá o en "Lista de precios".'):'✓ Ítems cargados con precios de la lista.', !sinP);
+  factRenderItems();
+}
+function factItemChange(i,f,v){
+  const it=factItems[i]; if(!it) return;
+  it[f]=(f==='cant'||f==='precio'||f==='alic')?(parseFloat(v)||0):v;
+  if(f==='cod' && !it.precio){ const p=factBuscarPrecio(it.cod,it.desc); if(p){ it.precio=p; factRenderItems(); return; } }
+  factActualizarTotales();
+  const c=document.getElementById('fact-sub-'+i); if(c) c.textContent=factN(it.cant*it.precio);
+}
+function factDelFila(i){ factItems.splice(i,1); factRenderItems(); }
+function factCalc(tipo,items){
+  let sub=0, iva=0;
+  (items||[]).forEach(it=>{ const b=(Number(it.cant)||0)*(Number(it.precio)||0); sub+=b; if(tipo==='FA'||tipo==='FB'||tipo==='PR') iva+=b*(Number(it.alic)||0)/100; });
+  return {sub, iva, total:sub+iva};
+}
+function factRenderItems(){
+  const t=document.getElementById('fact-tipo').value;
+  const tb=document.getElementById('fact-items');
+  if(!factItems.length){ tb.innerHTML='<tr><td colspan="7" class="t2">Sin ítems. Traelos desde una salida o agregá uno manual.</td></tr>'; factActualizarTotales(); return; }
+  const inp='style="width:100%;font-size:12px;padding:3px 5px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"';
+  tb.innerHTML=factItems.map((it,i)=>`<tr>
+    <td style="width:110px"><input ${inp} value="${escPror(it.cod)}" onchange="factItemChange(${i},'cod',this.value)"/></td>
+    <td><input ${inp} value="${escPror(it.desc)}" onchange="factItemChange(${i},'desc',this.value)"/></td>
+    <td style="width:80px"><input ${inp} type="number" step="any" value="${it.cant}" oninput="factItemChange(${i},'cant',this.value)"/></td>
+    <td class="fact-px" style="width:120px;${t==='RM'?'display:none':''}"><input ${inp} type="number" step="0.01" value="${it.precio}" oninput="factItemChange(${i},'precio',this.value)"/></td>
+    <td class="fact-px fact-iva-col" style="width:80px;${(t==='RM'||t==='FC'||t==='FE')?'display:none':''}"><select ${inp} onchange="factItemChange(${i},'alic',this.value)">${[21,10.5,27,0].map(a=>`<option value="${a}" ${Number(it.alic)===a?'selected':''}>${a}</option>`).join('')}</select></td>
+    <td class="fact-px" style="text-align:right;${t==='RM'?'display:none':''}" id="fact-sub-${i}">${factN(it.cant*it.precio)}</td>
+    <td><button class="btn" onclick="factDelFila(${i})">✕</button></td></tr>`).join('');
+  factActualizarTotales();
+}
+function factActualizarTotales(){
+  const t=document.getElementById('fact-tipo').value; const box=document.getElementById('fact-totales');
+  if(t==='RM'){ const q=factItems.reduce((a,i)=>a+(Number(i.cant)||0),0); box.innerHTML='Total de unidades: <b>'+q+'</b>'; return; }
+  const c=factCalc(t,factItems);
+  const lineIva=(t==='FA'||t==='FB'||t==='PR');
+  box.innerHTML = `Subtotal neto: <b>$ ${factN(c.sub)}</b>`+(lineIva?`<br>IVA: <b>$ ${factN(c.iva)}</b>`:'')+`<br><span style="font-size:16px">TOTAL: <b>$ ${factN(c.total)}</b></span>`
+    +(t==='FE'?'<div class="t2" style="font-size:11px">Exportación: IVA 0%</div>':'')+(t==='FC'?'<div class="t2" style="font-size:11px">Factura C: sin discriminar IVA</div>':'');
+}
+function factLimpiar(){ factItems=[]; ['fact-cli-manual','fact-ref','fact-obs','fact-cond'].forEach(i=>document.getElementById(i).value=''); document.getElementById('fact-cli').value=''; factRenderItems(); }
+function factSiguienteNro(tipo,pv){
+  const nums=factComps.filter(c=>c.tipo===tipo&&String(c.pv)===String(pv)).map(c=>Number(c.numero)||0);
+  return (nums.length?Math.max(...nums):0)+1;
+}
+async function factGuardar(imprimir){
+  const tipo=document.getElementById('fact-tipo').value;
+  if(!factItems.length){ alert('Agregá al menos un ítem.'); return; }
+  const cli=factClientes.find(x=>x.id===document.getElementById('fact-cli').value);
+  const manual=document.getElementById('fact-cli-manual').value.trim();
+  if(!cli && !manual){ alert('Elegí un cliente o escribí el nombre.'); return; }
+  if(tipo!=='RM' && factItems.some(i=>!i.precio) && !confirm('Hay ítems con precio $0. ¿Guardar igual?')) return;
+  const em=factEmisor(); const pv=String(em.pv||'1');
+  const numero=factSiguienteNro(tipo,pv);
+  const c=factCalc(tipo,factItems);
+  const rec={id:'cmp_'+Date.now(), tipo, pv, numero, fecha:document.getElementById('fact-fecha').value||new Date().toISOString().slice(0,10),
+    cliente: cli?{nombre:cli.nombre,cuit:cli.cuit||'',cond_iva:cli.cond_iva||'',domicilio:cli.domicilio||''}:{nombre:manual,cuit:'',cond_iva:'',domicilio:''},
+    items: factItems.map(i=>({cod:i.cod,desc:i.desc,cant:Number(i.cant)||0,precio:Number(i.precio)||0,alic:Number(i.alic)||0})),
+    subtotal:c.sub, iva:c.iva, total:c.total, moneda:'ARS',
+    cond_venta:document.getElementById('fact-cond').value.trim()||null,
+    validez:tipo==='PR'?(parseInt(document.getElementById('fact-validez').value)||15):null,
+    ref:document.getElementById('fact-ref').value.trim()||null,
+    obs:document.getElementById('fact-obs').value.trim()||null, estado:'emitido'};
+  try{
+    await sbFetch('comprobantes',{method:'POST',body:JSON.stringify(rec)});
+    factComps.unshift(rec);
+    factMsg('✓ Guardado: '+FACT_TIPOS[tipo]+' '+factNroTxt(rec),true);
+    if(imprimir) factImprimir(rec);
+    factLimpiar();
+  }catch(e){ factMsg(factErr(e)); alert('No se pudo guardar: '+e.message); }
+}
+function factNroTxt(r){ return String(r.pv||'1').padStart(4,'0')+'-'+String(r.numero).padStart(8,'0'); }
+function factImprimir(r){
+  const em=factEmisor(); const t=r.tipo; const cl=r.cliente||{};
+  const sinPrecio=(t==='RM'); const lineIva=(t==='FA'||t==='FB'||t==='PR');
+  const e=escPror; const fF=r.fecha?r.fecha.split('-').reverse().join('/'):'';
+  const filas=(r.items||[]).map(i=>{
+    const pu = t==='FB' ? i.precio*(1+(i.alic||0)/100) : i.precio;
+    const sb = i.cant*pu;
+    return `<tr><td>${e(i.cod)}</td><td>${e(i.desc)}</td><td class="r">${factN(i.cant).replace(/,00$/,'')}</td>`+
+      (sinPrecio?'':`<td class="r">${factN(pu)}</td>`+(t==='FA'||t==='PR'?`<td class="r">${i.alic}%</td>`:'')+`<td class="r">${factN(sb)}</td>`)+'</tr>';
+  }).join('');
+  const cab = sinPrecio?'<th>Cant.</th>':'<th>Cant.</th><th>Precio unit.'+(t==='FB'?' (IVA incl.)':' (neto)')+'</th>'+((t==='FA'||t==='PR')?'<th>IVA</th>':'')+'<th>Subtotal</th>';
+  const tot = sinPrecio?'':
+    (t==='FA'||t==='PR'?`<tr><td>Subtotal neto</td><td class="r">$ ${factN(r.subtotal)}</td></tr><tr><td>IVA</td><td class="r">$ ${factN(r.iva)}</td></tr>`:'')+
+    `<tr class="tt"><td>TOTAL</td><td class="r">$ ${factN(r.total)}</td></tr>`+
+    (t==='FB'?`<tr><td colspan="2" style="font-size:10px">IVA contenido: $ ${factN(r.iva)}</td></tr>`:'')+
+    (t==='FE'?`<tr><td colspan="2" style="font-size:10px">Exportación — IVA 0%</td></tr>`:'');
+  const letra=FACT_LETRA[t];
+  const sub = t==='RM'?'Documento no válido como factura':(t==='PR'?'Presupuesto — no válido como factura'+(r.validez?' · Validez: '+r.validez+' días':''):'');
+  const html=`<html><head><meta charset="utf-8"><style>
+    body{font-family:Arial,sans-serif;font-size:12px;margin:18px;color:#111}
+    .top{display:flex;border:1px solid #000}.top>div{padding:10px;flex:1}
+    .let{flex:0 0 70px!important;text-align:center;border-left:1px solid #000;border-right:1px solid #000}
+    .let b{font-size:40px;display:block;line-height:1}.r{text-align:right}
+    table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #888;padding:4px 6px}th{background:#eee}
+    .tot{width:280px;margin-left:auto}.tot td{border:1px solid #888}.tt td{font-weight:700;font-size:14px}
+    .aviso{margin-top:14px;padding:6px;border:2px solid #b00;color:#b00;text-align:center;font-weight:700;font-size:11px}
+    .box{border:1px solid #000;border-top:none;padding:8px}
+  </style></head><body>
+  <div class="top"><div><b style="font-size:16px">${e(em.razon)}</b><br>${e(em.domicilio)}<br>${em.cuit?'CUIT: '+e(em.cuit)+'<br>':''}${em.iibb?'IIBB: '+e(em.iibb)+'<br>':''}${e(em.condiva)}${em.inicio?'<br>Inicio de act.: '+e(em.inicio):''}</div>
+   <div class="let"><b>${letra}</b><span style="font-size:9px">${t==='RM'?'COD. INTERNO':''}</span></div>
+   <div><b style="font-size:16px">${FACT_TIPOS[t]}</b><br>Nº ${factNroTxt(r)}<br>Fecha: ${fF}${r.ref?'<br>Ref.: '+e(r.ref):''}${sub?'<br><i>'+sub+'</i>':''}</div></div>
+  <div class="box"><b>Cliente:</b> ${e(cl.nombre)} ${cl.cuit?' · CUIT/ID: '+e(cl.cuit):''}${cl.cond_iva?' · '+e(cl.cond_iva):''}${cl.domicilio?'<br>'+e(cl.domicilio):''}${r.cond_venta?'<br><b>Condición de venta:</b> '+e(r.cond_venta):''}</div>
+  <table><thead><tr><th>Código</th><th>Descripción</th>${cab}</tr></thead><tbody>${filas}</tbody></table>
+  ${tot?`<table class="tot"><tbody>${tot}</tbody></table>`:''}
+  ${r.obs?`<p><b>Obs.:</b> ${e(r.obs)}</p>`:''}
+  ${t==='RM'?'<p style="margin-top:50px">Recibí conforme: ______________________ &nbsp; Aclaración: ______________________</p>':''}
+  <div class="aviso">COMPROBANTE INTERNO — SIN VALIDEZ FISCAL</div></body></html>`;
+  let iframe=document.getElementById('pif');
+  if(!iframe){ iframe=document.createElement('iframe'); iframe.id='pif'; iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:297mm;height:210mm;border:none'; document.body.appendChild(iframe); }
+  iframe.onload=function(){iframe.contentWindow.focus();iframe.contentWindow.print();};
+  iframe.srcdoc=html;
+}
+function factRenderHist(){
+  const b=document.getElementById('fact-hist');
+  if(!factComps.length){ b.innerHTML='<div class="t2">Todavía no hay comprobantes.</div>'; return; }
+  b.innerHTML='<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Nº</th><th>Cliente</th><th>Total $</th><th>Estado</th><th></th></tr></thead><tbody>'+
+   factComps.map((c,i)=>`<tr style="${c.estado==='anulado'?'opacity:.5;text-decoration:line-through':''}"><td>${escPror((c.fecha||'').split('-').reverse().join('/'))}</td><td>${FACT_TIPOS[c.tipo]||c.tipo}</td><td>${factNroTxt(c)}</td><td>${escPror((c.cliente||{}).nombre)}</td><td style="text-align:right">${c.tipo==='RM'?'—':factN(c.total)}</td><td>${escPror(c.estado||'')}</td>
+   <td><button class="btn" onclick="factImprimir(factComps[${i}])">🖨</button> ${c.estado==='anulado'?'':`<button class="btn" onclick="factAnular(${i})">Anular</button>`}</td></tr>`).join('')+'</tbody></table></div>';
+}
+async function factAnular(i){
+  const c=factComps[i]; if(!c||!confirm('¿Anular '+FACT_TIPOS[c.tipo]+' '+factNroTxt(c)+'? Queda en el historial marcado como anulado.')) return;
+  try{ await sbFetch('comprobantes?id=eq.'+encodeURIComponent(c.id),{method:'PATCH',body:JSON.stringify({estado:'anulado'})}); c.estado='anulado'; factRenderHist(); }catch(e){ alert(e.message); }
+}
+// ---- lista de precios
+function factRenderPrecios(){
+  const inp='style="width:100%;font-size:12px;padding:3px 5px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"';
+  document.getElementById('fact-precios-body').innerHTML = factPrecios.length? factPrecios.map((p,i)=>`<tr>
+    <td>${escPror(p.codigo)}</td>
+    <td><input ${inp} value="${escPror(p.descripcion||'')}" onchange="factPrecioEditar(${i},'descripcion',this.value)"/></td>
+    <td style="width:80px"><input ${inp} value="${escPror(p.unidad||'')}" onchange="factPrecioEditar(${i},'unidad',this.value)"/></td>
+    <td style="width:130px"><input ${inp} type="number" step="0.01" value="${p.precio||0}" onchange="factPrecioEditar(${i},'precio',this.value)"/></td>
+    <td><button class="btn" onclick="factPrecioBorrar(${i})">✕</button></td></tr>`).join('') : '<tr><td colspan="5" class="t2">Lista vacía. Agregá artículos o usá "Traer artículos conocidos".</td></tr>';
+}
+async function factPrecioGuardar(rows){
+  await sbFetch('lista_precios',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+}
+async function factPrecioAgregar(){
+  const cod=document.getElementById('fp-cod').value.trim(); if(!cod){ alert('Poné el código.'); return; }
+  const row={codigo:cod,descripcion:document.getElementById('fp-desc').value.trim(),unidad:document.getElementById('fp-uni').value.trim()||'UN',precio:parseFloat(document.getElementById('fp-precio').value)||0};
+  try{ await factPrecioGuardar([row]); const k=factPrecios.findIndex(p=>p.codigo===cod); if(k>=0) factPrecios[k]=row; else factPrecios.push(row);
+    factPrecios.sort((a,b)=>a.codigo.localeCompare(b.codigo)); ['fp-cod','fp-desc','fp-precio'].forEach(i=>document.getElementById(i).value=''); factRenderPrecios(); }
+  catch(e){ factMsg(factErr(e)); }
+}
+async function factPrecioEditar(i,f,v){
+  const p=factPrecios[i]; if(!p) return; p[f]=f==='precio'?(parseFloat(v)||0):v;
+  try{ await factPrecioGuardar([{codigo:p.codigo,descripcion:p.descripcion||'',unidad:p.unidad||'UN',precio:p.precio||0}]); showToast('✓ Precio guardado',1500); }catch(e){ factMsg(factErr(e)); }
+}
+async function factPrecioBorrar(i){
+  const p=factPrecios[i]; if(!p||!confirm('¿Borrar '+p.codigo+' de la lista?')) return;
+  try{ await sbFetch('lista_precios?codigo=eq.'+encodeURIComponent(p.codigo),{method:'DELETE'}); factPrecios.splice(i,1); factRenderPrecios(); }catch(e){ factMsg(factErr(e)); }
+}
+async function factPrecioImportar(){
+  const nuevos={};
+  const add=(c,d)=>{ c=String(c||'').trim(); if(c && !factPrecios.some(p=>p.codigo===c) && !nuevos[c]) nuevos[c]={codigo:c,descripcion:d||'',unidad:'UN',precio:0}; };
+  (salidaHistorial||[]).forEach(x=>{ (x.lineas||[]).forEach(l=>add(l.artNum,l.n)); (x.sabanas||[]).forEach(s=>add(s.codigo,s.receta_nombre)); });
+  (recetasSabana||[]).forEach(r=>add(r.articulo_codigo,r.articulo_nombre));
+  const rows=Object.values(nuevos); if(!rows.length){ factMsg('No hay artículos nuevos para traer.',true); return; }
+  try{ await factPrecioGuardar(rows); factPrecios=[...factPrecios,...rows].sort((a,b)=>a.codigo.localeCompare(b.codigo)); factRenderPrecios(); factMsg('✓ Se trajeron '+rows.length+' artículos con precio $0: completá los precios.',true); }
+  catch(e){ factMsg(factErr(e)); }
+}
+// ---- clientes
+function factRenderClientes(){
+  document.getElementById('fact-clientes-body').innerHTML = factClientes.length? factClientes.map((c,i)=>`<tr><td>${escPror(c.nombre)}</td><td>${escPror(c.cuit||'')}</td><td>${escPror(c.cond_iva||'')}</td><td>${escPror(c.domicilio||'')}</td><td>${FACT_TIPOS[factTipoSugerido(c)]||'—'}</td><td><button class="btn" onclick="factClienteBorrar(${i})">✕</button></td></tr>`).join('') : '<tr><td colspan="6" class="t2">Sin clientes cargados.</td></tr>';
+}
+async function factClienteAgregar(){
+  const nombre=document.getElementById('fc-nom').value.trim(); if(!nombre){ alert('Poné la razón social.'); return; }
+  const rec={id:'cli_'+Date.now(),nombre,cuit:document.getElementById('fc-cuit').value.trim(),cond_iva:document.getElementById('fc-iva').value,domicilio:document.getElementById('fc-dom').value.trim()};
+  try{ await sbFetch('clientes_fact',{method:'POST',body:JSON.stringify(rec)}); factClientes.push(rec); factClientes.sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    ['fc-nom','fc-cuit','fc-dom'].forEach(i=>document.getElementById(i).value=''); factRenderClientes(); factPoblarClientes(); }
+  catch(e){ factMsg(factErr(e)); }
+}
+async function factClienteBorrar(i){
+  const c=factClientes[i]; if(!c||!confirm('¿Borrar el cliente '+c.nombre+'?')) return;
+  try{ await sbFetch('clientes_fact?id=eq.'+encodeURIComponent(c.id),{method:'DELETE'}); factClientes.splice(i,1); factRenderClientes(); factPoblarClientes(); }catch(e){ factMsg(factErr(e)); }
 }
 
 async function loadRecetasSabana(){
