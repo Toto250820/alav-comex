@@ -208,7 +208,7 @@ html[data-theme="dark"]{
   <div class="nav">
     <button class="nb nproy" onclick="toggleNavMenu('proy-submenu')">Proyección ▾</button>
     <div id="proy-submenu" class="nav-submenu" style="display:none;flex-direction:column;gap:2px;padding:4px 0 4px 14px">
-      <button class="nb nsal" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">Acolchados/Mantas</button>
+      <button class="nb nsal" onclick="cerrarSubmenusNav();showSec('sal',document.querySelector('.nb.nsal'))">Salida</button>
       <button class="nb nterm" onclick="cerrarSubmenusNav();showSec('term',document.querySelector('.nb.nterm'))">ZFE1</button>
       <button class="nb" onclick="irAAdminTab('adm-sabanas')">Sábanas</button>
       <button class="nb nliq" onclick="cerrarSubmenusNav();showSec('liq',document.querySelector('.nb.nliq'))">Liquidación</button>
@@ -253,7 +253,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 14:10</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 14:35</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -2544,6 +2544,56 @@ function crearSalida(){
   save();
   // arranca la salida: te lleva directo al Stock General para ir agregando
   showSec('calc',document.querySelector('.nb.ncalc'));
+  try{ ofrecerAvisoAltaSalida(salidaActiva); }catch(e){ console.error(e); }
+}
+
+// ── AVISO DE ALTA DE SALIDA (mail / calendar, desde la casilla de quien la da de alta) ──
+const CASILLAS_USUARIO = {
+  'Javier':'javis.spinelli@gmail.com',
+  'Marina':'alav.pico@gmail.com',
+  'Carina':'admi.alavpico02@gmail.com'
+};
+function ofrecerAvisoAltaSalida(sal){
+  const quien = getUserLabel() || 'Javier';
+  const casilla = CASILLAS_USUARIO[quien] || CASILLAS_USUARIO['Javier'];
+  const dest = AVISO_GUESTS.filter(m=>m!==casilla);
+  let m = document.getElementById('sal-aviso-modal');
+  if(m) m.remove();
+  m = document.createElement('div'); m.id='sal-aviso-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  window._salAviso = {sal, quien, casilla, dest};
+  m.innerHTML = `<div class="card" style="max-width:420px;width:100%">
+    <div class="ct">Salida ${escPror(sal.nro)} dada de alta ✓</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px">¿Avisás al equipo? Sale desde la casilla de <b>${escPror(quien)}</b> (${escPror(casilla)}) y llega a: ${escPror(dest.join(', '))}.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btnp" onclick="enviarAvisoAltaSalida('mail')">✉ Mail</button>
+      <button class="btn btnp" onclick="enviarAvisoAltaSalida('calendar')">📅 Calendar</button>
+      <button class="btn btnp" onclick="enviarAvisoAltaSalida('ambos')">Ambos</button>
+      <button class="btn" onclick="document.getElementById('sal-aviso-modal').remove()">Omitir</button>
+    </div></div>`;
+  document.body.appendChild(m);
+}
+function enviarAvisoAltaSalida(como){
+  const a = window._salAviso; if(!a) return;
+  const {sal, quien, casilla, dest} = a;
+  const hoy = new Date();
+  const asunto = `Alta de salida ${sal.nro}${sal.desc?' — '+sal.desc:''}`;
+  const cuerpo = `Se dio de alta la salida ${sal.nro}.\n`+(sal.desc?`Descripción: ${sal.desc}\n`:'')+`Remito: ${sal.remito||'—'}\nFecha: ${hoy.toLocaleDateString('es-AR')}\nDada de alta por: ${quien}\n\n— ALAV SRL, Z.F. General Pico`;
+  if(como==='mail' || como==='ambos'){
+    if(quien==='Javier'){
+      // desde la casilla de Javier: sale directo por el Apps Script
+      enviarMailDirectoOFallback(dest.join(','), asunto, cuerpo);
+    } else {
+      // desde la casilla de Marina / Carina: se abre SU Gmail con todo precargado
+      window.open(`https://mail.google.com/mail/?authuser=${encodeURIComponent(casilla)}&view=cm&fs=1&to=${encodeURIComponent(dest.join(','))}&su=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`, '_blank');
+    }
+  }
+  if(como==='calendar' || como==='ambos'){
+    const f = d=>d.toISOString().slice(0,10).replace(/-/g,'');
+    const sig = new Date(hoy.getTime()+86400000);
+    window.open(`https://calendar.google.com/calendar/render?authuser=${encodeURIComponent(casilla)}&action=TEMPLATE&text=${encodeURIComponent('Salida '+sal.nro+' dada de alta')}&dates=${f(hoy)}/${f(sig)}&details=${encodeURIComponent(cuerpo.replace(/\\n/g,'\n'))}&add=${encodeURIComponent(dest.join(','))}`, '_blank');
+  }
+  const m=document.getElementById('sal-aviso-modal'); if(m) m.remove();
 }
 
 // ── SISTEMA DE RESERVA DE STOCK ────────────────────────────────────────────────
