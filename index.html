@@ -251,7 +251,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 12/11 15:30</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 18/11 12:05</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -805,7 +805,7 @@ html[data-theme="dark"]{
       <button class="btn btnp" onclick="imprimirPlanillaET19()">📄 Descargar planilla PDF</button>
     </div>
     <div id="et19-explorar-resumen" style="font-size:12px;margin-top:10px"></div>
-    <div class="t2" style="font-size:11px;margin-top:6px">🟢 Verde: hay que solicitar prórroga (queda saldo en el ZFI6) · 🔴 Rojo: no hace falta (se consumió todo) · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
+    <div class="t2" style="font-size:11px;margin-top:6px">🔴 Rojo: hay que solicitar prórroga (queda saldo en el ZFI6) · 🟢 Verde: no hace falta (se consumió todo) o la prórroga ya está otorgada · ⚪ Gris: faltan datos. Tocá una ET19 para ver el detalle por ítem. Se actualiza sola cada 30 segundos.</div>
   </div>
   <div id="et19-explorar-lista" style="margin-top:12px"></div>
 </div>
@@ -6224,25 +6224,27 @@ function evaluarET19(g){
   const reg = g.reg;
   const oficISO = reg && reg.fecha_oficializacion ? String(reg.fecha_oficializacion).slice(0,10) : null;
   const meses = reg && reg.meses ? reg.meses : 22;
-  const vencDate = oficISO ? sumarMesesISO(oficISO, meses) : null;
+  const vencProrr = reg && reg.venc_prorroga ? String(reg.venc_prorroga).slice(0,10) : null;
+  const vencDate = vencProrr ? new Date(vencProrr+'T00:00:00') : (oficISO ? sumarMesesISO(oficISO, meses) : null);
   const zfi6 = g.zfi6.map(d=>({despacho: d, filas: filasDeDespacho(d)}));
   const itemsConSaldo = zfi6.reduce((s,z)=>s+z.filas.filter(f=>f.conSaldo).length, 0);
   let veredicto;
   if(!zfi6.length) veredicto = 'sinvinculo';
-  else if(itemsConSaldo>0) veredicto = 'prorroga';
+  else if(itemsConSaldo>0) veredicto = (vencProrr && vencDate && vencDate.getTime() >= Date.now()) ? 'prorrogada' : 'prorroga';
   else if(zfi6.some(z=>!z.filas.length)) veredicto = 'revisar';   // no se puede afirmar que se consumió: falta cargar el ZFI6
   else veredicto = 'no';
   return {et19: g.et19, meses, ofic: oficISO?isoAFecha(oficISO):null, venc: vencDate?fmtFechaDate(vencDate):null, vencDate,
-          zfi6, itemsConSaldo, veredicto};
+          zfi6, itemsConSaldo, veredicto, prorrogada: !!vencProrr, vencProrrISO: vencProrr};
 }
 
 // ── EXPLORAR ─────────────────────────────────────────────────────────────────
-// Colores pedidos: VERDE = hay que solicitar prórroga · ROJO = no hace falta (se consumió todo)
+// Colores: ROJO = hay que solicitar prórroga · VERDE = no hace falta (se consumió todo) o ya se otorgó la prórroga
 const ET19_ESTILO = {
-  prorroga:   {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 PEDIR PRÓRROGA', orden:0},
+  prorroga:   {color:'var(--rd)', fondo:'var(--rbg)', chip:'🔴 PEDIR PRÓRROGA', orden:0},
+  prorrogada: {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 PRÓRROGA OTORGADA', orden:2},
   revisar:    {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ REVISAR — ZFI6 sin ítems en stock', orden:1},
   sinvinculo: {color:'var(--tx3)', fondo:'var(--bg3)', chip:'⚪ SIN ZFI6 VINCULADO', orden:1},
-  no:         {color:'var(--rd)', fondo:'var(--rbg)', chip:'🔴 NO REQUIERE PRÓRROGA', orden:2}
+  no:         {color:'var(--gr)', fondo:'var(--gbg)', chip:'🟢 NO REQUIERE PRÓRROGA', orden:2}
 };
 
 function renderExplorarET19(){
@@ -6259,7 +6261,7 @@ function renderExplorarET19(){
 
   const cuenta = v => filas.filter(f=>f.veredicto===v).length;
   document.getElementById('et19-explorar-resumen').innerHTML = filas.length
-    ? `<b>${filas.length}</b> ET19 — <span style="color:var(--gr);font-weight:700">${cuenta('prorroga')} para pedir prórroga</span> · <span style="color:var(--rd);font-weight:700">${cuenta('no')} sin necesidad</span> · ${cuenta('revisar')+cuenta('sinvinculo')} sin datos suficientes`
+    ? `<b>${filas.length}</b> ET19 — <span style="color:var(--rd);font-weight:700">${cuenta('prorroga')} para pedir prórroga</span> · <span style="color:var(--gr);font-weight:700">${cuenta('no')+cuenta('prorrogada')} sin necesidad</span> · ${cuenta('revisar')+cuenta('sinvinculo')} sin datos suficientes`
     : '';
 
   if(!filas.length){
@@ -6276,7 +6278,7 @@ function renderExplorarET19(){
         <td class="mono" style="font-weight:700">${abierta?'▾':'▸'} ${escPror(f.et19)}</td>
         <td class="mono">${f.zfi6.length?f.zfi6.map(z=>escPror(z.despacho)).join('<br>'):'<span class="t2">—</span>'}</td>
         <td class="mono">${f.ofic||'<span class="t2">—</span>'}</td>
-        <td class="mono">${f.venc?f.venc+'<div class="t2" style="font-size:10px;font-family:inherit">'+f.meses+' meses · '+diasRestantesTxt(f.vencDate)+'</div>':'<span class="t2">—</span>'}</td>
+        <td class="mono">${f.venc?f.venc+'<div class="t2" style="font-size:10px;font-family:inherit">'+(f.prorrogada?'prórroga otorgada':f.meses+' meses')+' · '+diasRestantesTxt(f.vencDate)+'</div>':'<span class="t2">—</span>'}</td>
         <td><span style="font-weight:700;font-size:11px;color:${st.color}">${st.chip}</span></td>
       </tr>${abierta?`<tr><td colspan="5" style="background:var(--bg2);padding:10px 14px">${detalleET19Html(f,i)}</td></tr>`:''}`;
     }).join('')}</tbody></table></div>`;
@@ -6300,7 +6302,36 @@ function detalleET19Html(f,i){
         </tr>`).join('')}</tbody></table>`:''}
     </div>`;
   }).join('');
-  return tablas + `<button class="btn" onclick="event.stopPropagation();imprimirET19(${i})">🖨 Imprimir / PDF</button>`;
+  const prorrBox = `<div onclick="event.stopPropagation()" style="margin:10px 0;padding:10px;border:1px solid var(--bd2);border-radius:var(--rs)">
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">📅 Prórroga otorgada — nueva fecha de vencimiento</div>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <input type="date" id="et19-prorr-${i}" value="${f.vencProrrISO||''}" style="font-size:13px;padding:5px 7px;background:var(--bg3);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--tx)"/>
+      <button class="btn btnp" onclick="guardarProrrogaET19(${i})">💾 Guardar nueva fecha</button>
+      ${f.prorrogada?`<button class="btn" onclick="guardarProrrogaET19(${i},true)">Quitar prórroga</button>`:''}
+    </div>
+    <div class="t2" style="font-size:11px;margin-top:4px">Al guardarla, esta ET19 deja de figurar en "Pedir prórroga" hasta que llegue la nueva fecha.</div>
+  </div>`;
+  return tablas + prorrBox + `<button class="btn" onclick="event.stopPropagation();imprimirET19(${i})">🖨 Imprimir / PDF</button>`;
+}
+
+async function guardarProrrogaET19(i, quitar){
+  const f = et19Filas[i]; if(!f) return;
+  const v = quitar ? null : (document.getElementById('et19-prorr-'+i)?.value||'');
+  if(!quitar && !v){ alert('Elegí la nueva fecha de vencimiento.'); return; }
+  const k = nzET19(f.et19);
+  try{
+    const reg = et19Registro[k];
+    if(reg){
+      await sbFetch('et19_registro?et19=eq.'+encodeURIComponent(reg.et19), {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({venc_prorroga: v})});
+    } else {
+      await sbFetch('et19_registro', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify({et19: f.et19, venc_prorroga: v})});
+    }
+    await loadET19Registro();
+    renderExplorarET19(); chequearET19PorVencer();
+    showToast(quitar ? 'Prórroga quitada' : '✓ Nueva fecha de vencimiento guardada: ya no figura en "Pedir prórroga"', 5000);
+  }catch(e){
+    alert('No se pudo guardar la prórroga: '+e.message+(/venc_prorroga|schema cache/i.test(e.message)?'\n\nFalta correr el SQL "et19_prorroga_setup.sql" en Supabase.':''));
+  }
 }
 
 function toggleDetalleET19(i){
@@ -6462,8 +6493,9 @@ function imprimirPlanillaET19(){
   const hoy = new Date().toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'});
   const cuenta = v => filas.filter(f=>f.veredicto===v).length;
   const est = {
-    prorroga:{t:'PEDIR PRÓRROGA', bg:'#d9f2dd', bd:'#1e8e3e'},
-    no:{t:'NO REQUIERE PRÓRROGA', bg:'#fbdcdc', bd:'#c62828'},
+    prorroga:{t:'PEDIR PRÓRROGA', bg:'#fbdcdc', bd:'#c62828'},
+    prorrogada:{t:'PRÓRROGA OTORGADA', bg:'#d9f2dd', bd:'#1e8e3e'},
+    no:{t:'NO REQUIERE PRÓRROGA', bg:'#d9f2dd', bd:'#1e8e3e'},
     revisar:{t:'REVISAR — ZFI6 sin ítems en stock', bg:'#eee', bd:'#888'},
     sinvinculo:{t:'SIN ZFI6 VINCULADO', bg:'#eee', bd:'#888'}
   };
@@ -6486,7 +6518,7 @@ function imprimirPlanillaET19(){
     +'.m{font-family:monospace}.b{font-weight:700}.s{font-size:9px;color:#444;font-family:Arial,sans-serif}tr{page-break-inside:avoid}'
     +'@media print{@page{size:A4 landscape;margin:12mm}}</style></head><body>'
     +'<div class="hdr"><div><h1>PLANILLA DE ESTADO DE ET19</h1><div style="color:#555">ALAV SRL — Z.F. General Pico</div></div><div style="text-align:right">Emitida: '+hoy+'</div></div>'
-    +'<div class="res"><b>'+filas.length+'</b> ET19 — <b>'+cuenta('prorroga')+'</b> para pedir prórroga · <b>'+cuenta('no')+'</b> sin necesidad · <b>'+(cuenta('revisar')+cuenta('sinvinculo'))+'</b> sin datos suficientes</div>'
+    +'<div class="res"><b>'+filas.length+'</b> ET19 — <b>'+cuenta('prorroga')+'</b> para pedir prórroga · <b>'+(cuenta('no')+cuenta('prorrogada'))+'</b> sin necesidad · <b>'+(cuenta('revisar')+cuenta('sinvinculo'))+'</b> sin datos suficientes</div>'
     +'<table><thead><tr><th>ET19</th><th>ZFI6 vinculado</th><th>Oficialización</th><th>Vencimiento</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'</body></html>';
   const win = window.open('', '_blank');
@@ -6522,6 +6554,7 @@ function imprimirET19(i){
   const veredictoTxt = {
     prorroga: `SE DEBE SOLICITAR LA PRÓRROGA — queda saldo en ${d.itemsConSaldo} ítem(s).`,
     no: 'NO ES NECESARIA LA PRÓRROGA — todos los ítems fueron consumidos.',
+    prorrogada: 'PRÓRROGA OTORGADA — nuevo vencimiento: '+(d.venc||'')+'.',
     revisar: 'NO SE PUEDE CONFIRMAR — faltan ítems en el stock para alguno de los ZFI6 vinculados.'
   }[d.veredicto] || '';
 
