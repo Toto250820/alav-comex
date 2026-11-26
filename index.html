@@ -253,7 +253,7 @@ html[data-theme="dark"]{
     <button class="nb nstockreal" style="display:none" onclick="showSec('stock',this)"></button>
     <button class="nb nmerc" style="display:none" onclick="showSec('merc',this)"></button>
   </div>
-  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 25/11 10:40</div>
+  <div id="app-version" style="font-size:9px;color:var(--tx3);padding:2px 10px">Versión 26/11 11:00</div>
   <button class="nb" id="theme-btn" onclick="ciclarTema()" ondblclick="configurarHorarioTema()" title="Un toque: cambia Auto / Claro / Oscuro. Doble toque: elegir el horario del modo oscuro automático">Tema: Auto</button>
   <div id="presence-badge" class="presence-roster" title="Tocá cualquier nombre para cambiar quién sos" style="cursor:pointer" onclick="cambiarUsuario()">
     <span class="p-user" id="p-javier">Javier</span>
@@ -3596,7 +3596,49 @@ function getEquivKey(tipo, med){
   return LIQ_EQUIVALENCIAS[k] || k;
 }
 
-function imprimirPackingList(salOverride){
+
+// ── m³ del Packing List (solo ZFE3): m³ total = bultos × m³ de 1 bulto · camiones = m³ ÷ 80 ──
+const M3_CAMION = 80;
+function pkM3Get(k){ try{ return localStorage.getItem('ga_m3_'+k)||''; }catch(e){ return ''; } }
+function pkPedirM3(sal, filas){
+  window._pkSal = sal; window._pkFilas = filas;
+  let m = document.getElementById('pk-m3-modal'); if(m) m.remove();
+  m = document.createElement('div'); m.id='pk-m3-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  m.innerHTML = `<div class="card" style="max-width:560px;width:100%">
+    <div class="ct">📦 Packing List — m³ por bulto</div>
+    <div class="t2" style="font-size:12px;margin-bottom:8px">Poné los m³ que ocupa <b>1 solo bulto</b> de cada artículo. Se multiplica por los bultos y el total se divide por ${M3_CAMION} para sacar los camiones. Se recuerda para la próxima.</div>
+    <table><thead><tr><th>Artículo</th><th>Bultos</th><th>m³ por bulto</th><th>m³ total</th></tr></thead><tbody>`
+    + filas.map((r,i)=>`<tr><td>${escPror(r.n)}${r.med&&r.med!=='—'?' '+escPror(r.med):''}</td><td class="mono">${parseFloat(r.bultos)||0}</td>
+      <td><input type="number" min="0" step="0.001" style="width:90px" id="pkm3-${i}" value="${escPror(pkM3Get(r.m3key))}" oninput="pkM3Calc()"/></td><td class="mono" id="pkm3t-${i}">—</td></tr>`).join('')
+    + `</tbody></table>
+    <div id="pk-m3-tot" style="margin:10px 0;font-size:13px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btnp" onclick="pkM3Imprimir(true)">🖨 Imprimir con m³</button>
+      <button class="btn" onclick="pkM3Imprimir(false)">Imprimir sin m³</button>
+      <button class="btn" onclick="document.getElementById('pk-m3-modal').remove()">Cancelar</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  pkM3Calc();
+}
+function pkM3Calc(){
+  let tot=0;
+  (window._pkFilas||[]).forEach((r,i)=>{
+    const v=parseFloat(document.getElementById('pkm3-'+i).value)||0;
+    const t=(parseFloat(r.bultos)||0)*v; tot+=t;
+    document.getElementById('pkm3t-'+i).textContent = v>0 ? t.toLocaleString('es-AR',{maximumFractionDigits:3}) : '—';
+  });
+  const c=tot/M3_CAMION;
+  document.getElementById('pk-m3-tot').innerHTML = tot>0 ? `Total: <b>${tot.toLocaleString('es-AR',{maximumFractionDigits:3})} m³</b> · 🚚 <b>${c.toLocaleString('es-AR',{maximumFractionDigits:2})}</b> camión(es) → <b>${Math.ceil(c-1e-9)}</b> completos` : '';
+}
+function pkM3Imprimir(conM3){
+  const map={};
+  if(conM3) (window._pkFilas||[]).forEach((r,i)=>{ const v=parseFloat(document.getElementById('pkm3-'+i).value)||0; map[r.m3key]=v; if(v>0){ try{ localStorage.setItem('ga_m3_'+r.m3key,String(v)); }catch(e){} } });
+  const sal=window._pkSal; document.getElementById('pk-m3-modal').remove();
+  imprimirPackingList(sal, map);
+}
+
+function imprimirPackingList(salOverride, m3Map){
   const sal = salOverride || salidaActiva;
   if(!sal||(!sal.lineas.length && !(sal.sabanas||[]).length)){alert('No hay líneas en la salida.');return;}
   const marca = document.getElementById('sal-marca')?.value || 'CACHAREL';
@@ -3662,7 +3704,7 @@ function imprimirPackingList(salOverride){
   });
   const rowsUnificadas = ordenPacking.map((key,idx)=>{
     const grupo = gruposPacking[key];
-    if(grupo.length===1) return {...grupo[0], itemNum: idx+1};
+    if(grupo.length===1) return {...grupo[0], itemNum: idx+1, m3key:'a|'+key};
     const principal = grupo.find(r=>r.tipo!=='art4009') || grupo[0];
     return {
       itemNum: idx+1,
@@ -3676,7 +3718,8 @@ function imprimirPackingList(salOverride){
       valorTotal: parseFloat(grupo.reduce((s,r)=>s+r.valorTotal,0).toFixed(2)),
       rip: principal.rip,
       cert: principal.cert,
-      tipo: principal.tipo
+      tipo: principal.tipo,
+      m3key: 'a|'+key
     };
   });
 
@@ -3688,13 +3731,22 @@ function imprimirPackingList(salOverride){
     const pu = parseFloat(l.precio_unit)||0;
     const val = parseFloat(((l.cantidad||0)*pu).toFixed(2));
     totalQty += l.cantidad||0; totalBultos += parseFloat(l.bultos)||0; totalKgNeto += neto; totalFOB += val; extraBruto += bruto;
-    return {itemNum: rowsUnificadas.length+i+1, n:l.codigo+' — '+l.receta_nombre, med:'—', qty:l.cantidad||0, bultos:parseFloat(l.bultos)||0, kgNeto:neto, kgBruto:bruto, precioUnit:pu, valorTotal:val, rip:l.rip||'—', ctzf:l.ctzf_numero||'—', ncm:sabNCMReceta(l)};
+    return {m3key:'s|'+(l.codigo||l.receta_codigo), itemNum: rowsUnificadas.length+i+1, n:l.codigo+' — '+l.receta_nombre, med:'—', qty:l.cantidad||0, bultos:parseFloat(l.bultos)||0, kgNeto:neto, kgBruto:bruto, precioUnit:pu, valorTotal:val, rip:l.rip||'—', ctzf:l.ctzf_numero||'—', ncm:sabNCMReceta(l)};
   });
   const flete = parseFloat((totalFOB*0.02).toFixed(2));
   const seguro = parseFloat((totalFOB*0.006).toFixed(2));
   const totalKgBruto = parseFloat((rowsUnificadas.reduce((s,r)=>s+r.kgBruto,0) + extraBruto).toFixed(2));
 
   const fmtUSD = v => '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // m³: antes de imprimir se pide el m³ de 1 bulto de cada artículo
+  if(m3Map===undefined){ pkPedirM3(sal, [...rowsUnificadas, ...sabRows]); return; }
+  const m3v = r => (parseFloat(m3Map[r.m3key])||0);
+  const HAY_M3 = Object.values(m3Map).some(v=>parseFloat(v)>0);
+  let totalM3 = 0;
+  [...rowsUnificadas, ...sabRows].forEach(r=>{ r.m3b = m3v(r); r.m3t = parseFloat(((parseFloat(r.bultos)||0)*r.m3b).toFixed(4)); totalM3 += r.m3t; });
+  const camiones = totalM3/M3_CAMION;
+  const fm3 = v => v.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:3});
 
   let p='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
     +'<title>Packing List '+sal.nro+'</title>'
@@ -3732,7 +3784,7 @@ function imprimirPackingList(salOverride){
   // Tabla de ítems
   p+='<table><thead><tr>'
     +'<th>Ítem</th><th>Descripción</th><th>Medida</th><th>NCM</th>'
-    +'<th>Cant. (u)</th><th>Bultos</th><th>Peso Neto (kg)</th><th>Peso Bruto (kg)</th>'
+    +'<th>Cant. (u)</th><th>Bultos</th>'+(HAY_M3?'<th>m³ / bulto</th><th>m³ total</th>':'')+'<th>Peso Neto (kg)</th><th>Peso Bruto (kg)</th>'
     +'<th>Val. Unit. (USD)</th><th>Val. Total (USD)</th><th>CTZF</th><th>RIP</th><th>Marca</th>'
     +'</tr></thead><tbody>';
 
@@ -3744,6 +3796,7 @@ function imprimirPackingList(salOverride){
       +'<td style="font-family:monospace;font-size:8px">'+getNCMArticulo(r.tipo, r.med)+'</td>'
       +'<td class="r">'+r.qty.toLocaleString('es-AR')+'</td>'
       +'<td class="r">'+r.bultos+'</td>'
+      +(HAY_M3?'<td class="r">'+(r.m3b?fm3(r.m3b):'—')+'</td><td class="r">'+(r.m3b?fm3(r.m3t):'—')+'</td>':'')
       +'<td class="r">'+r.kgNeto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
       +'<td class="r">'+r.kgBruto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
       +'<td class="r" style="color:#1a7a3c;font-weight:700">'+fmtUSD(r.precioUnit)+'</td>'
@@ -3759,6 +3812,7 @@ function imprimirPackingList(salOverride){
       +'<td class="c">'+r.itemNum+'</td><td>'+r.n+'</td><td class="c">'+r.med+'</td>'
       +'<td style="font-family:monospace;font-size:8px">'+r.ncm+'</td>'
       +'<td class="r">'+r.qty.toLocaleString('es-AR')+'</td><td class="r">'+r.bultos+'</td>'
+      +(HAY_M3?'<td class="r">'+(r.m3b?fm3(r.m3b):'—')+'</td><td class="r">'+(r.m3b?fm3(r.m3t):'—')+'</td>':'')
       +'<td class="r">'+r.kgNeto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
       +'<td class="r">'+r.kgBruto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
       +'<td class="r" style="color:#1a7a3c;font-weight:700">'+(r.precioUnit?fmtUSD(r.precioUnit):'—')+'</td>'
@@ -3771,6 +3825,7 @@ function imprimirPackingList(salOverride){
     +'<td colspan="4" style="text-align:right">TOTALES:</td>'
     +'<td class="r">'+totalQty.toLocaleString('es-AR')+'</td>'
     +'<td class="r">'+totalBultos+'</td>'
+    +(HAY_M3?'<td></td><td class="r"><strong>'+fm3(totalM3)+'</strong></td>':'')
     +'<td class="r">'+totalKgNeto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
     +'<td class="r">'+totalKgBruto.toLocaleString('es-AR',{minimumFractionDigits:2})+'</td>'
     +'<td></td>'
@@ -3792,6 +3847,8 @@ function imprimirPackingList(salOverride){
     +'<div class="res-item"><div class="res-label">Flete (2% FOB)</div><div class="res-val">'+fmtUSD(flete)+'</div></div>'
     +'<div class="res-item"><div class="res-label">Seguro (0.6% FOB)</div><div class="res-val">'+fmtUSD(seguro)+'</div></div>'
     +'<div class="res-item"><div class="res-label">CIF Total</div><div class="res-val">'+fmtUSD(parseFloat((totalFOB+flete+seguro).toFixed(2)))+'</div></div>'
+    +(HAY_M3?'<div class="res-item"><div class="res-label">Volumen total</div><div class="res-val">'+fm3(totalM3)+' m³</div></div>'
+      +'<div class="res-item"><div class="res-label">Camiones (m³ ÷ '+M3_CAMION+')</div><div class="res-val">'+camiones.toLocaleString('es-AR',{maximumFractionDigits:2})+' → '+Math.ceil(camiones-1e-9)+'</div></div>':'')
     +'</div>'
     +'</div>';
 
